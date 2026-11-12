@@ -237,7 +237,7 @@ a.btn { text-decoration: none; }
 .login-err { margin: -4px 0 0; color: var(--red); font-size: 13px; font-weight: 600; }
 .quick { margin-top: 28px; }
 .quick-t { margin: 0 0 10px; font-size: 12px; color: var(--ink-3); font-weight: 600; }
-.quick-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.quick-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .quick-list button { border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 6px; display: flex; flex-direction: column; gap: 2px; background: var(--card); transition: border-color .15s; }
 .quick-list button:active, .quick-list button:hover { border-color: var(--red); }
 .quick-list b { font-size: 13px; }

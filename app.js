@@ -96,7 +96,7 @@
   // cada perfil vai direto para a sua tela
   function goHome() {
     if (!sess) return show("viewLogin");
-    if (sess.perfil === "conf") return location.replace(W.homeUrl("conf"));
+    if (sess.perfil === "conf" || sess.perfil === "coord") return location.replace(W.homeUrl(sess.perfil));
     if (sess.perfil === "emb") return window.Embarque.home();
     renderHome(); show("viewHome");
   }

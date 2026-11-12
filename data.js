@@ -109,8 +109,9 @@ window.WMS = (() => {
     { login: "separador", nome: "Usuário Separador", perfil: "sep", pin: "1111" },
     { login: "conferente", nome: "Usuário Conferente", perfil: "conf", pin: "2222" },
     { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
+    { login: "coordenador", nome: "Usuário Coordenador", perfil: "coord", pin: "4444" },
   ];
-  const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque" };
+  const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque", coord: "Gestão de Expedição" };
   const SESSION = "wms-bb-session";
 
   const session = () => {
@@ -128,7 +129,7 @@ window.WMS = (() => {
   };
   const logout = () => localStorage.removeItem(SESSION);
   // página de cada perfil
-  const homeUrl = (perfil) => (perfil === "conf" ? "conferencia.html" : "./");
+  const homeUrl = (perfil) => ({ conf: "conferencia.html", coord: "gestao.html" }[perfil] || "./");
 
   return { USERS, PERFIS, session, login, logout, homeUrl, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
 })();
