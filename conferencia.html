@@ -5,13 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0E0E10">
   <title>WMS Beach Bike · Conferência</title>
+  <script>
+    try { var s = JSON.parse(localStorage.getItem("wms-bb-session")); if (!s || s.perfil !== "conf") location.replace("./"); }
+    catch (e) { location.replace("./"); }
+  </script>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=7">
-  <link rel="stylesheet" href="conferencia.css?v=7">
-  <link rel="stylesheet" href="etiqueta.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="conferencia.css?v=8">
+  <link rel="stylesheet" href="etiqueta.css?v=8">
 </head>
 <body class="pos">
 
@@ -24,12 +28,11 @@
         <span>Posto</span>
         <select id="station"><option>01</option><option>02</option><option>03</option></select>
       </label>
-      <button id="opBtn" class="pos-op" title="Trocar conferente">
+      <button id="opBtn" class="pos-op" title="Usuário / sair">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
         <span id="opName">—</span>
       </button>
       <span id="clock" class="pos-clock">--:--</span>
-      <a href="./" class="pos-link">Separação ↗</a>
     </div>
   </header>
 
@@ -142,16 +145,12 @@
   </div>
 
   <div id="mOp" class="modal modal-sm" hidden>
-    <h2>Conferente</h2>
-    <form id="opForm">
-      <label class="field">
-        <span>Nome</span>
-        <input id="opInput" type="text" maxlength="30" required autocomplete="off">
-      </label>
-      <div class="m-actions">
-        <button class="btn primary" type="submit">Entrar</button>
-      </div>
-    </form>
+    <h2 id="opUser"></h2>
+    <p class="muted">Perfil: Conferência</p>
+    <div class="m-actions">
+      <button class="btn ghost" data-close>Voltar <kbd>Esc</kbd></button>
+      <button id="opLogout" class="btn primary">Sair</button>
+    </div>
   </div>
 
   <div id="mDone" class="modal modal-sm done-modal" hidden>
@@ -189,9 +188,9 @@
 
   <div id="printArea"></div>
 
-  <script src="vendor/qrcode.js?v=7"></script>
-  <script src="data.js?v=7"></script>
-  <script src="etiqueta.js?v=7"></script>
-  <script src="conferencia.js?v=7"></script>
+  <script src="vendor/qrcode.js?v=8"></script>
+  <script src="data.js?v=8"></script>
+  <script src="etiqueta.js?v=8"></script>
+  <script src="conferencia.js?v=8"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // Service worker: mantém o app funcionando offline.
-const CACHE = "wms-bb-v7";
-const V = "?v=7";
+const CACHE = "wms-bb-v8";
+const V = "?v=8";
 const ASSETS = ["./", "index.html", "conferencia.html", "styles.css" + V, "app.js" + V, "embarque.js" + V, "data.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V, "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {

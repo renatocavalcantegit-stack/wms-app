@@ -3,12 +3,15 @@
   "use strict";
 
   const STORE = "wms-bb-conf-v1";
-  const USER = "wms-bb-conf-user";
   const W = window.WMS;
+
+  // acesso exclusivo do perfil Conferência
+  const sess = W.session();
+  if (!sess || sess.perfil !== "conf") { location.replace("./"); return; }
+  const user = sess.nome;
 
   // ---------- estado ----------
   let db = load();
-  let user = localStorage.getItem(USER) || "";
   let queueFilter = "aguardando";
   let cur = null; // pedido aberto
 
@@ -351,15 +354,11 @@
   function openModal(id) { modal = id; $("#modalScrim").hidden = false; $$(".modal").forEach((m) => (m.hidden = m.id !== id)); }
   function closeModal() { modal = null; $("#modalScrim").hidden = true; $$(".modal").forEach((m) => (m.hidden = true)); focusScan(); }
   $$("[data-close]").forEach((b) => b.addEventListener("click", closeModal));
-  $("#modalScrim").addEventListener("click", () => modal !== "mOp" && closeModal());
+  $("#modalScrim").addEventListener("click", closeModal);
 
-  // conferente
-  function askOp() { $("#opInput").value = user; openModal("mOp"); setTimeout(() => $("#opInput").focus(), 30); }
-  $("#opBtn").addEventListener("click", askOp);
-  $("#opForm").addEventListener("submit", (e) => {
-    e.preventDefault(); user = $("#opInput").value.trim(); if (!user) return;
-    localStorage.setItem(USER, user); $("#opName").textContent = user; closeModal();
-  });
+  // usuário logado / sair
+  $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; openModal("mOp"); });
+  $("#opLogout").addEventListener("click", () => { W.logout(); location.replace("./"); });
 
   // ---------- foco do leitor + atalhos ----------
   function focusScan() { if (!modal) $("#scan").focus(); }
@@ -371,7 +370,7 @@
 
   document.addEventListener("keydown", (e) => {
     if (modal) {
-      if (e.key === "Escape" && modal !== "mOp") {
+      if (e.key === "Escape") {
         e.preventDefault();
         const back = modal === "mDone" || (modal === "mPrint" && printThenQueue);
         closeModal(); if (back) showQueue();
@@ -395,9 +394,8 @@
   });
 
   // ---------- início ----------
-  $("#opName").textContent = user || "—";
+  $("#opName").textContent = user;
   const open = db.orders.find((o) => o.conf.status === "andamento");
   showQueue();
-  if (!user) askOp();
-  else if (open) toast(`${open.id} está em conferência — clique para continuar`);
+  if (open) toast(`${open.id} está em conferência — clique para continuar`);
 })();

@@ -103,5 +103,32 @@ window.WMS = (() => {
     return m ? { id: "PV-" + m[1], vol: +m[2], total: m[3] ? +m[3] : null } : null;
   };
 
-  return { PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
+  // ---------- usuários de demonstração (cada perfil acessa só a sua tela) ----------
+  // PINs fictícios, apenas para o MVP; num sistema real a autenticação fica no servidor
+  const USERS = [
+    { login: "separador", nome: "Usuário Separador", perfil: "sep", pin: "1111" },
+    { login: "conferente", nome: "Usuário Conferente", perfil: "conf", pin: "2222" },
+    { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
+  ];
+  const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque" };
+  const SESSION = "wms-bb-session";
+
+  const session = () => {
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION));
+      return s && USERS.find((u) => u.login === s.login) ? s : null;
+    } catch { return null; }
+  };
+  const login = (user, pin) => {
+    const u = USERS.find((x) => x.login === String(user).trim().toLowerCase() && x.pin === String(pin).trim());
+    if (!u) return null;
+    const s = { login: u.login, nome: u.nome, perfil: u.perfil, desde: Date.now() };
+    localStorage.setItem(SESSION, JSON.stringify(s));
+    return s;
+  };
+  const logout = () => localStorage.removeItem(SESSION);
+  // página de cada perfil
+  const homeUrl = (perfil) => (perfil === "conf" ? "conferencia.html" : "./");
+
+  return { USERS, PERFIS, session, login, logout, homeUrl, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
 })();

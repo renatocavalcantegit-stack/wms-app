@@ -3,13 +3,13 @@
   "use strict";
 
   const STORE = "wms-bb-sep-v1";
-  const USER = "wms-bb-user";
-
-  const { seedSeparacao: seed } = window.WMS;
+  const W = window.WMS;
+  const { seedSeparacao: seed } = W;
 
   // ---------- estado ----------
   let orders = load();
-  let user = localStorage.getItem(USER) || "";
+  let sess = W.session();
+  let user = sess ? sess.nome : "";
   let filter = "abertos";
   let current = null; // pedido em separação
 
@@ -53,15 +53,11 @@
     } catch {}
   }
 
-  const HOMES = { viewHome: "sep", viewEmbHome: "emb" };
+  // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)
+  const ACCESS = { sep: ["viewHome", "viewPick", "viewDone"], emb: ["viewEmbHome", "viewLoad", "viewLoadDone"] };
   function show(id) {
+    if (id !== "viewLogin" && !(sess && (ACCESS[sess.perfil] || []).includes(id))) id = "viewLogin";
     $$(".view").forEach((v) => (v.hidden = v.id !== id));
-    const mod = HOMES[id];
-    $("#tabbar").hidden = !mod;
-    if (mod) {
-      localStorage.setItem("wms-bb-mod", mod);
-      $$("#tabbar .tb").forEach((b) => b.classList.toggle("active", b.dataset.mod === mod));
-    }
     window.scrollTo(0, 0);
     document.querySelector('meta[name="theme-color"]').content = id === "viewLogin" ? "#ffffff" : "#F5F5F7";
   }
@@ -80,24 +76,34 @@
   // ---------- login ----------
   $("#loginForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    user = $("#loginName").value.trim();
-    if (!user) return;
-    localStorage.setItem(USER, user);
+    const s = W.login($("#loginName").value, $("#loginPin").value);
+    if (!s) {
+      $("#loginErr").hidden = false; vibrate([80, 50, 80]);
+      $("#loginPin").value = ""; $("#loginPin").focus();
+      return;
+    }
+    $("#loginErr").hidden = true;
+    sess = s; user = s.nome;
     goHome();
   });
-
-  // ---------- módulos (barra inferior) ----------
-  function goHome(mod = localStorage.getItem("wms-bb-mod") || "sep") {
-    if (mod === "emb" && window.Embarque) window.Embarque.home();
-    else { renderHome(); show("viewHome"); }
-  }
-  $("#tabbar").addEventListener("click", (e) => {
-    const b = e.target.closest(".tb"); if (b) goHome(b.dataset.mod);
+  $("#loginQuick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-login]"); if (!b) return;
+    const u = W.USERS.find((x) => x.login === b.dataset.login);
+    $("#loginName").value = u.login; $("#loginPin").value = u.pin;
+    $("#loginErr").hidden = true;
   });
+
+  // cada perfil vai direto para a sua tela
+  function goHome() {
+    if (!sess) return show("viewLogin");
+    if (sess.perfil === "conf") return location.replace(W.homeUrl("conf"));
+    if (sess.perfil === "emb") return window.Embarque.home();
+    renderHome(); show("viewHome");
+  }
 
   // ---------- home ----------
   function renderHome() {
-    $("#helloName").textContent = user.split(" ")[0];
+    $("#helloName").textContent = user;
     const dt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
     $("#helloDate").textContent = dt.charAt(0).toUpperCase() + dt.slice(1);
     $("#kpiPend").textContent = orders.filter((o) => o.status === "pendente").length;
@@ -342,15 +348,19 @@
   $("#camClose").addEventListener("click", stopCam);
 
   // ---------- menu ----------
-  $$(".menu-btn").forEach((b) => b.addEventListener("click", () => { $("#menuName").textContent = user; openSheet("sheetMenu"); }));
+  $$(".menu-btn").forEach((b) => b.addEventListener("click", () => {
+    $("#menuName").textContent = user;
+    $("#menuPerfil").textContent = W.PERFIS[sess.perfil];
+    openSheet("sheetMenu");
+  }));
   $("#menuReset").addEventListener("click", () => {
     orders = seed(); save(); closeSheets();
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");
   });
   $("#menuLogout").addEventListener("click", () => {
-    localStorage.removeItem(USER); user = ""; closeSheets();
-    $("#loginName").value = ""; show("viewLogin");
+    W.logout(); sess = null; user = ""; closeSheets();
+    $("#loginName").value = ""; $("#loginPin").value = ""; show("viewLogin");
   });
 
   // ---------- início ----------
@@ -358,7 +368,7 @@
   window.UI = { $, $$, esc, show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser: () => user, CHECK };
 
   // inicia depois que todos os scripts carregarem
-  document.addEventListener("DOMContentLoaded", () => { if (user) goHome(); else show("viewLogin"); });
+  document.addEventListener("DOMContentLoaded", goHome);
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
