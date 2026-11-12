@@ -67,17 +67,17 @@ window.Embarque = (() => {
   }
 
   function card(c) {
-    const t = totVol(c), l = lidos(c);
+    // lista enxuta: número da carga, motorista e veículo
     return `<button class="order carga ${done(c) ? "is-done" : ""}" data-id="${c.id}">
       <div class="order-top">
-        <div><p class="order-id">${c.id}</p><p class="order-client">${esc(c.rota)}</p></div>${tagOf(c)}
+        <p class="order-id">${c.id}</p>${tagOf(c)}
       </div>
       <div class="carga-row">
-        <span class="plate">${esc(c.placa)}</span>
-        <span>${esc(c.veiculo)}</span><span>Doca <b>${c.doca}</b></span><span>Saída <b>${c.saida}</b></span>
+        <span class="carga-mot">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>${esc(c.motorista)}
+        </span>
+        <span class="carga-veic"><span class="plate">${esc(c.placa)}</span>${esc(c.veiculo)}</span>
       </div>
-      <div class="order-meta"><span><b>${c.pedidos.length}</b> pedidos</span><span><b>${l}</b>/${t} volumes</span><span>${esc(c.motorista)}</span></div>
-      <div class="order-bar"><i style="width:${t ? (l / t) * 100 : 0}%"></i></div>
     </button>`;
   }
 

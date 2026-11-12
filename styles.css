@@ -309,3 +309,7 @@ a.btn { text-decoration: none; }
 .done-check.warn circle { fill: var(--warn-soft); stroke: var(--warn); }
 .done-check.warn path { stroke: var(--warn); }
 .done .kpi-n { font-size: 22px; word-break: break-all; }
+.carga .carga-row { justify-content: space-between; font-size: 14px; color: var(--ink); }
+.carga-mot { display: flex; align-items: center; gap: 6px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.carga-mot svg { width: 16px; height: 16px; fill: none; stroke: var(--ink-3); stroke-width: 2; flex-shrink: 0; }
+.carga-veic { display: flex; align-items: center; gap: 8px; color: var(--ink-2); white-space: nowrap; }
