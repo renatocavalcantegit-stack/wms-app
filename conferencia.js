@@ -102,7 +102,7 @@
       return `<tr data-id="${o.id}">
         <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
-        <td>${esc(o.operador || "—")}</td><td>${tag}</td></tr>`;
+        <td>${esc(o.operador || "—")}</td><td>${tag}${o.conf.volumes && o.conf.fim ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
     }).join("");
     $("#queueEmpty").hidden = list.length > 0;
     $("#queueEmpty").textContent = queueFilter === "aguardando" ? "Nenhum pedido aguardando conferência." : "Nenhum pedido conferido ainda.";
@@ -115,6 +115,8 @@
     renderQueue(); focusScan();
   });
   $("#queueBody").addEventListener("click", (e) => {
+    const pb = e.target.closest("[data-print]");
+    if (pb) return openPrint(db.orders.find((o) => o.id === pb.dataset.print));
     const tr = e.target.closest("tr"); if (!tr) return;
     openOrder(db.orders.find((o) => o.id === tr.dataset.id));
   });
@@ -203,7 +205,7 @@
     resetMult();
 
     // código de pedido?
-    const pid = code.toUpperCase().replace(/^PV-?/, "");
+    const pid = code.split("|")[0].trim().toUpperCase().replace(/^PV-?/, "");
     const ord = db.orders.find((o) => o.id.replace("PV-", "") === pid);
     if (ord && (!cur || !W.find(code))) {
       if (cur && cur !== ord) { setMsg(`Finalize ou volte à fila (F2) antes de abrir ${ord.id}.`, "err"); beep(false); return; }
@@ -297,17 +299,52 @@
 
   function doFinish() {
     const s = stats(cur), div = s.div > 0 || s.pend > 0;
-    Object.assign(cur.conf, { status: div ? "divergente" : "conferido", fim: Date.now(), volumes: Math.max(1, parseInt($("#fVol").value, 10) || 1) });
+    Object.assign(cur.conf, { status: div ? "divergente" : "conferido", fim: Date.now(), posto: $("#station").value, conferente: user, volumes: Math.max(1, parseInt($("#fVol").value, 10) || 1) });
     save();
     const mins = Math.max(1, Math.round((cur.conf.fim - cur.conf.inicio) / 60000));
     $("#dTitle").textContent = div ? "Conferido com divergência" : "Pedido conferido";
     $("#dSub").textContent = `${cur.id} · ${cur.conf.volumes} volume(s) · ${s.un} un. · ${mins} min`;
+    $("#dPrint").innerHTML = `Imprimir ${cur.conf.volumes} etiqueta${cur.conf.volumes > 1 ? "s" : ""} <kbd>Enter</kbd>`;
     $("#mDone .done-check").style.filter = div ? "hue-rotate(-110deg) saturate(1.6)" : "";
     openModal("mDone");
     beep(true);
   }
   $("#fGo").addEventListener("click", doFinish);
   $("#dGo").addEventListener("click", () => { closeModal(); showQueue(); });
+  $("#dPrint").addEventListener("click", printDone);
+  $("#dPreview").addEventListener("click", () => openPrint(cur, true));
+
+  // ---------- etiquetas ----------
+  let printOrder = null, printThenQueue = false;
+  function printDone() {
+    const o = cur;
+    Etiqueta.print(o, () => { closeModal(); showQueue(); toast(`Etiquetas de ${o.id} enviadas para impressão`); });
+  }
+  function openPrint(o, fromDone = false) {
+    if (!o) return;
+    printOrder = o; printThenQueue = fromDone;
+    $("#pVol").value = o.conf.volumes || 1;
+    renderPreview();
+    openModal("mPrint");
+  }
+  function renderPreview() {
+    const o = printOrder;
+    $("#pSub").textContent = `${o.id} · ${o.cliente} · 80 × 60 mm`;
+    $("#pPreview").innerHTML = Etiqueta.render(o);
+  }
+  $("#pVol").addEventListener("input", () => {
+    const v = Math.min(99, Math.max(1, parseInt($("#pVol").value, 10) || 1));
+    printOrder.conf.volumes = v; save(); renderPreview();
+  });
+  function doPrint() {
+    const o = printOrder, back = printThenQueue;
+    Etiqueta.print(o, () => {
+      closeModal();
+      if (back) showQueue(); else renderQueue();
+      toast(`Etiquetas de ${o.id} enviadas para impressão`);
+    });
+  }
+  $("#pGo").addEventListener("click", doPrint);
 
   // ---------- modais ----------
   let modal = null;
@@ -334,9 +371,14 @@
 
   document.addEventListener("keydown", (e) => {
     if (modal) {
-      if (e.key === "Escape" && modal !== "mOp") { e.preventDefault(); closeModal(); }
+      if (e.key === "Escape" && modal !== "mOp") {
+        e.preventDefault();
+        const back = modal === "mDone" || (modal === "mPrint" && printThenQueue);
+        closeModal(); if (back) showQueue();
+      }
       if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); doFinish(); }
-      else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); closeModal(); showQueue(); }
+      else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); printDone(); }
+      else if (e.key === "Enter" && modal === "mPrint" && !e.target.closest("button")) { e.preventDefault(); doPrint(); }
       return;
     }
     switch (e.key) {

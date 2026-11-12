@@ -146,3 +146,13 @@ tr.excesso .s-dot, tr.fora .s-dot { background: var(--red); }
   .pos-keys-tip { display: none; }
   .tbl th:nth-child(4), .tbl td:nth-child(4) { display: none; }
 }
+
+/* ---------- etiquetas ---------- */
+.modal-lg { width: min(860px, 94vw); }
+.m-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.field-inline { flex-direction: row; align-items: center; gap: 10px; }
+.field-inline input { width: 84px; height: 44px; text-align: center; font-weight: 700; }
+.m-split { width: 100%; justify-content: stretch; }
+.m-split .btn { flex: 1; }
+.lb-btn { margin-left: 8px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--card); vertical-align: middle; }
+.lb-btn:hover { border-color: var(--ink); color: var(--ink); }

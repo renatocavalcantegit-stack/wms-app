@@ -1,6 +1,6 @@
 // Service worker: mantém o app funcionando offline.
-const CACHE = "wms-bb-v2";
-const ASSETS = ["./", "index.html", "styles.css", "app.js", "data.js", "conferencia.html", "conferencia.css", "conferencia.js", "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
+const CACHE = "wms-bb-v3";
+const ASSETS = ["./", "index.html", "styles.css", "app.js", "data.js", "conferencia.html", "conferencia.css", "conferencia.js", "etiqueta.js", "etiqueta.css", "vendor/qrcode.js", "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

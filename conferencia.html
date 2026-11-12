@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="conferencia.css">
+  <link rel="stylesheet" href="etiqueta.css">
 </head>
 <body class="pos">
 
@@ -159,12 +160,38 @@
     </div>
     <h2 id="dTitle">Pedido conferido</h2>
     <p id="dSub" class="muted"></p>
-    <button id="dGo" class="btn primary block">Próximo pedido <kbd>Enter</kbd></button>
+    <button id="dPrint" class="btn primary block">Imprimir etiquetas <kbd>Enter</kbd></button>
+    <div class="m-actions m-split">
+      <button id="dPreview" class="btn ghost">Pré-visualizar</button>
+      <button id="dGo" class="btn ghost">Pular <kbd>Esc</kbd></button>
+    </div>
+  </div>
+
+  <div id="mPrint" class="modal modal-lg" hidden>
+    <div class="m-head">
+      <div>
+        <h2>Etiquetas de volume</h2>
+        <p id="pSub" class="muted"></p>
+      </div>
+      <label class="field field-inline">
+        <span>Volumes</span>
+        <input id="pVol" type="number" min="1" max="99">
+      </label>
+    </div>
+    <div id="pPreview" class="lb-preview"></div>
+    <div class="m-actions">
+      <button class="btn ghost" data-close>Fechar <kbd>Esc</kbd></button>
+      <button id="pGo" class="btn primary">Imprimir <kbd>Enter</kbd></button>
+    </div>
   </div>
 
   <div id="toast" class="toast" hidden></div>
 
+  <div id="printArea"></div>
+
+  <script src="vendor/qrcode.js"></script>
   <script src="data.js"></script>
+  <script src="etiqueta.js"></script>
   <script src="conferencia.js"></script>
 </body>
 </html>
