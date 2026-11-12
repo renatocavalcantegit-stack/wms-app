@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="WMS BB">
+  <title>WMS Beach Bike · Separação</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== LOGIN ===== -->
+  <section id="viewLogin" class="view login" hidden>
+    <div class="login-box">
+      <img src="assets/logo.png" alt="Beach Bike Atacado" class="login-logo">
+      <p class="login-tag">WMS · Separação</p>
+      <form id="loginForm" class="login-form">
+        <label class="field">
+          <span>Operador</span>
+          <input id="loginName" type="text" autocomplete="off" placeholder="Seu nome" required maxlength="30">
+        </label>
+        <button class="btn primary block" type="submit">Entrar</button>
+      </form>
+      <p class="login-foot">MVP experimental · dados de demonstração</p>
+    </div>
+  </section>
+
+  <!-- ===== HOME / PEDIDOS ===== -->
+  <section id="viewHome" class="view" hidden>
+    <header class="appbar">
+      <img src="assets/logo.png" alt="Beach Bike Atacado" class="appbar-logo">
+      <button id="btnMenu" class="icon-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+      </button>
+    </header>
+
+    <main class="home">
+      <div class="hello">
+        <p class="hello-kicker" id="helloDate"></p>
+        <h1 class="hello-title">Olá, <span id="helloName"></span></h1>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><span id="kpiPend" class="kpi-n">0</span><span class="kpi-l">Pendentes</span></div>
+        <div class="kpi"><span id="kpiAnd" class="kpi-n">0</span><span class="kpi-l">Em separação</span></div>
+        <div class="kpi accent"><span id="kpiDone" class="kpi-n">0</span><span class="kpi-l">Concluídos</span></div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-filter="abertos">Abertos</button>
+        <button class="tab" data-filter="concluido">Concluídos</button>
+        <button class="tab" data-filter="todos">Todos</button>
+      </div>
+
+      <div id="orderList" class="orders"></div>
+    </main>
+  </section>
+
+  <!-- ===== SEPARAÇÃO ===== -->
+  <section id="viewPick" class="view pick" hidden>
+    <header class="pick-bar">
+      <button id="pickBack" class="icon-btn" aria-label="Voltar">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="pick-head">
+        <p id="pickOrder" class="pick-order"></p>
+        <p id="pickClient" class="pick-client"></p>
+      </div>
+      <button id="pickListBtn" class="icon-btn" aria-label="Lista de itens">
+        <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+      </button>
+    </header>
+
+    <div class="progress"><div id="pickProgress" class="progress-fill"></div></div>
+    <p id="pickStep" class="pick-step"></p>
+
+    <main id="pickCard" class="pick-main">
+      <div class="addr">
+        <span class="addr-label">Endereço</span>
+        <div id="addrParts" class="addr-parts"></div>
+      </div>
+
+      <div class="product">
+        <div class="product-thumb" id="prodThumb"></div>
+        <div class="product-info">
+          <p id="prodDesc" class="product-desc"></p>
+          <p class="product-meta"><span id="prodSku"></span> · <span id="prodEan"></span></p>
+        </div>
+      </div>
+
+      <div class="qty">
+        <button id="qtyMinus" class="qty-btn" aria-label="Diminuir">−</button>
+        <div class="qty-center">
+          <div class="qty-val"><span id="qtySep">0</span><span class="qty-of">/ <span id="qtyReq">0</span></span></div>
+          <span class="qty-l">unidades separadas</span>
+        </div>
+        <button id="qtyPlus" class="qty-btn" aria-label="Aumentar">+</button>
+      </div>
+
+      <form id="scanForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+        <input id="scanInput" type="text" inputmode="numeric" autocomplete="off" placeholder="Bipe ou digite o EAN / SKU">
+        <button type="button" id="camBtn" class="scan-cam" aria-label="Ler com a câmera" hidden>
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        </button>
+      </form>
+      <p id="scanMsg" class="scan-msg"></p>
+    </main>
+
+    <footer class="pick-foot">
+      <button id="btnShort" class="btn ghost">Registrar falta</button>
+      <button id="btnConfirm" class="btn primary grow">Confirmar item</button>
+    </footer>
+  </section>
+
+  <!-- ===== CONCLUÍDO ===== -->
+  <section id="viewDone" class="view done" hidden>
+    <div class="done-box">
+      <div class="done-check">
+        <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+      </div>
+      <h1>Separação concluída</h1>
+      <p id="doneOrder" class="muted"></p>
+      <div class="done-stats">
+        <div><span id="doneTime" class="kpi-n">–</span><span class="kpi-l">Tempo</span></div>
+        <div><span id="doneOk" class="kpi-n">0</span><span class="kpi-l">Itens ok</span></div>
+        <div><span id="doneShort" class="kpi-n">0</span><span class="kpi-l">Com falta</span></div>
+      </div>
+      <div id="doneShortList" class="done-list"></div>
+      <button id="doneBack" class="btn primary block">Voltar aos pedidos</button>
+    </div>
+  </section>
+
+  <!-- ===== SHEETS ===== -->
+  <div id="scrim" class="scrim" hidden></div>
+
+  <div id="sheetStart" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <div>
+        <p id="startOrder" class="sheet-title"></p>
+        <p id="startClient" class="muted"></p>
+      </div>
+      <span id="startPrio" class="tag"></span>
+    </div>
+    <div id="startItems" class="sheet-list"></div>
+    <button id="startGo" class="btn primary block">Iniciar separação</button>
+  </div>
+
+  <div id="sheetList" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title">Itens do pedido</p>
+    <div id="pickItems" class="sheet-list"></div>
+  </div>
+
+  <div id="sheetShort" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title">Registrar falta</p>
+    <p id="shortDesc" class="muted"></p>
+    <label class="field">
+      <span>Quantidade encontrada</span>
+      <input id="shortQty" type="number" inputmode="numeric" min="0">
+    </label>
+    <div class="chips" id="shortReasons">
+      <button class="chip active" data-r="Endereço vazio">Endereço vazio</button>
+      <button class="chip" data-r="Quantidade insuficiente">Qtd. insuficiente</button>
+      <button class="chip" data-r="Produto avariado">Avariado</button>
+      <button class="chip" data-r="Produto divergente">Divergente</button>
+    </div>
+    <button id="shortGo" class="btn danger block">Confirmar falta</button>
+  </div>
+
+  <div id="sheetMenu" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title">Operador: <span id="menuName"></span></p>
+    <button id="menuReset" class="btn ghost block">Reiniciar dados de demonstração</button>
+    <button id="menuLogout" class="btn ghost block">Trocar operador</button>
+    <p class="login-foot">WMS Beach Bike · MVP v0.1</p>
+  </div>
+
+  <!-- câmera -->
+  <div id="camView" class="cam" hidden>
+    <video id="camVideo" playsinline muted></video>
+    <div class="cam-frame"></div>
+    <button id="camClose" class="btn ghost cam-close">Fechar</button>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
