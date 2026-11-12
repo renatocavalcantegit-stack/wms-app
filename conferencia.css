@@ -156,3 +156,117 @@ tr.excesso .s-dot, tr.fora .s-dot { background: var(--red); }
 .m-split .btn { flex: 1; }
 .lb-btn { margin-left: 8px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--card); vertical-align: middle; }
 .lb-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- ações do pedido (equivalem às teclas F) ---------- */
+.ord-actions { display: flex; gap: 8px; }
+.ord-act { height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); background: var(--card); }
+.ord-act:hover { border-color: var(--ink); color: var(--ink); }
+.ord-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pos-cam { width: 48px; height: 100%; border-radius: 11px; background: var(--ink); display: grid; place-items: center; flex-shrink: 0; }
+.pos-cam svg { width: 22px; height: 22px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linejoin: round; }
+.pos-finish-m { display: none; }
+
+/* =====================================================
+   CELULAR / TELA ESTREITA — conferência como plano B
+   ===================================================== */
+@media (max-width: 820px) {
+  body.pos { display: block; height: auto; min-height: 100dvh; overflow: auto; }
+
+  /* topo compacto */
+  .pos-top { position: sticky; top: 0; z-index: 6; height: auto; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px; gap: 10px; }
+  .pos-logo { height: 30px; }
+  .pos-mod { font-size: 11px; padding: 5px 9px; letter-spacing: 1px; }
+  .pos-top-info { gap: 6px; }
+  .pos-station { height: 36px; padding: 0 4px 0 8px; }
+  .pos-station span, .pos-clock, #opName { display: none; }
+  .pos-op { height: 36px; width: 36px; padding: 0; justify-content: center; }
+
+  /* display do caixa vai para o topo */
+  .pos-body { display: flex; flex-direction: column; }
+  .pos-right { order: -1; padding: 14px; gap: 10px; border-radius: 0 0 22px 22px; overflow: visible; }
+  .pos-right::before { display: none; }
+  .last { min-height: 0; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label qty" "desc qty" "code qty"; column-gap: 12px; align-items: center; }
+  .last-label { grid-area: label; }
+  .last-desc { grid-area: desc; font-size: 16px; min-height: 0; margin: 4px 0 2px; }
+  .last-code { grid-area: code; font-size: 12px; }
+  .last-qty { grid-area: qty; margin: 0; flex-direction: column; align-items: flex-end; gap: 0; }
+  .lq-n { font-size: 42px; }
+  .lq-of { font-size: 16px; }
+  .pos-scan { height: 58px; }
+  .pos-scan input#scan { font-size: 17px; }
+  .pos-mult input { width: 34px; font-size: 16px; }
+  .pos-enter { width: 46px; }
+  .pos-msg { margin: -2px 4px 0; }
+  .totals { margin-top: 0; gap: 8px; }
+  .tot { padding: 9px 11px; }
+  .tot-n b { font-size: 20px; }
+  .pos-finish { display: none; }
+  .pos-finish-m {
+    display: flex; position: fixed; z-index: 7; left: 14px; right: 14px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: auto; height: 56px;
+  }
+  .pos-finish-m:disabled { display: none; }
+
+  .pos-left { padding: 16px 14px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .pos-keys { display: none; }
+
+  /* fila */
+  .queue-head { flex-direction: column; align-items: stretch; gap: 12px; }
+  .queue-head h1 { font-size: 20px; }
+  .seg-b { flex: 1; }
+
+  /* tabelas viram cards */
+  .tbl-wrap { background: none; box-shadow: none; overflow: visible; border-radius: 0; }
+  .tbl, .tbl tbody { display: block; }
+  .tbl thead { display: none; }
+  .tbl tr { display: grid; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 10px; column-gap: 10px; row-gap: 4px; align-items: center; }
+  .tbl td { padding: 0; border: 0; }
+  .tbl-empty { padding: 40px 0; }
+
+  #queueBody tr { grid-template-columns: auto auto auto 1fr; }
+  #queueBody td:nth-child(1) { grid-column: 1 / 4; grid-row: 1; font-size: 17px; }
+  #queueBody td:nth-child(7) { grid-column: 4; grid-row: 1; justify-self: end; text-align: right; }
+  #queueBody td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; font-weight: 600; }
+  #queueBody td:nth-child(3), #queueBody td:nth-child(4), #queueBody td:nth-child(5), #queueBody td:nth-child(6) { grid-row: 3; font-size: 13px; color: var(--ink-3); text-align: left; }
+  #queueBody td:nth-child(3), #queueBody td:nth-child(4), #queueBody td:nth-child(5), #queueBody td:nth-child(6) { white-space: nowrap; }
+  #queueBody td:nth-child(6) { overflow: hidden; text-overflow: ellipsis; }
+  #queueBody td:nth-child(4)::after { content: " itens"; }
+  #queueBody td:nth-child(5)::after { content: " un."; font-weight: 400; }
+  #queueBody td:nth-child(6)::before { content: "Sep.: "; }
+  #queueBody td:nth-child(6) { justify-self: end; }
+  .lb-btn { display: block; margin: 6px 0 0 auto; }
+
+  .items tr { grid-template-columns: 10px 1fr auto; }
+  .items td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .items td:nth-child(3) { grid-column: 2; grid-row: 1; font-weight: 600; }
+  .items td:nth-child(7) { grid-column: 3; grid-row: 1; font-size: 26px; }
+  .items td:nth-child(2) { grid-column: 2; grid-row: 2; font-size: 12px; }
+  .items td:nth-child(2) b { display: inline; margin-right: 6px; font-size: 12px; }
+  .items td:nth-child(6) { grid-column: 3; grid-row: 2; font-size: 12px; color: var(--ink-3); font-weight: 600; }
+  .items td:nth-child(6)::before { content: "de "; font-weight: 400; }
+  .items td:nth-child(4) { grid-column: 2; grid-row: 3; }
+  .items td:nth-child(8) { grid-column: 3; grid-row: 3; justify-self: end; }
+  .items td:nth-child(5) { display: none; }
+  .items tr.ok { opacity: .7; }
+  .tbl th:nth-child(4) { display: none; }
+  .tbl td:nth-child(4) { display: block; }
+
+  /* cabeçalho do pedido */
+  .ord-head { flex-wrap: wrap; gap: 10px 14px; padding: 14px; }
+  .ord-id { border: 0; padding: 0; }
+  .ord-num { font-size: 22px; }
+  .ord-meta { flex-basis: 100%; order: 3; }
+  .ord-client { font-size: 15px; }
+  #oTag { margin-left: auto; }
+  .ord-actions { order: 4; flex-basis: 100%; }
+  .ord-act { flex: 1; justify-content: center; height: 44px; }
+
+  /* modais viram folhas inferiores */
+  .modal { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: 100%; max-height: 92dvh; border-radius: 24px 24px 0 0; padding: 22px 18px calc(18px + env(safe-area-inset-bottom, 0px)); animation: up .26s cubic-bezier(.2,.8,.2,1); }
+  .modal-sm, .modal-lg { width: 100%; }
+  .m-actions .btn { flex: 1; }
+  .btn kbd { display: none; }
+  .m-head { flex-direction: column; align-items: stretch; }
+  .lb-preview { padding: 10px; max-height: 50dvh; }
+  .lb-preview .label { zoom: 1; }
+}

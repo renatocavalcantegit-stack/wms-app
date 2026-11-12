@@ -20,6 +20,7 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);

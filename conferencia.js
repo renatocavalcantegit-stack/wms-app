@@ -10,6 +10,9 @@
   if (!sess || sess.perfil !== "conf") { location.replace("./"); return; }
   const user = sess.nome;
 
+  // aparelho de toque (celular/tablet): sem foco automático e com câmera
+  const TOUCH = matchMedia("(pointer: coarse)").matches;
+
   // ---------- estado ----------
   let db = load();
   let queueFilter = "aguardando";
@@ -190,6 +193,7 @@
     $("#prog").style.width = pct + "%";
     $(".pos-prog").classList.toggle("full", s.itens > 0 && pct === 100);
     $("#btnFinish").disabled = !cur;
+    $("#btnFinishM").disabled = !cur;
   }
 
   function setLast({ label, desc, code, conf, exp, kind = "" }) {
@@ -299,6 +303,36 @@
     setTimeout(() => $("#fVol").select(), 30);
   }
   $("#btnFinish").addEventListener("click", openFinish);
+  $("#btnFinishM").addEventListener("click", openFinish);
+
+  // botões equivalentes às teclas F (uso no celular / sem teclado)
+  $("#aQueue").addEventListener("click", showQueue);
+  $("#aUndo").addEventListener("click", () => { undo(); focusScan(); });
+  $("#aRestart").addEventListener("click", restart);
+
+  // ---------- câmera (celular, quando o navegador suporta) ----------
+  let stream, detecting = false;
+  $("#camBtn").hidden = !("BarcodeDetector" in window && TOUCH);
+  $("#camBtn").addEventListener("click", async () => {
+    try {
+      const det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "code_39", "qr_code", "upc_a"] });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const v = $("#camVideo"); v.srcObject = stream; await v.play();
+      $("#camView").hidden = false; detecting = true;
+      const loop = async () => {
+        if (!detecting) return;
+        try { const r = await det.detect(v); if (r.length) { stopCam(); handle(r[0].rawValue); return; } } catch {}
+        requestAnimationFrame(loop);
+      };
+      loop();
+    } catch { toast("Não foi possível abrir a câmera"); stopCam(); }
+  });
+  function stopCam() {
+    detecting = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; $("#camView").hidden = true;
+  }
+  $("#camClose").addEventListener("click", stopCam);
 
   function doFinish() {
     const s = stats(cur), div = s.div > 0 || s.pend > 0;
@@ -361,7 +395,7 @@
   $("#opLogout").addEventListener("click", () => { W.logout(); location.replace("./"); });
 
   // ---------- foco do leitor + atalhos ----------
-  function focusScan() { if (!modal) $("#scan").focus(); }
+  function focusScan() { if (!modal && !TOUCH) $("#scan").focus(); }
   document.addEventListener("click", (e) => {
     if (modal) return;
     if (e.target.closest("input, select, button, a, tr")) { if (!e.target.closest("input, select")) setTimeout(focusScan, 0); return; }

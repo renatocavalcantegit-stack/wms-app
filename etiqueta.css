@@ -27,7 +27,8 @@
 .lb-route { display: flex; align-items: center; gap: 1.4mm; background: #000; color: #fff; border-radius: 1.2mm; padding: 0 2.6mm; font-family: Montserrat, Arial, sans-serif; }
 .lb-route b { font-weight: 900; font-size: 6mm; }
 .lb-route span { font-weight: 800; font-size: 4.4mm; padding-left: 1.4mm; border-left: .5mm solid #fff; }
-.lb-foot { flex: 1; display: flex; flex-direction: column; justify-content: center; font-size: 2.4mm; font-weight: 600; gap: .5mm; }
+.lb-foot { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; font-size: 2.4mm; font-weight: 600; gap: .5mm; }
+.lb-foot span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lb-prio { width: 10mm; border: .7mm solid #000; border-radius: 1.2mm; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: Montserrat, Arial, sans-serif; line-height: 1; }
 .lb-prio b { font-weight: 900; font-size: 5mm; }
 .lb-prio small { font-size: 1.5mm; font-weight: 800; letter-spacing: .1mm; }
