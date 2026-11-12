@@ -5,53 +5,7 @@
   const STORE = "wms-bb-sep-v1";
   const USER = "wms-bb-user";
 
-  // ---------- catálogo e pedidos de demonstração ----------
-  const PRODUTOS = [
-    { sku: "BK-29-ALU-18", ean: "7891000100011", desc: "Bicicleta Aro 29 Alumínio 21v Preta", tipo: "bike" },
-    { sku: "BK-26-ACO-RD", ean: "7891000100028", desc: "Bicicleta Aro 26 Aço Vermelha", tipo: "bike" },
-    { sku: "BK-20-INF-AZ", ean: "7891000100035", desc: "Bicicleta Infantil Aro 20 Azul", tipo: "bike" },
-    { sku: "CM-29-PRESTA", ean: "7891000200018", desc: "Câmara de Ar Aro 29 Presta", tipo: "peca" },
-    { sku: "CM-26-SCHRAD", ean: "7891000200025", desc: "Câmara de Ar Aro 26 Schrader", tipo: "peca" },
-    { sku: "PN-29-225", ean: "7891000200032", desc: "Pneu 29 x 2.25 Cravo", tipo: "peca" },
-    { sku: "CP-MTB-M-PT", ean: "7891000300015", desc: "Capacete MTB Tam. M Preto", tipo: "acess" },
-    { sku: "LV-GEL-G", ean: "7891000300022", desc: "Luva Gel Dedo Curto G", tipo: "acess" },
-    { sku: "SN-LED-USB", ean: "7891000300039", desc: "Sinalizador LED USB Traseiro", tipo: "acess" },
-    { sku: "CR-KMC-9V", ean: "7891000200049", desc: "Corrente KMC 9 Velocidades", tipo: "peca" },
-    { sku: "PD-PLAT-AL", ean: "7891000200056", desc: "Pedal Plataforma Alumínio", tipo: "peca" },
-    { sku: "GF-SQ-750", ean: "7891000300046", desc: "Garrafa Squeeze 750 ml", tipo: "acess" },
-    { sku: "BM-PISO-AL", ean: "7891000300053", desc: "Bomba de Piso com Manômetro", tipo: "acess" },
-    { sku: "SL-GEL-CONF", ean: "7891000200063", desc: "Selim Gel Conforto", tipo: "peca" },
-  ];
-  const ENDERECOS = {
-    "BK-29-ALU-18": "A-01-1-02", "BK-26-ACO-RD": "A-01-1-05", "BK-20-INF-AZ": "A-02-1-01",
-    "CM-29-PRESTA": "B-03-2-04", "CM-26-SCHRAD": "B-03-2-06", "PN-29-225": "B-04-1-02",
-    "CP-MTB-M-PT": "C-01-3-01", "LV-GEL-G": "C-02-2-03", "SN-LED-USB": "C-02-3-05",
-    "CR-KMC-9V": "B-05-2-01", "PD-PLAT-AL": "B-05-3-02", "GF-SQ-750": "C-03-1-04",
-    "BM-PISO-AL": "C-04-1-01", "SL-GEL-CONF": "B-06-2-03",
-  };
-
-  function seed() {
-    const p = (sku, qtd) => {
-      const prod = PRODUTOS.find((x) => x.sku === sku);
-      return { ...prod, end: ENDERECOS[sku], qtd, sep: 0, status: "pendente", motivo: "" };
-    };
-    const o = (id, cliente, cidade, prio, hora, itens) => ({
-      id, cliente, cidade, prio, hora, status: "pendente", itens, inicio: null, fim: null, operador: null, atual: 0,
-    });
-    return [
-      o("PV-10421", "Pedal & Cia Bikes", "Recife · PE", "alta", "07:42", [p("BK-29-ALU-18", 2), p("CM-29-PRESTA", 6), p("CP-MTB-M-PT", 2), p("SN-LED-USB", 4)]),
-      o("PV-10422", "Bike Point Olinda", "Olinda · PE", "normal", "08:05", [p("BK-26-ACO-RD", 3), p("CM-26-SCHRAD", 5), p("PD-PLAT-AL", 2)]),
-      o("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", "alta", "08:31", [p("PN-29-225", 8), p("CM-29-PRESTA", 10), p("CR-KMC-9V", 6), p("SL-GEL-CONF", 4), p("BM-PISO-AL", 2)]),
-      o("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", "normal", "09:10", [p("BK-20-INF-AZ", 4), p("GF-SQ-750", 12), p("LV-GEL-G", 6)]),
-      o("PV-10425", "Mundo Pedal", "Jaboatão · PE", "normal", "09:48", [p("CP-MTB-M-PT", 3), p("LV-GEL-G", 3), p("SN-LED-USB", 3), p("GF-SQ-750", 6)]),
-    ].map(routeSort);
-  }
-
-  // rota: ordena itens pelo endereço (rua > prédio > nível > posição)
-  function routeSort(order) {
-    order.itens.sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
-    return order;
-  }
+  const { seedSeparacao: seed } = window.WMS;
 
   // ---------- estado ----------
   let orders = load();

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0E0E10">
+  <title>WMS Beach Bike · Conferência</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="conferencia.css">
+</head>
+<body class="pos">
+
+  <!-- ===== TOPO ===== -->
+  <header class="pos-top">
+    <img src="assets/logo.png" alt="Beach Bike Atacado" class="pos-logo">
+    <span class="pos-mod">Conferência</span>
+    <div class="pos-top-info">
+      <label class="pos-station">
+        <span>Posto</span>
+        <select id="station"><option>01</option><option>02</option><option>03</option></select>
+      </label>
+      <button id="opBtn" class="pos-op" title="Trocar conferente">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+        <span id="opName">—</span>
+      </button>
+      <span id="clock" class="pos-clock">--:--</span>
+      <a href="./" class="pos-link">Separação ↗</a>
+    </div>
+  </header>
+
+  <div class="pos-body">
+    <!-- ===== ESQUERDA ===== -->
+    <section class="pos-left">
+
+      <!-- fila de pedidos (sem pedido aberto) -->
+      <div id="queue" class="queue">
+        <div class="queue-head">
+          <div>
+            <h1>Pedidos para conferência</h1>
+            <p class="muted">Bipe a etiqueta do pedido ou clique em uma linha para abrir.</p>
+          </div>
+          <div class="seg">
+            <button class="seg-b active" data-q="aguardando">Aguardando <b id="qCountA">0</b></button>
+            <button class="seg-b" data-q="conferido">Conferidos <b id="qCountC">0</b></button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Pedido</th><th>Cliente</th><th>Cidade</th><th class="r">Itens</th><th class="r">Unid.</th><th>Separador</th><th>Situação</th></tr></thead>
+            <tbody id="queueBody"></tbody>
+          </table>
+          <p id="queueEmpty" class="tbl-empty" hidden></p>
+        </div>
+      </div>
+
+      <!-- pedido aberto -->
+      <div id="order" class="order-pane" hidden>
+        <div class="ord-head">
+          <div class="ord-id">
+            <span class="ord-label">Pedido</span>
+            <span id="oId" class="ord-num"></span>
+          </div>
+          <div class="ord-meta">
+            <p id="oClient" class="ord-client"></p>
+            <p id="oSub" class="muted"></p>
+          </div>
+          <span id="oTag" class="tag"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl items">
+            <thead><tr><th></th><th>Código</th><th>Descrição</th><th>Endereço</th><th class="r">Pedido</th><th class="r">Separado</th><th class="r">Conferido</th><th>Situação</th></tr></thead>
+            <tbody id="itemsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== DIREITA (display do caixa) ===== -->
+    <aside class="pos-right">
+      <div class="last">
+        <p class="last-label" id="lastLabel">Aguardando leitura</p>
+        <p class="last-desc" id="lastDesc">Bipe o código do pedido para começar</p>
+        <p class="last-code" id="lastCode">&nbsp;</p>
+        <div class="last-qty">
+          <span id="lastConf" class="lq-n">—</span>
+          <span class="lq-of">/ <span id="lastExp">—</span></span>
+        </div>
+      </div>
+
+      <form id="scanForm" class="pos-scan">
+        <label class="pos-mult" title="Quantidade (F4)">
+          <input id="mult" type="number" min="1" max="999" value="1" tabindex="-1">
+          <span>×</span>
+        </label>
+        <input id="scan" type="text" autocomplete="off" spellcheck="false" placeholder="Bipe o pedido…" autofocus>
+        <button class="pos-enter" type="submit" aria-label="Enviar">↵</button>
+      </form>
+      <p id="scanMsg" class="pos-msg">Leitor pronto</p>
+
+      <div class="totals">
+        <div class="tot"><span class="tot-l">Itens</span><span class="tot-n"><b id="tItens">0</b>/<span id="tItensT">0</span></span></div>
+        <div class="tot"><span class="tot-l">Unidades</span><span class="tot-n"><b id="tUn">0</b>/<span id="tUnT">0</span></span></div>
+        <div class="tot warn"><span class="tot-l">Divergências</span><span class="tot-n"><b id="tDiv">0</b></span></div>
+      </div>
+      <div class="pos-prog"><div id="prog"></div></div>
+
+      <button id="btnFinish" class="btn primary block pos-finish" disabled>Finalizar conferência <kbd>F10</kbd></button>
+    </aside>
+  </div>
+
+  <!-- ===== ATALHOS ===== -->
+  <footer class="pos-keys">
+    <span><kbd>F2</kbd> Fila de pedidos</span>
+    <span><kbd>F4</kbd> Quantidade</span>
+    <span><kbd>F6</kbd> Estornar última leitura</span>
+    <span><kbd>F8</kbd> Recomeçar pedido</span>
+    <span><kbd>F10</kbd> Finalizar</span>
+    <span><kbd>Esc</kbd> Limpar</span>
+    <span class="pos-keys-tip">Dica: digite <code>5*7891000200018</code> para lançar 5 unidades</span>
+  </footer>
+
+  <!-- ===== MODAIS ===== -->
+  <div id="modalScrim" class="m-scrim" hidden></div>
+
+  <div id="mFinish" class="modal" hidden>
+    <h2 id="fTitle">Finalizar conferência</h2>
+    <p id="fSub" class="muted"></p>
+    <div id="fDiv" class="f-div"></div>
+    <label class="field">
+      <span>Quantidade de volumes</span>
+      <input id="fVol" type="number" min="1" value="1">
+    </label>
+    <div class="m-actions">
+      <button class="btn ghost" data-close>Voltar <kbd>Esc</kbd></button>
+      <button id="fGo" class="btn primary">Confirmar <kbd>Enter</kbd></button>
+    </div>
+  </div>
+
+  <div id="mOp" class="modal modal-sm" hidden>
+    <h2>Conferente</h2>
+    <form id="opForm">
+      <label class="field">
+        <span>Nome</span>
+        <input id="opInput" type="text" maxlength="30" required autocomplete="off">
+      </label>
+      <div class="m-actions">
+        <button class="btn primary" type="submit">Entrar</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="mDone" class="modal modal-sm done-modal" hidden>
+    <div class="done-check">
+      <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+    </div>
+    <h2 id="dTitle">Pedido conferido</h2>
+    <p id="dSub" class="muted"></p>
+    <button id="dGo" class="btn primary block">Próximo pedido <kbd>Enter</kbd></button>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="data.js"></script>
+  <script src="conferencia.js"></script>
+</body>
+</html>
