@@ -53,8 +53,15 @@
     } catch {}
   }
 
+  const HOMES = { viewHome: "sep", viewEmbHome: "emb" };
   function show(id) {
     $$(".view").forEach((v) => (v.hidden = v.id !== id));
+    const mod = HOMES[id];
+    $("#tabbar").hidden = !mod;
+    if (mod) {
+      localStorage.setItem("wms-bb-mod", mod);
+      $$("#tabbar .tb").forEach((b) => b.classList.toggle("active", b.dataset.mod === mod));
+    }
     window.scrollTo(0, 0);
     document.querySelector('meta[name="theme-color"]').content = id === "viewLogin" ? "#ffffff" : "#F5F5F7";
   }
@@ -76,7 +83,16 @@
     user = $("#loginName").value.trim();
     if (!user) return;
     localStorage.setItem(USER, user);
-    renderHome(); show("viewHome");
+    goHome();
+  });
+
+  // ---------- módulos (barra inferior) ----------
+  function goHome(mod = localStorage.getItem("wms-bb-mod") || "sep") {
+    if (mod === "emb" && window.Embarque) window.Embarque.home();
+    else { renderHome(); show("viewHome"); }
+  }
+  $("#tabbar").addEventListener("click", (e) => {
+    const b = e.target.closest(".tb"); if (b) goHome(b.dataset.mod);
   });
 
   // ---------- home ----------
@@ -299,8 +315,9 @@
 
   // ---------- câmera (BarcodeDetector, quando disponível) ----------
   let stream, detecting = false;
-  if ("BarcodeDetector" in window) $("#camBtn").hidden = false;
-  $("#camBtn").addEventListener("click", async () => {
+  $$(".cam-btn").forEach((b) => (b.hidden = !("BarcodeDetector" in window)));
+  $("#camBtn").addEventListener("click", () => openCam(handleCode));
+  async function openCam(onCode) {
     try {
       const det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "code_39", "qr_code", "upc_a"] });
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -310,13 +327,13 @@
         if (!detecting) return;
         try {
           const r = await det.detect(v);
-          if (r.length) { stopCam(); handleCode(r[0].rawValue); return; }
+          if (r.length) { stopCam(); onCode(r[0].rawValue); return; }
         } catch {}
         requestAnimationFrame(loop);
       };
       loop();
     } catch { toast("Não foi possível abrir a câmera"); stopCam(); }
-  });
+  }
   function stopCam() {
     detecting = false;
     if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -325,9 +342,11 @@
   $("#camClose").addEventListener("click", stopCam);
 
   // ---------- menu ----------
-  $("#btnMenu").addEventListener("click", () => { $("#menuName").textContent = user; openSheet("sheetMenu"); });
+  $$(".menu-btn").forEach((b) => b.addEventListener("click", () => { $("#menuName").textContent = user; openSheet("sheetMenu"); }));
   $("#menuReset").addEventListener("click", () => {
-    orders = seed(); save(); closeSheets(); renderHome(); toast("Dados de demonstração reiniciados");
+    orders = seed(); save(); closeSheets();
+    document.dispatchEvent(new Event("wms:reset"));
+    goHome(); toast("Dados de demonstração reiniciados");
   });
   $("#menuLogout").addEventListener("click", () => {
     localStorage.removeItem(USER); user = ""; closeSheets();
@@ -335,7 +354,11 @@
   });
 
   // ---------- início ----------
-  if (user) { renderHome(); show("viewHome"); } else show("viewLogin");
+  // utilitários compartilhados com os outros módulos (embarque.js)
+  window.UI = { $, $$, esc, show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser: () => user, CHECK };
+
+  // inicia depois que todos os scripts carregarem
+  document.addEventListener("DOMContentLoaded", () => { if (user) goHome(); else show("viewLogin"); });
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

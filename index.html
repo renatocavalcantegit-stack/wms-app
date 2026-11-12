@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
   <section id="viewHome" class="view" hidden>
     <header class="appbar">
       <img src="assets/logo.png" alt="Beach Bike Atacado" class="appbar-logo">
-      <button id="btnMenu" class="icon-btn" aria-label="Menu">
+      <button id="btnMenu" class="icon-btn menu-btn" aria-label="Menu">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
       </button>
     </header>
@@ -110,7 +110,7 @@
       <form id="scanForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
         <input id="scanInput" type="text" inputmode="numeric" autocomplete="off" placeholder="Bipe ou digite o EAN / SKU">
-        <button type="button" id="camBtn" class="scan-cam" aria-label="Ler com a câmera" hidden>
+        <button type="button" id="camBtn" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
           <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
         </button>
       </form>
@@ -141,7 +141,161 @@
     </div>
   </section>
 
+  <!-- ===== EMBARQUE · CARGAS ===== -->
+  <section id="viewEmbHome" class="view" hidden>
+    <header class="appbar">
+      <img src="assets/logo.png" alt="Beach Bike Atacado" class="appbar-logo">
+      <button class="icon-btn menu-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+      </button>
+    </header>
+    <main class="home">
+      <div class="hello">
+        <p class="hello-kicker">Expedição</p>
+        <h1 class="hello-title">Embarque</h1>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><span id="eKpiAb" class="kpi-n">0</span><span class="kpi-l">Cargas abertas</span></div>
+        <div class="kpi"><span id="eKpiVol" class="kpi-n">0</span><span class="kpi-l">Volumes a embarcar</span></div>
+        <div class="kpi accent"><span id="eKpiOk" class="kpi-n">0</span><span class="kpi-l">Embarcadas</span></div>
+      </div>
+      <div class="tabs" id="eTabs">
+        <button class="tab active" data-filter="abertas">Abertas</button>
+        <button class="tab" data-filter="embarcadas">Embarcadas</button>
+      </div>
+      <div id="cargaList" class="orders"></div>
+    </main>
+  </section>
+
+  <!-- ===== EMBARQUE · CARREGAMENTO ===== -->
+  <section id="viewLoad" class="view pick" hidden>
+    <header class="pick-bar">
+      <button id="loadBack" class="icon-btn" aria-label="Voltar">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="pick-head">
+        <p id="lId" class="pick-order"></p>
+        <p id="lRota" class="pick-client"></p>
+      </div>
+      <button id="loadUndo" class="icon-btn" aria-label="Estornar última leitura">
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+      </button>
+    </header>
+
+    <div class="progress"><div id="lProgress" class="progress-fill"></div></div>
+
+    <main class="pick-main">
+      <div class="truck">
+        <div class="truck-l">
+          <span class="addr-label">Doca</span>
+          <b id="lDoca" class="truck-doca"></b>
+        </div>
+        <div class="truck-r">
+          <span class="truck-plate" id="lPlaca"></span>
+          <span class="truck-sub" id="lVeic"></span>
+        </div>
+        <div class="truck-count">
+          <b id="lLidos">0</b><span>/<span id="lTotal">0</span></span>
+          <small>volumes</small>
+        </div>
+      </div>
+
+      <div id="lLast" class="last-read">
+        <div class="lr-ico" id="lLastIco">
+          <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+        </div>
+        <div class="lr-txt">
+          <p id="lLastT" class="lr-t">Bipe a etiqueta do volume</p>
+          <p id="lLastS" class="lr-s">QR da etiqueta 80×60 ou digite pedido e volume (ex.: 10404 1)</p>
+        </div>
+      </div>
+
+      <form id="loadForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
+        <input id="loadInput" type="text" autocomplete="off" placeholder="Bipe ou digite a etiqueta">
+        <button type="button" id="loadCam" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        </button>
+      </form>
+
+      <div class="load-head">
+        <span>Ordem de carregamento</span>
+        <small>última entrega entra primeiro</small>
+      </div>
+      <div id="loadList" class="load-list"></div>
+    </main>
+
+    <footer class="pick-foot">
+      <button id="loadFinish" class="btn primary grow">Finalizar embarque</button>
+    </footer>
+  </section>
+
+  <!-- ===== EMBARQUE · CONCLUÍDO ===== -->
+  <section id="viewLoadDone" class="view done" hidden>
+    <div class="done-box">
+      <div class="done-check">
+        <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+      </div>
+      <h1 id="ldTitle">Carga embarcada</h1>
+      <p id="ldSub" class="muted"></p>
+      <div class="done-stats">
+        <div><span id="ldTime" class="kpi-n">–</span><span class="kpi-l">Tempo</span></div>
+        <div><span id="ldVol" class="kpi-n">0</span><span class="kpi-l">Volumes</span></div>
+        <div><span id="ldLacre" class="kpi-n">–</span><span class="kpi-l">Lacre</span></div>
+      </div>
+      <div id="ldMissing" class="done-list"></div>
+      <button id="ldBack" class="btn primary block">Voltar às cargas</button>
+    </div>
+  </section>
+
+  <nav id="tabbar" class="tabbar" hidden>
+    <button class="tb" data-mod="sep">
+      <svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
+      <span>Separação</span>
+    </button>
+    <button class="tb" data-mod="emb">
+      <svg viewBox="0 0 24 24"><path d="M2 6h11v10H2zM13 9h4l4 4v3h-8z"/><circle cx="6" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>
+      <span>Embarque</span>
+    </button>
+  </nav>
+
   <!-- ===== SHEETS ===== -->
+  <div id="sheetCarga" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <div>
+        <p id="scId" class="sheet-title"></p>
+        <p id="scSub" class="muted"></p>
+      </div>
+      <span id="scTag" class="tag"></span>
+    </div>
+    <div class="carga-facts">
+      <div><small>Veículo</small><b id="scVeic"></b></div>
+      <div><small>Motorista</small><b id="scMot"></b></div>
+      <div><small>Doca</small><b id="scDoca"></b></div>
+      <div><small>Saída</small><b id="scSaida"></b></div>
+    </div>
+    <div id="scList" class="sheet-list"></div>
+    <button id="scGo" class="btn primary block">Iniciar embarque</button>
+  </div>
+
+  <div id="sheetFinish" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p id="sfTitle" class="sheet-title">Finalizar embarque</p>
+    <p id="sfSub" class="muted"></p>
+    <div id="sfMissing" class="sheet-list"></div>
+    <label class="field">
+      <span>Número do lacre</span>
+      <input id="sfLacre" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: 004512">
+    </label>
+    <label class="field" id="sfObsWrap">
+      <span>Observação (volumes não embarcados)</span>
+      <input id="sfObs" type="text" maxlength="80" placeholder="Ex.: volume avariado, retorna à doca">
+    </label>
+    <button id="sfGo" class="btn primary block">Confirmar embarque</button>
+  </div>
+
+
   <div id="scrim" class="scrim" hidden></div>
 
   <div id="sheetStart" class="sheet" hidden>
@@ -198,7 +352,8 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="data.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="data.js?v=6"></script>
+  <script src="app.js?v=6"></script>
+  <script src="embarque.js?v=6"></script>
 </body>
 </html>

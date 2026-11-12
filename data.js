@@ -71,5 +71,37 @@ window.WMS = (() => {
     ].map(routeSort);
   };
 
-  return { PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, SEP_STORE: "wms-bb-sep-v1" };
+  // cargas montadas com pedidos já conferidos (volumes etiquetados)
+  // pedidos listados na ordem de ENTREGA; o carregamento é feito na ordem inversa
+  const seedEmbarque = () => {
+    const p = (id, cliente, cidade, volumes) => ({ id, cliente, cidade, volumes, lidos: [] });
+    const c = (id, rota, veiculo, placa, motorista, doca, saida, pedidos) => ({
+      id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, lacre: "", operador: null, log: [], obs: "",
+    });
+    return [
+      c("CG-0231", "Recife / RMR", "VUC", "QYK-4B21", "José Carlos", "02", "10:30", [
+        p("PV-10401", "Casa do Ciclista", "Recife · PE", 2),
+        p("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", 2),
+        p("PV-10421", "Pedal & Cia Bikes", "Recife · PE", 3),
+        p("PV-10425", "Mundo Pedal", "Jaboatão · PE", 2),
+      ]),
+      c("CG-0232", "Agreste", "Toco", "PCZ-7H90", "Severino Lima", "03", "11:15", [
+        p("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", 4),
+        p("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", 2),
+      ]),
+      c("CG-0233", "Sertão", "Truck", "RFA-2C33", "Antônio Neto", "01", "13:00", [
+        p("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", 3),
+        p("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", 5),
+      ]),
+    ];
+  };
+
+  // lê o código de uma etiqueta de volume: QR "PV-10404|1/3|..." ou digitado "10404 1", "PV-10404/1"
+  const parseVolume = (raw) => {
+    const s = String(raw).trim().toUpperCase();
+    const m = s.match(/^(?:PV-?)?(\d{3,})\s*[|/\-\s.]\s*(\d{1,3})(?:\s*\/\s*(\d{1,3}))?/);
+    return m ? { id: "PV-" + m[1], vol: +m[2], total: m[3] ? +m[3] : null } : null;
+  };
+
+  return { PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
 })();
