@@ -1,0 +1,9 @@
+{
+  "name": "wms-app",
+  "private": true,
+  "description": "WMS Beach Bike — app dos operadores e painéis de gestão",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
