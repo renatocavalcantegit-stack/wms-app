@@ -74,24 +74,26 @@ window.WMS = (() => {
   // cargas montadas com pedidos já conferidos (volumes etiquetados)
   // pedidos listados na ordem de ENTREGA; o carregamento é feito na ordem inversa
   const seedEmbarque = () => {
-    const p = (id, cliente, cidade, volumes) => ({ id, cliente, cidade, volumes, lidos: [] });
+    // obs: composição dos volumes informada na conferência (demonstração)
+    const p = (id, cliente, cidade, volumes, tipos, atencao = "", outro = "") =>
+      ({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Usuário Conferente", em: null } : null });
     const c = (id, rota, veiculo, placa, motorista, doca, saida, pedidos) => ({
       id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, lacre: "", operador: null, log: [], obs: "",
     });
     return [
       c("CG-0231", "Recife / RMR", "VUC", "QYK-4B21", "José Carlos", "02", "10:30", [
-        p("PV-10401", "Casa do Ciclista", "Recife · PE", 2),
-        p("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", 2),
-        p("PV-10421", "Pedal & Cia Bikes", "Recife · PE", 3),
-        p("PV-10425", "Mundo Pedal", "Jaboatão · PE", 2),
+        p("PV-10401", "Casa do Ciclista", "Recife · PE", 2, { caixa: 1, sacola: 1 }),
+        p("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", 2, { pneuaro: 1, caixa: 1 }),
+        p("PV-10421", "Pedal & Cia Bikes", "Recife · PE", 3, { caixa: 2, pneuaro: 1 }, "Vai ter acréscimo de 1 bicicleta"),
+        p("PV-10425", "Mundo Pedal", "Jaboatão · PE", 2, { aro: 1, sacola: 1 }),
       ]),
       c("CG-0232", "Agreste", "Toco", "PCZ-7H90", "Severino Lima", "03", "11:15", [
-        p("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", 4),
-        p("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", 2),
+        p("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", 4, { amarrado: 1, pneu: 2, caixa: 1 }, "Amarrado com 6 pneus aro 29"),
+        p("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", 2, { caixa: 2 }),
       ]),
       c("CG-0233", "Sertão", "Truck", "RFA-2C33", "Antônio Neto", "01", "13:00", [
-        p("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", 3),
-        p("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", 5),
+        p("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", 3, { bike: 1, caixa: 1, outro: 1 }, "", "Tubo de garfo"),
+        p("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", 5, { caixa: 3, quadro: 2 }, "Quadros envoltos em plástico bolha"),
       ]),
     ];
   };
@@ -131,5 +133,27 @@ window.WMS = (() => {
   // página de cada perfil
   const homeUrl = (perfil) => ({ conf: "conferencia.html", coord: "gestao.html" }[perfil] || "./");
 
-  return { USERS, PERFIS, session, login, logout, homeUrl, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
+  // ---------- observação dos volumes (conferência → Sankhya / embarque) ----------
+  // tipos de volume: [id, nome na tela, abreviação enviada ao ERP]
+  const VOL_TIPOS = [
+    ["caixa", "Caixa", "CX"], ["sacola", "Sacola", "SAC"], ["pneu", "Pneu", "PNEU"], ["aro", "Aro", "ARO"],
+    ["pneuaro", "Pneu + aro", "PNEU+ARO"], ["quadro", "Quadro", "QUADRO"], ["bike", "Bicicleta", "BIC"],
+    ["amarrado", "Amarrado", "AMARRADO"], ["outro", "Outro", ""],
+  ];
+  const semAcento = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+  // linhas [qtd, nome, abreviação] na ordem do cadastro
+  const obsLinhas = (obs) => VOL_TIPOS.filter(([id]) => obs && obs.tipos && obs.tipos[id] > 0)
+    .map(([id, nome, ab]) => [obs.tipos[id], id === "outro" ? obs.outro || "Outro" : nome, id === "outro" ? semAcento(obs.outro) || "OUTRO" : ab]);
+  const obsTotal = (obs) => (obs && obs.tipos ? Object.values(obs.tipos).reduce((t, n) => t + (n || 0), 0) : 0);
+  // texto gravado na observação do pedido no Sankhya (vai para os dados adicionais da NF-e)
+  const obsErp = (obs) => {
+    if (!obs) return "";
+    const t = obsTotal(obs);
+    let s = `[WMS] VOLUMES: ${obsLinhas(obs).map(([n, , ab]) => `${n} ${ab}`).join(" + ")} = ${t} VOL.`;
+    if (obs.atencao) s += ` | ATENCAO: ${semAcento(obs.atencao)}`;
+    return s;
+  };
+  const obsResumo = (obs) => obsLinhas(obs).map(([n, nome]) => `${n} ${nome}`).join(" · ");
+
+  return { USERS, PERFIS, session, login, logout, homeUrl, VOL_TIPOS, obsLinhas, obsTotal, obsErp, obsResumo, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
 })();

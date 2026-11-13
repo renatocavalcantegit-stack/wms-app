@@ -282,8 +282,11 @@
   }
 
   // ---------- finalizar ----------
+  // fin: pedido em finalização { o, fix (correção de volumes já conferidos), vol }
+  let fin = null;
   function openFinish() {
     if (!cur) return;
+    fin = { o: cur, fix: false, vol: 0 };
     const s = stats(cur);
     const rows = [];
     cur.itens.forEach((i) => {
@@ -334,19 +337,104 @@
   }
   $("#camClose").addEventListener("click", stopCam);
 
+  // corrigir volumes de um pedido já conferido (a partir das etiquetas): refaz quantidade + observação
+  function openFix(o) {
+    fin = { o, fix: true, vol: 0 };
+    $("#fTitle").textContent = "Corrigir volumes";
+    $("#fSub").textContent = `${o.id} · ${o.cliente} · a observação dos volumes será refeita e reenviada ao Sankhya`;
+    $("#fDiv").innerHTML = "";
+    $("#fGo").className = "btn primary";
+    $("#fGo").innerHTML = "Continuar <kbd>Enter</kbd>";
+    $("#fVol").value = o.conf.volumes || 1;
+    openModal("mFinish");
+    setTimeout(() => $("#fVol").select(), 30);
+  }
+
+  // ---------- observação dos volumes (obrigatória; a soma tem que bater com a quantidade) ----------
+  let obsDraft = null;
+  function goObs() {
+    if (!fin) return;
+    fin.vol = Math.min(99, Math.max(1, parseInt($("#fVol").value, 10) || 1));
+    const prev = fin.o.conf.obs;
+    // reaproveita o que já foi descrito (voltar / corrigir volumes)
+    obsDraft = prev ? { tipos: { ...prev.tipos }, outro: prev.outro || "", atencao: prev.atencao || "" } : { tipos: {}, outro: "", atencao: "" };
+    $("#oSub").textContent = `${fin.o.id} · ${fin.o.cliente} · ${fin.vol} volume${fin.vol > 1 ? "s" : ""}`;
+    $("#oOutro").value = obsDraft.outro;
+    $("#oAt").value = obsDraft.atencao;
+    renderObs();
+    openModal("mObs");
+    // tira o foco do campo de quantidade (senão as teclas 1–9 iriam para ele)
+    if (document.activeElement) document.activeElement.blur();
+    $("#mObs").focus();
+  }
+  const obsOk = () => W.obsTotal(obsDraft) === fin.vol && !(obsDraft.tipos.outro > 0 && !obsDraft.outro.trim());
+  function renderObs() {
+    const t = W.obsTotal(obsDraft), v = fin.vol;
+    $("#oTipos").innerHTML = W.VOL_TIPOS.map(([id, nome], i) => {
+      const n = obsDraft.tipos[id] || 0;
+      return `<div class="o-tipo ${n ? "on" : ""}">
+        <button class="o-add" data-add="${id}"><kbd>${i + 1}</kbd><span>${nome}</span></button>
+        <div class="o-q"><button class="o-m" data-sub="${id}" ${n ? "" : "disabled"} aria-label="Menos">−</button><b>${n}</b><button class="o-p" data-add="${id}" aria-label="Mais">+</button></div>
+      </div>`;
+    }).join("");
+    const outro = (obsDraft.tipos.outro || 0) > 0;
+    $("#oOutroF").hidden = !outro;
+    $("#oCount").className = "o-count " + (t === v ? "ok" : t > v ? "over" : "");
+    $("#oCount").innerHTML = `<b>${t} de ${v}</b><span>${t === v ? "volumes descritos" : t > v ? `${t - v} a mais que a quantidade` : `falta${v - t > 1 ? "m" : ""} ${v - t}`}</span>`;
+    $("#oErp").textContent = t ? W.obsErp(obsDraft) : "—";
+    const ok = obsOk();
+    $("#oGo").disabled = !ok;
+    $("#oGo").title = ok ? "" : outro && t === v ? 'Descreva o volume "Outro"' : `A soma dos volumes descritos (${t}) tem que ser igual à quantidade de volumes (${v})`;
+  }
+  function obsStep(id, d) {
+    const n = Math.max(0, (obsDraft.tipos[id] || 0) + d);
+    if (n) obsDraft.tipos[id] = n; else delete obsDraft.tipos[id];
+    renderObs();
+    if (id === "outro" && d > 0 && n === 1) setTimeout(() => $("#oOutro").focus(), 0);
+  }
+  $("#oTipos").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-add]"), m = e.target.closest("[data-sub]");
+    if (a) obsStep(a.dataset.add, 1); else if (m) obsStep(m.dataset.sub, -1);
+  });
+  $("#oOutro").addEventListener("input", () => { obsDraft.outro = $("#oOutro").value; renderObs(); });
+  $("#oAt").addEventListener("input", () => { obsDraft.atencao = $("#oAt").value; renderObs(); });
+  $("#oBack").addEventListener("click", () => openModal("mFinish"));
+  $("#oGo").addEventListener("click", confirmObs);
+
+  function confirmObs() {
+    if (!obsOk()) { beep(false); toast(W.obsTotal(obsDraft) !== fin.vol ? `Descreva os ${fin.vol} volumes antes de continuar` : 'Descreva o volume "Outro"'); return; }
+    const o = fin.o, tipos = {};
+    Object.entries(obsDraft.tipos).forEach(([k, n]) => { if (n > 0) tipos[k] = n; });
+    o.conf.obs = { tipos, outro: tipos.outro ? obsDraft.outro.trim() : "", atencao: obsDraft.atencao.trim(), por: user, em: Date.now() };
+    o.conf.volumes = fin.vol;
+    // integração (simulada): grava o bloco [WMS] na observação do pedido no Sankhya, sem apagar a do vendedor,
+    // e a quantidade de volumes no cabeçalho (sai na NF-e)
+    o.conf.erp = { observacao: W.obsErp(o.conf.obs), qtdVolumes: fin.vol, enviado: Date.now() };
+    if (fin.fix) {
+      save(); fin = null;
+      openPrint(o, printThenQueue);
+      toast(`Volumes de ${o.id} corrigidos · observação reenviada ao Sankhya`);
+      return;
+    }
+    doFinish();
+  }
+
   function doFinish() {
     const s = stats(cur), div = s.div > 0 || s.pend > 0;
-    Object.assign(cur.conf, { status: div ? "divergente" : "conferido", fim: Date.now(), posto: $("#station").value, conferente: user, volumes: Math.max(1, parseInt($("#fVol").value, 10) || 1) });
+    Object.assign(cur.conf, { status: div ? "divergente" : "conferido", fim: Date.now(), posto: $("#station").value, conferente: user, volumes: fin.vol });
+    fin = null;
     save();
     const mins = Math.max(1, Math.round((cur.conf.fim - cur.conf.inicio) / 60000));
     $("#dTitle").textContent = div ? "Conferido com divergência" : "Pedido conferido";
     $("#dSub").textContent = `${cur.id} · ${cur.conf.volumes} volume(s) · ${s.un} un. · ${mins} min`;
+    $("#dObs").textContent = W.obsResumo(cur.conf.obs);
     $("#dPrint").innerHTML = `Imprimir ${cur.conf.volumes} etiqueta${cur.conf.volumes > 1 ? "s" : ""} <kbd>Enter</kbd>`;
     $("#mDone .done-check").style.filter = div ? "hue-rotate(-110deg) saturate(1.6)" : "";
     openModal("mDone");
     beep(true);
+    toast("Observação dos volumes gravada no pedido do Sankhya");
   }
-  $("#fGo").addEventListener("click", doFinish);
+  $("#fGo").addEventListener("click", goObs);
   $("#dGo").addEventListener("click", () => { closeModal(); showQueue(); });
   $("#dPrint").addEventListener("click", printDone);
   $("#dPreview").addEventListener("click", () => openPrint(cur, true));
@@ -360,7 +448,9 @@
   function openPrint(o, fromDone = false) {
     if (!o) return;
     printOrder = o; printThenQueue = fromDone;
-    $("#pVol").value = o.conf.volumes || 1;
+    $("#pVol").textContent = o.conf.volumes || 1;
+    $("#pObs").hidden = !o.conf.obs;
+    if (o.conf.obs) $("#pObs").innerHTML = `<b>Volumes:</b> ${esc(W.obsResumo(o.conf.obs))}${o.conf.obs.atencao ? ` · <b>Atenção:</b> ${esc(o.conf.obs.atencao)}` : ""}`;
     renderPreview();
     openModal("mPrint");
   }
@@ -369,10 +459,8 @@
     $("#pSub").textContent = `${o.id} · ${o.cliente} · 80 × 60 mm`;
     $("#pPreview").innerHTML = Etiqueta.render(o);
   }
-  $("#pVol").addEventListener("input", () => {
-    const v = Math.min(99, Math.max(1, parseInt($("#pVol").value, 10) || 1));
-    printOrder.conf.volumes = v; save(); renderPreview();
-  });
+  // a quantidade não é mais editada aqui: corrigir refaz quantidade + observação (a soma tem que bater)
+  $("#pFix").addEventListener("click", () => openFix(printOrder));
   function doPrint() {
     const o = printOrder, back = printThenQueue;
     Etiqueta.print(o, () => {
@@ -406,10 +494,16 @@
     if (modal) {
       if (e.key === "Escape") {
         e.preventDefault();
+        if (modal === "mObs") { openModal("mFinish"); return; }
+        if (modal === "mFinish" && fin && fin.fix) { const o = fin.o; fin = null; openPrint(o, printThenQueue); return; }
         const back = modal === "mDone" || (modal === "mPrint" && printThenQueue);
         closeModal(); if (back) showQueue();
       }
-      if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); doFinish(); }
+      if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); goObs(); }
+      else if (e.key === "Enter" && modal === "mObs") { e.preventDefault(); if (e.target.id === "oBack") openModal("mFinish"); else confirmObs(); }
+      else if (modal === "mObs" && /^[1-9]$/.test(e.key) && !e.target.closest("input")) {
+        e.preventDefault(); const t = W.VOL_TIPOS[+e.key - 1]; if (t) obsStep(t[0], e.altKey ? -1 : 1);
+      }
       else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); printDone(); }
       else if (e.key === "Enter" && modal === "mPrint" && !e.target.closest("button")) { e.preventDefault(); doPrint(); }
       return;

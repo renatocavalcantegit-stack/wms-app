@@ -14,6 +14,11 @@ window.Embarque = (() => {
     let d;
     try { d = JSON.parse(localStorage.getItem(STORE)); } catch {}
     if (!Array.isArray(d) || !d.length) d = W.seedEmbarque();
+    else {
+      // dados salvos antes da observação dos volumes: completa com a do cenário de demonstração
+      const seed = new Map(W.seedEmbarque().flatMap((c) => c.pedidos).map((p) => [p.id, p.obs]));
+      d.forEach((c) => c.pedidos.forEach((p) => { if (p.obs === undefined) p.obs = seed.get(p.id) || null; }));
+    }
     importConferidos(d);
     return d;
   }
@@ -24,6 +29,14 @@ window.Embarque = (() => {
     let conf;
     try { conf = (JSON.parse(localStorage.getItem(W.CONF_STORE)) || {}).orders || []; } catch { conf = []; }
     const inCarga = new Set(d.flatMap((c) => c.pedidos.map((p) => p.id)));
+    // observação dos volumes informada na conferência vale também para pedidos que já estão em carga
+    // (a quantidade de volumes acompanha enquanto o pedido ainda não começou a ser bipado)
+    const confObs = new Map(conf.filter((o) => o.conf && o.conf.obs).map((o) => [o.id, o.conf]));
+    d.forEach((c) => c.pedidos.forEach((p) => {
+      const k = confObs.get(p.id); if (!k) return;
+      p.obs = k.obs;
+      if (!p.lidos.length && k.volumes) p.volumes = k.volumes;
+    }));
     const novos = conf.filter((o) => (o.conf.status === "conferido" || o.conf.status === "divergente") && !inCarga.has(o.id));
     if (!novos.length) return;
     let av = d.find((c) => c.id === "CG-AVULSA" && c.status !== "embarcada" && c.status !== "parcial");
@@ -31,7 +44,7 @@ window.Embarque = (() => {
       av = { id: "CG-AVULSA", rota: "Avulsa", veiculo: "A definir", placa: "—", motorista: "—", doca: "01", saida: "—", pedidos: [], status: "aberta", inicio: null, fim: null, lacre: "", operador: null, log: [], obs: "" };
       d.unshift(av);
     }
-    novos.forEach((o) => av.pedidos.push({ id: o.id, cliente: o.cliente, cidade: o.cidade, volumes: o.conf.volumes || 1, lidos: [] }));
+    novos.forEach((o) => av.pedidos.push({ id: o.id, cliente: o.cliente, cidade: o.cidade, volumes: o.conf.volumes || 1, lidos: [], obs: o.conf.obs || null }));
   }
 
   document.addEventListener("wms:reset", () => {
@@ -101,7 +114,8 @@ window.Embarque = (() => {
     $("#scList").innerHTML = loadOrder(c).map((p, k) => `<div class="line">
       <span class="load-n">${k + 1}º</span>
       <span class="line-desc"><b>${p.id}</b> · ${esc(p.cliente)}<small>${esc(p.cidade)}</small></span>
-      <span class="line-q">${p.lidos.length}/${p.volumes} vol.</span></div>`).join("");
+      ${obsBtn(p)}<span class="line-q">${p.lidos.length}/${p.volumes} vol.</span></div>`).join("");
+    obsBack = "sheetCarga";
     const go = $("#scGo");
     go.dataset.id = c.id;
     go.hidden = done(c);
@@ -141,7 +155,7 @@ window.Embarque = (() => {
       return `<div class="lp ${ok ? "ok" : ""} ${next === p ? "next" : ""}">
         <span class="load-n">${ok ? CHECK : k + 1 + "º"}</span>
         <div class="lp-body">
-          <p class="lp-t"><b>${p.id}</b> <span>${p.lidos.length}/${p.volumes}</span></p>
+          <p class="lp-t"><b>${p.id}</b>${obsBtn(p)}<span>${p.lidos.length}/${p.volumes}</span></p>
           <p class="lp-s">${esc(p.cliente)} · ${esc(p.cidade)}</p>
           <div class="vchips">${chips}</div>
         </div>
@@ -208,6 +222,30 @@ window.Embarque = (() => {
     const i = $("#loadInput"); const v = i.value; i.value = ""; handle(v);
   });
   $("#loadCam").addEventListener("click", () => openCam(handle));
+
+  // ---------- observação dos volumes (informada na conferência) ----------
+  let obsBack = null;
+  const ICON_OBS = '<svg viewBox="0 0 24 24"><path d="M5 4h14v12H9l-4 4z"/><path d="M9 9h6M9 12h4"/></svg>';
+  const obsBtn = (p) => p.obs ? `<button type="button" class="obs-btn ${p.obs.atencao ? "warn" : ""}" data-obs="${p.id}" aria-label="Observações do pedido ${p.id}">${ICON_OBS}Obs.</button>` : "";
+  function openObs(id, back) {
+    const c = cur && cur.pedidos.some((x) => x.id === id) ? cur : cargas.find((x) => x.pedidos.some((p) => p.id === id));
+    const p = c.pedidos.find((x) => x.id === id), o = p.obs;
+    obsBack = back;
+    $("#soId").textContent = `${p.id} · ${p.volumes} volume${p.volumes > 1 ? "s" : ""}`;
+    $("#soCli").textContent = `${p.cliente} · ${p.cidade}`;
+    $("#soList").innerHTML = W.obsLinhas(o).map(([n, nome]) => `<div class="so-row"><b>${n}</b><span>${esc(nome)}</span></div>`).join("");
+    $("#soAt").hidden = !o.atencao;
+    $("#soAtT").textContent = o.atencao || "";
+    const em = o.em ? new Date(o.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+    $("#soPor").textContent = `Conferido por ${o.por || "—"}${em ? ` às ${em}` : ""}`;
+    openSheet("sheetObs");
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-obs]"); if (!b) return;
+    e.stopPropagation();
+    openObs(b.dataset.obs, $("#sheetCarga").hidden ? null : "sheetCarga");
+  }, true);
+  $("#soClose").addEventListener("click", () => (obsBack ? openSheet(obsBack) : closeSheets()));
 
   // lançamento manual (etiqueta danificada)
   $("#loadList").addEventListener("click", (e) => {

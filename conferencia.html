@@ -15,9 +15,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=12">
-  <link rel="stylesheet" href="conferencia.css?v=12">
-  <link rel="stylesheet" href="etiqueta.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="conferencia.css?v=13">
+  <link rel="stylesheet" href="etiqueta.css?v=13">
 </head>
 <body class="pos">
 
@@ -153,6 +153,36 @@
     </div>
   </div>
 
+  <!-- observação dos volumes: entre a quantidade de volumes e a impressão das etiquetas -->
+  <div id="mObs" class="modal modal-obs" tabindex="-1" hidden>
+    <div class="m-head">
+      <div>
+        <h2>Observações dos volumes</h2>
+        <p id="oSub" class="muted"></p>
+      </div>
+      <div id="oCount" class="o-count"></div>
+    </div>
+    <p class="o-hint">Descreva como os volumes foram embalados, como você escreveria no pedido: <b>2 caixas, 1 pneu + aro</b>…
+      Ajuda quem faz o carregamento a encontrar cada volume. <span class="o-keys">Teclas <kbd>1</kbd>–<kbd>9</kbd> somam um volume do tipo · <kbd>Alt</kbd>+número tira.</span></p>
+    <div id="oTipos" class="o-tipos"></div>
+    <label id="oOutroF" class="field" hidden>
+      <span>Descreva o "Outro"</span>
+      <input id="oOutro" type="text" maxlength="40" placeholder="Ex.: tubo de garfo, rolo de cabo…" autocomplete="off">
+    </label>
+    <label class="field">
+      <span>Atenção <small class="muted">(opcional)</small></span>
+      <input id="oAt" type="text" maxlength="160" placeholder="Ex.: vai ter acréscimo de 1 bicicleta" autocomplete="off">
+    </label>
+    <div class="o-erp">
+      <span>Vai para a observação do pedido no Sankhya (sai nos dados adicionais da nota)</span>
+      <code id="oErp"></code>
+    </div>
+    <div class="m-actions">
+      <button id="oBack" class="btn ghost">Voltar <kbd>Esc</kbd></button>
+      <button id="oGo" class="btn primary">Confirmar <kbd>Enter</kbd></button>
+    </div>
+  </div>
+
   <div id="mOp" class="modal modal-sm" hidden>
     <h2 id="opUser"></h2>
     <p class="muted">Perfil: Conferência</p>
@@ -168,6 +198,7 @@
     </div>
     <h2 id="dTitle">Pedido conferido</h2>
     <p id="dSub" class="muted"></p>
+    <p id="dObs" class="d-obs"></p>
     <button id="dPrint" class="btn primary block">Imprimir etiquetas <kbd>Enter</kbd></button>
     <div class="m-actions m-split">
       <button id="dPreview" class="btn ghost">Pré-visualizar</button>
@@ -181,11 +212,13 @@
         <h2>Etiquetas de volume</h2>
         <p id="pSub" class="muted"></p>
       </div>
-      <label class="field field-inline">
+      <div class="p-vol">
         <span>Volumes</span>
-        <input id="pVol" type="number" min="1" max="99">
-      </label>
+        <b id="pVol">1</b>
+        <button id="pFix" class="btn ghost sm">Corrigir volumes</button>
+      </div>
     </div>
+    <p id="pObs" class="p-obs" hidden></p>
     <div id="pPreview" class="lb-preview"></div>
     <div class="m-actions">
       <button class="btn ghost" data-close>Fechar <kbd>Esc</kbd></button>
@@ -204,9 +237,9 @@
 
   <div id="printArea"></div>
 
-  <script src="vendor/qrcode.js?v=12"></script>
-  <script src="data.js?v=12"></script>
-  <script src="etiqueta.js?v=12"></script>
-  <script src="conferencia.js?v=12"></script>
+  <script src="vendor/qrcode.js?v=13"></script>
+  <script src="data.js?v=13"></script>
+  <script src="etiqueta.js?v=13"></script>
+  <script src="conferencia.js?v=13"></script>
 </body>
 </html>
