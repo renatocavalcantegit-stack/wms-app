@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0E0E10">
+  <title>WMS Beach Bike · Gestão de Montagem</title>
+  <script>
+    try { var s = JSON.parse(localStorage.getItem("wms-bb-session")); if (!s || s.perfil !== "coordmont") location.replace("./"); }
+    catch (e) { location.replace("./"); }
+  </script>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="gestao.css?v=15">
+</head>
+<body class="gx mont" data-setor="mont">
+
+  <header class="gx-top">
+    <img src="assets/logo.png" alt="Beach Bike Atacado" class="gx-logo">
+    <span class="gx-mod">Gestão de Montagem</span>
+
+    <nav class="gx-tabs" id="tabs">
+      <button class="gx-tab" data-board="sep">
+        <svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
+        Separação <b id="tbSep">0</b>
+      </button>
+      <button class="gx-tab" data-board="conf">
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+        Conferência <b id="tbConf">0</b>
+      </button>
+      <button class="gx-tab soon" data-board="emb" disabled title="Embarque da montagem · em breve">
+        <svg viewBox="0 0 24 24"><path d="M2 6h11v10H2zM13 9h4l4 4v3h-8z"/><circle cx="6" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>
+        Embarque <em>Em breve</em>
+      </button>
+    </nav>
+
+    <div class="gx-tools">
+      <label class="gx-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="search" type="text" placeholder="Pedido OP, separador, conferente…" autocomplete="off">
+      </label>
+      <button id="simBtn" class="gx-sim" title="Simula o andamento da operação (separadores e conferentes)">
+        <i></i><span>Simulação ao vivo</span>
+      </button>
+      <button id="userBtn" class="gx-user">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+        <span id="userName"></span>
+      </button>
+    </div>
+  </header>
+
+  <div class="gx-sub">
+    <div class="gx-sub-l">
+      <h1 id="boardTitle"></h1>
+      <div id="kpis" class="gx-kpis"></div>
+    </div>
+    <div id="actions" class="gx-actions"></div>
+  </div>
+
+  <main id="board" class="gx-board"></main>
+
+  <!-- detalhe do pedido -->
+  <div id="drScrim" class="gx-scrim" hidden></div>
+  <aside id="drawer" class="gx-drawer" hidden></aside>
+
+  <!-- modais -->
+  <div id="mScrim" class="gx-scrim top" hidden></div>
+  <div id="modal" class="gx-modal" hidden></div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="data.js?v=15"></script>
+  <script src="gestao-regras.js?v=15"></script>
+  <script src="gestao.js?v=15"></script>
+</body>
+</html>

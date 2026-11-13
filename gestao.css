@@ -343,3 +343,25 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 .gx-modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .m-act { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .m-act .btn { height: 46px; }
+
+/* ===================== montagem / setor das pessoas ===================== */
+.gx.mont .gx-mod { color: #fff; background: var(--ink); }
+.gx-tab.soon { opacity: .5; cursor: not-allowed; }
+.gx-tab.soon em { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; background: rgba(0,0,0,.08); padding: 2px 6px; border-radius: 5px; }
+.rt.op { background: var(--ink); color: #fff; letter-spacing: .6px; padding: 3px 8px; }
+.card.op .c-main .c-age { font-size: 11px; }
+.card.op .cb { margin-right: 2px; }
+.card.op.sel { border-color: var(--red-brand); background: #FFF4F4; }
+.card.op.sel .cb { background: var(--red-brand); border-color: var(--red-brand); }
+.c-skip { align-self: flex-start; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px dashed #B4B4BC; font-size: 11.5px; font-weight: 700; color: var(--ink-2); background: #fff; }
+.c-skip:hover { border-style: solid; border-color: var(--ink); color: var(--ink); }
+.sx-tag { font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
+.sx-tag.mont { background: var(--ink); color: #fff; }
+.sx-tag.exp { background: var(--red-soft); color: var(--red); }
+.st.away { color: var(--ink-3); } .st.away i { background: #C9C9D1; }
+.col.away .col-head { opacity: .8; }
+.col.away .avatar { filter: grayscale(.7); }
+.col.done-col { background: #E4F3EA; }
+.col.done-col .ch-sub { color: var(--ok); }
+.card.cc.fin { cursor: pointer; }
+.card.cc.fin .cc-sub em.skip { font-style: normal; font-weight: 700; color: var(--warn); }

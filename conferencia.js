@@ -2,13 +2,18 @@
 (() => {
   "use strict";
 
-  const STORE = "wms-bb-conf-v1";
   const W = window.WMS;
 
   // acesso exclusivo do perfil Conferência
   const sess = W.session();
   if (!sess || sess.perfil !== "conf") { location.replace("./"); return; }
   const user = sess.nome;
+
+  // setor: Expedição (volumes, observação, etiquetas) ou Montagem (pedidos OP, sem volumes/etiquetas)
+  const SEM_SETOR = !sess.setor;
+  const SETOR = sess.setor || "exp", MONT = SETOR === "mont";
+  const STORE = W.stores(SETOR).conf;
+  document.body.classList.toggle("setor-mont", MONT);
 
   // aparelho de toque (celular/tablet): sem foco automático e com câmera
   const TOUCH = matchMedia("(pointer: coarse)").matches;
@@ -21,7 +26,7 @@
   function load() {
     let d;
     try { d = JSON.parse(localStorage.getItem(STORE)); } catch {}
-    if (!d || !Array.isArray(d.orders)) d = { orders: W.seedConferencia().map(prep) };
+    if (!d || !Array.isArray(d.orders)) d = { orders: (MONT ? W.seedConferenciaMont() : W.seedConferencia()).map(prep) };
     importFromSeparacao(d);
     return d;
   }
@@ -36,7 +41,7 @@
   // traz pedidos concluídos na Separação (mesmo navegador)
   function importFromSeparacao(d) {
     let sep;
-    try { sep = JSON.parse(localStorage.getItem(W.SEP_STORE)) || []; } catch { sep = []; }
+    try { sep = JSON.parse(localStorage.getItem(W.stores(SETOR).sep)) || []; } catch { sep = []; }
     sep.filter((o) => o.status === "concluido").forEach((o) => {
       const ex = d.orders.find((x) => x.id === o.id);
       if (ex && ex.fim === o.fim) return;
@@ -101,8 +106,8 @@
     $("#queueBody").innerHTML = list.map((o) => {
       const faltaSep = o.itens.some((i) => i.status === "falta");
       const tag = o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência</span>`
-        : o.conf.status === "conferido" ? `<span class="tag ok">Conferido · ${o.conf.volumes} vol.</span>`
-        : o.conf.status === "divergente" ? `<span class="tag div">Com divergência · ${o.conf.volumes} vol.</span>`
+        : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
+        : o.conf.status === "divergente" ? `<span class="tag div">Com divergência${MONT ? "" : ` · ${o.conf.volumes} vol.`}</span>`
         : faltaSep ? `<span class="tag parcial">Falta na separação</span>`
         : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Aguardando</span>`;
       return `<tr data-id="${o.id}">
@@ -212,8 +217,9 @@
     resetMult();
 
     // código de pedido?
-    const pid = code.split("|")[0].trim().toUpperCase().replace(/^PV-?/, "");
-    const ord = db.orders.find((o) => o.id.replace("PV-", "") === pid);
+    const num = (x) => x.trim().toUpperCase().replace(/^(PV|OP)-?/, "");
+    const pid = num(code.split("|")[0]);
+    const ord = db.orders.find((o) => num(o.id) === pid);
     if (ord && (!cur || !W.find(code))) {
       if (cur && cur !== ord) { setMsg(`Finalize ou volte à fila (F2) antes de abrir ${ord.id}.`, "err"); beep(false); return; }
       if (!cur) return openOrder(ord);
@@ -297,13 +303,14 @@
     cur.conf.fora.forEach((f) => rows.push(`<div class="f-row"><span class="tag fora">Fora</span><span>${esc(f.desc)}</span><b>+${f.q}</b></div>`));
     const div = rows.length > 0;
     $("#fTitle").textContent = div ? "Finalizar com divergência?" : "Finalizar conferência";
-    $("#fSub").textContent = `${cur.id} · ${cur.cliente} · ${s.un} de ${s.unT} unidades conferidas`;
+    $("#fSub").textContent = `${cur.id} · ${cur.cliente} · ${s.un} de ${s.unT} unidades conferidas${MONT ? " · segue para a montagem" : ""}`;
+    $("#fVolF").hidden = MONT;
     $("#fDiv").innerHTML = rows.join("");
     $("#fGo").className = "btn " + (div ? "danger" : "primary");
     $("#fGo").innerHTML = (div ? "Finalizar com divergência" : "Confirmar") + " <kbd>Enter</kbd>";
     $("#fVol").value = cur.conf.volumes || Math.max(1, Math.ceil(s.un / 10));
     openModal("mFinish");
-    setTimeout(() => $("#fVol").select(), 30);
+    setTimeout(() => (MONT ? $("#fGo").focus() : $("#fVol").select()), 30);
   }
   $("#btnFinish").addEventListener("click", openFinish);
   $("#btnFinishM").addEventListener("click", openFinish);
@@ -343,6 +350,7 @@
     $("#fTitle").textContent = "Corrigir volumes";
     $("#fSub").textContent = `${o.id} · ${o.cliente} · a observação dos volumes será refeita e reenviada ao Sankhya`;
     $("#fDiv").innerHTML = "";
+    $("#fVolF").hidden = false;
     $("#fGo").className = "btn primary";
     $("#fGo").innerHTML = "Continuar <kbd>Enter</kbd>";
     $("#fVol").value = o.conf.volumes || 1;
@@ -354,6 +362,8 @@
   let obsDraft = null;
   function goObs() {
     if (!fin) return;
+    // montagem: sem volumes, observação e etiquetas — finaliza direto
+    if (MONT && !fin.fix) { fin.vol = 0; return doFinish(); }
     fin.vol = Math.min(99, Math.max(1, parseInt($("#fVol").value, 10) || 1));
     const prev = fin.o.conf.obs;
     // reaproveita o que já foi descrito (voltar / corrigir volumes)
@@ -425,6 +435,16 @@
     fin = null;
     save();
     const mins = Math.max(1, Math.round((cur.conf.fim - cur.conf.inicio) / 60000));
+    $("#mDone").classList.toggle("mont", MONT);
+    if (MONT) {
+      $("#dTitle").textContent = div ? "Conferido com divergência" : "Pedido conferido";
+      $("#dSub").textContent = `${cur.id} · ${s.un} un. · ${mins} min · liberado para a montagem`;
+      $("#dObs").textContent = "";
+      $("#mDone .done-check").style.filter = div ? "hue-rotate(-110deg) saturate(1.6)" : "";
+      openModal("mDone"); beep(true);
+      toast(`${cur.id} liberado para a montagem`);
+      return;
+    }
     $("#dTitle").textContent = div ? "Conferido com divergência" : "Pedido conferido";
     $("#dSub").textContent = `${cur.id} · ${cur.conf.volumes} volume(s) · ${s.un} un. · ${mins} min`;
     $("#dObs").textContent = W.obsResumo(cur.conf.obs);
@@ -476,10 +496,30 @@
   function openModal(id) { modal = id; $("#modalScrim").hidden = false; $$(".modal").forEach((m) => (m.hidden = m.id !== id)); }
   function closeModal() { modal = null; $("#modalScrim").hidden = true; $$(".modal").forEach((m) => (m.hidden = true)); focusScan(); }
   $$("[data-close]").forEach((b) => b.addEventListener("click", closeModal));
-  $("#modalScrim").addEventListener("click", closeModal);
+  $("#modalScrim").addEventListener("click", () => { if (!(modal === "mSetor" && SEM_SETOR)) closeModal(); });
 
   // usuário logado / sair
-  $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; openModal("mOp"); });
+  $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; $("#opSetor").textContent = W.SETORES[SETOR]; openModal("mOp"); });
+
+  // ---------- setor ----------
+  function openSetor() {
+    $$("#mSetor .sx-opt").forEach((b) => b.classList.toggle("cur", !SEM_SETOR && b.dataset.setor === SETOR));
+    $("#sxBack").hidden = SEM_SETOR; $("#sxOut").hidden = !SEM_SETOR;
+    openModal("mSetor");
+  }
+  function pickSetor(x) {
+    if (!SEM_SETOR && x === SETOR) { closeModal(); return; }
+    if (cur && cur.conf.status === "andamento") toast(`${cur.id} fica em conferência na ${W.SETORES[SETOR]}`);
+    W.setSetor(x); location.reload();
+  }
+  $("#mSetor .sx-opts").addEventListener("click", (e) => { const b = e.target.closest("[data-setor]"); if (b) pickSetor(b.dataset.setor); });
+  $("#sxOut").addEventListener("click", () => { W.logout(); location.replace("./"); });
+  $("#setorBtn").addEventListener("click", openSetor);
+  $("#opSetorBtn").addEventListener("click", openSetor);
+  $("#setorT").textContent = W.SETORES[SETOR];
+  $("#setorBtn").classList.toggle("mont", MONT);
+  $("#setorBtn").hidden = SEM_SETOR;
+  if (MONT) { $("#dGo").className = "btn primary"; $("#dGo").innerHTML = "Voltar à fila <kbd>Enter</kbd>"; }
   $("#opLogout").addEventListener("click", () => { W.logout(); location.replace("./"); });
 
   // ---------- foco do leitor + atalhos ----------
@@ -492,6 +532,11 @@
 
   document.addEventListener("keydown", (e) => {
     if (modal) {
+      if (modal === "mSetor") {
+        if (e.key === "1" || e.key === "2") { e.preventDefault(); pickSetor(e.key === "1" ? "exp" : "mont"); }
+        else if (e.key === "Escape" && !SEM_SETOR) { e.preventDefault(); closeModal(); }
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         if (modal === "mObs") { openModal("mFinish"); return; }
@@ -504,7 +549,7 @@
       else if (modal === "mObs" && /^[1-9]$/.test(e.key) && !e.target.closest("input")) {
         e.preventDefault(); const t = W.VOL_TIPOS[+e.key - 1]; if (t) obsStep(t[0], e.altKey ? -1 : 1);
       }
-      else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); printDone(); }
+      else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); if (MONT) { closeModal(); showQueue(); } else printDone(); }
       else if (e.key === "Enter" && modal === "mPrint" && !e.target.closest("button")) { e.preventDefault(); doPrint(); }
       return;
     }
@@ -525,5 +570,6 @@
   $("#opName").textContent = user;
   const open = db.orders.find((o) => o.conf.status === "andamento");
   showQueue();
-  if (open) toast(`${open.id} está em conferência — clique para continuar`);
+  if (SEM_SETOR) openSetor();
+  else if (open) toast(`${open.id} está em conferência — clique para continuar`);
 })();

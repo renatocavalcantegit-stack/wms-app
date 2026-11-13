@@ -306,3 +306,14 @@ tr.excesso .s-dot, tr.fora .s-dot { background: var(--red); }
 }
 @media (pointer: coarse) { .o-keys { display: none; } }
 .modal-obs:focus { outline: none; }
+
+/* ---------- setor (Expedição / Montagem) ---------- */
+.pos-setor { margin: 0; height: 32px; cursor: pointer; }
+.modal-setor { width: min(560px, 94vw); }
+.modal-setor .sx-opts { margin: 14px 0 4px; }
+.modal-setor .sx-opt { padding: 16px 14px 16px 12px; cursor: pointer; }
+.modal-setor .sx-opt kbd { align-self: flex-start; }
+.modal-setor .sx-t b { font-size: 18px; }
+#mDone.mont #dPrint, #mDone.mont #dPreview, #mDone.mont #dObs { display: none; }
+#mDone.mont .m-split { grid-template-columns: 1fr; justify-content: stretch; }
+#mDone.mont #dGo { width: 100%; }

@@ -1,13 +1,15 @@
-// WMS Beach Bike — Gestão de Expedição (web)
-// Quadros estilo kanban (Separação, Conferência, Faturamento, Embarque) + Acompanhamento por rota.
+// WMS Beach Bike — Gestão de Expedição e Gestão de Montagem (web)
+// Expedição: quadros estilo kanban (Separação, Conferência, Faturamento, Embarque) + Acompanhamento por rota.
+// Montagem (montagem.html, body data-setor="mont"): pedidos OP com Separação e Conferência (ou conferência dispensada).
 (() => {
   "use strict";
 
   const W = window.WMS, R = window.Regras;
   const sess = W.session();
-  if (!sess || sess.perfil !== "coord") { location.replace("./"); return; }
+  const MONT = document.body.dataset.setor === "mont", SETOR = MONT ? "mont" : "exp";
+  if (!sess || sess.perfil !== (MONT ? "coordmont" : "coord")) { location.replace("./"); return; }
 
-  const STORE = "wms-bb-gestao-v2";
+  const STORE = MONT ? "wms-bb-gestao-mont-v1" : "wms-bb-gestao-v2";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -56,6 +58,15 @@
     lib: { people: FATS, nome: "Faturamento", verbo: "Faturando" },
     emb: { people: MOTS, nome: "Embarque", verbo: "Carregando" },
   };
+  if (MONT) { delete BOARDS.lib; delete BOARDS.emb; }
+  // setor em que cada separador / conferente está atuando agora (escolhido no app de cada um)
+  const setorOf = (id) => W.EQUIPE_SETOR[id] || "exp";
+  const aqui = (id) => setorOf(id) === SETOR;
+  const temSetor = (k) => k === "sep" || k === "conf";
+  // na montagem aparecem todos os separadores / conferentes; quem já está na montagem vem primeiro
+  const peopleOf = (k) => (MONT ? [...BOARDS[k].people].sort((a, b) => aqui(b.id) - aqui(a.id)) : BOARDS[k].people);
+  // quadro com seleção em lote: faturamento (expedição) ou conferência (montagem: pular conferência)
+  const SELB = MONT ? "conf" : "lib";
 
   // ---------- aleatório (semente fixa nos dados iniciais) ----------
   let rnd = Math.random;
@@ -123,6 +134,73 @@
     return p;
   }
 
+  // pedido de montagem: chega do Sankhya igual a um pedido normal; só o tipo de operação muda (prefixo OP)
+  function makeOP({ prio = false, chegada = now() } = {}) {
+    const pool = [...W.COMPONENTES, ...W.PRODUTOS.filter((x) => x.tipo === "peca")];
+    const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: W.ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
+      .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
+    const p = {
+      id: "OP-" + db.seq++, op: true, cli: null, vendedor: null, rota: null, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
+      itens, etapa: "sep", sep: blank(), conf: blank(), lib: { ...blank(), ordem: null }, volumes: 0, nota: null, carga: null, hist: [],
+    };
+    db.pedidos[p.id] = p;
+    log(p, "Pedido recebido via integração (Sankhya) · tipo de operação: montagem", chegada);
+    return p;
+  }
+
+  // dados iniciais da montagem
+  function seedMont() {
+    rnd = mulberry32(3301);
+    db = { v: 2, setor: "mont", seq: 3216, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
+    SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? rint(2, 5) : 0; });
+    CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? rint(2, 4) : 0; });
+    const t = now(), early = () => t - rint(70, 160) * MIN;
+    const stamp = (p, f) => Math.round(p.chegada + (t - 2 * MIN - p.chegada) * f);
+    const sepsAqui = SEPS.filter((x) => aqui(x.id)).map((x) => x.id), confsAqui = CONFS.filter((x) => aqui(x.id)).map((x) => x.id);
+    const sepDone = (p) => {
+      const r = pick(sepsAqui);
+      Object.assign(p.sep, { resp: r, atrib: stamp(p, 0.05), inicio: stamp(p, 0.1), fim: stamp(p, 0.45) }); fillUnits(p, "sep", 1);
+      log(p, `Separação atribuída a ${nameOf(r)}`, p.sep.atrib); log(p, `Separação iniciada por ${nameOf(r)}`, p.sep.inicio); log(p, `Separação finalizada por ${nameOf(r)}`, p.sep.fim);
+      p.etapa = "conf";
+    };
+    const assign = (p, k, resp, minsAgo) => { p[k].resp = resp; p[k].atrib = t - minsAgo * MIN; log(p, `${BOARDS[k].nome} atribuída a ${nameOf(resp)}`, p[k].atrib); };
+    const startAt = (p, k, frac, minsAgo) => { p[k].inicio = t - minsAgo * MIN; fillUnits(p, k, frac); log(p, `${BOARDS[k].nome} iniciada por ${nameOf(p[k].resp)}`, p[k].inicio); };
+
+    // caixa de entrada da separação
+    [{ chegada: t - 4 * MIN, prio: true }, { chegada: t - 13 * MIN }, { chegada: t - 26 * MIN }, { chegada: t - 44 * MIN }]
+      .forEach((o) => db.sep.inbox.push(makeOP(o).id));
+    // separadores que estão na montagem
+    Object.entries({ s5: [[0.75, 9], 0], s6: [[0.3, 3]] }).forEach(([sid, plan]) => plan.forEach((step) => {
+      const p = makeOP({ chegada: early() });
+      assign(p, "sep", sid, Array.isArray(step) ? step[1] + 2 : rint(2, 8));
+      if (Array.isArray(step)) startAt(p, "sep", step[0], step[1]);
+      db.sep.cols[sid].push(p.id);
+    }));
+    // conferência: separados aguardando, conferente na montagem
+    [0, 1, 2].forEach((i) => { const p = makeOP({ chegada: early(), prio: i === 1 }); sepDone(p); db.conf.inbox.push(p.id); });
+    Object.entries({ c4: [[0.5, 4], 0] }).forEach(([cid, plan]) => plan.forEach((step) => {
+      const p = makeOP({ chegada: early() }); sepDone(p);
+      assign(p, "conf", cid, Array.isArray(step) ? step[1] + 1 : rint(2, 6));
+      if (Array.isArray(step)) startAt(p, "conf", step[0], step[1]);
+      db.conf.cols[cid].push(p.id);
+    }));
+    // entregues à montagem hoje (conferidos e com conferência dispensada)
+    [false, true, false, true].forEach((pulada, i) => {
+      const p = makeOP({ chegada: t - (200 + i * 25) * MIN }); sepDone(p);
+      if (pulada) { p.confPulada = true; p.entregue = p.sep.fim + 3 * MIN; log(p, `Conferência dispensada por ${sess.nome} · entregue à montagem`, p.entregue); }
+      else {
+        const r = pick(confsAqui);
+        Object.assign(p.conf, { resp: r, atrib: p.sep.fim + MIN, inicio: p.sep.fim + 4 * MIN, fim: p.sep.fim + 15 * MIN }); fillUnits(p, "conf", 1);
+        log(p, `Conferência atribuída a ${nameOf(r)}`, p.conf.atrib); log(p, `Conferência iniciada por ${nameOf(r)}`, p.conf.inicio);
+        p.entregue = p.conf.fim; log(p, `Conferência finalizada por ${nameOf(r)} · entregue à montagem`, p.entregue);
+      }
+      p.etapa = "fim"; db.entregues.push(p.id);
+    });
+    db.entregues.sort((a, b) => P(b).entregue - P(a).entregue);
+    rnd = Math.random;
+    save();
+  }
+
   // carga montada no ERP (Sankhya) chega pronta e faturada
   function erpCarga(rid, ids, mot, ts = now()) {
     const vol = ids.reduce((t, id) => t + P(id).volumes, 0);
@@ -147,6 +225,7 @@
 
   // ---------- dados iniciais: cenário com operação em andamento ----------
   function seed() {
+    if (MONT) return seedMont();
     rnd = mulberry32(2026);
     db = {
       v: 2, seq: 10431, cargaSeq: 240, nfSeq: 236001, pedidos: {}, cargas: {}, mont: [],
@@ -271,14 +350,15 @@
   }
 
   function load() {
-    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 2 && d.pedidos) { db = d; return; } } catch {}
+    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 2 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
     seed();
   }
   const save = () => localStorage.setItem(STORE, JSON.stringify(db));
 
   // ---------- estado de tela ----------
-  let board = localStorage.getItem("wms-bb-gx-board") || "sep";
-  if (!["sep", "conf", "lib", "emb", "rota"].includes(board)) board = "sep";
+  const BKEY = MONT ? "wms-bb-gm-board" : "wms-bb-gx-board";
+  let board = localStorage.getItem(BKEY) || "sep";
+  if (!(MONT ? ["sep", "conf"] : ["sep", "conf", "lib", "emb", "rota"]).includes(board)) board = "sep";
   const filters = { sep: "todos", conf: "todos", lib: "todos", emb: "todas" };
   let acRota = localStorage.getItem("wms-bb-gx-acrota") || "todas", acF = "todos";
   let query = "";
@@ -287,7 +367,7 @@
   let flashId = null; // id ou lista de ids destacados no próximo render
   const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
   let dragId = null, dragGroup = null, pendingRender = false;
-  // seleção em lote na caixa de entrada do faturamento
+  // seleção em lote na caixa de entrada do faturamento (expedição) / da conferência (montagem)
   const sel = new Set();
   let libVisible = [];
 
@@ -378,7 +458,7 @@
 
   function move(k, id, toCol, idx, checked = false) {
     // regra: pedido sem rota não vai para separador sem antes definir a rota
-    if (!checked && k === "sep" && toCol !== "inbox" && !P(id).rota) return askRota(id, () => move(k, id, toCol, idx, true));
+    if (!MONT && !checked && k === "sep" && toCol !== "inbox" && !P(id).rota) return askRota(id, () => move(k, id, toCol, idx, true));
     const before = locate(k, id);
     const err = moveCore(k, id, toCol, idx);
     if (err) { toast(err); render(); return; }
@@ -403,6 +483,7 @@
     if (!ok) { toast(err || "Nada para mover"); render(); return; }
     flashId = ids;
     save(); render(); if (openRef) renderDrawer();
+    if (k !== "lib") return toast(`${ok} pedido(s) → ${toCol === "inbox" ? "caixa de entrada" : nameOf(toCol)}`);
     if (toCol === "inbox") return toast(`${ok} pedido(s) voltaram para a caixa · liberação cancelada no Sankhya`);
     const ords = ids.map((id) => P(id).lib.ordem).filter((n) => n != null);
     toast(`${ok} pedido(s) liberado(s) p/ ${nameOf(toCol)} · ordem ${Math.min(...ords)}–${Math.max(...ords)} enviada ao Sankhya`);
@@ -412,10 +493,29 @@
     if (ids.length) moveMany("lib", ids, fid, null);
   }
 
+  // montagem: o coordenador pode dispensar a conferência; o pedido segue direto para a montagem
+  function pularConf(ids) {
+    let ok = 0, err = null;
+    ids.forEach((id) => {
+      const p = P(id), loc = locate("conf", id);
+      if (!loc) return;
+      if (live(p, "conf")) { err = `${id} já está em conferência`; return; }
+      loc.list.splice(loc.list.indexOf(id), 1);
+      if (loc.col !== "inbox" && loc.list[0] && !live(P(loc.list[0]), "conf")) P(loc.list[0]).conf.atrib = now();
+      Object.assign(p.conf, { resp: null, atrib: null });
+      p.etapa = "fim"; p.confPulada = true; p.entregue = now(); db.entregues.unshift(id); sel.delete(id);
+      log(p, `Conferência dispensada por ${sess.nome} · entregue à montagem`); ok++;
+    });
+    if (!ok) { toast(err || "Nada para pular"); render(); return; }
+    flashId = ids; save(); render(); if (openRef) renderDrawer();
+    toast(ok === 1 ? `${ids.find((id) => P(id).confPulada)} entregue à montagem · conferência dispensada` : `${ok} pedidos entregues à montagem · conferência dispensada${err ? ` · ${err}` : ""}`);
+  }
+
   // ---------- status (acompanhamento e detalhe) ----------
   function statusOf(p) {
     const S = (txt, cls, grp, sub = "") => ({ txt, cls, grp, sub });
     const loc = locateP(p.id);
+    if (p.op && p.etapa === "fim") return S(p.confPulada ? "Entregue à montagem · sem conferência" : "Entregue à montagem", "done", "fim", p.entregue ? fmtTime(p.entregue) : "");
     if (p.etapa === "sep") {
       if (!loc || loc.col === "inbox") return S("Aguardando designar separador", "wait", "sep", p.rota ? "" : "sem rota");
       return live(p, "sep") ? S("Em separação", "work", "sep", `${pct(p, "sep")}%`) : S("Aguardando início da separação", "next", "sep", `${loc.list.indexOf(p.id) + 1}º na fila`);
@@ -437,7 +537,7 @@
   // ---------- render ----------
   function render(reset = false) {
     if (dragId) { pendingRender = true; return; }
-    [...sel].forEach((id) => { if (!db.lib.inbox.includes(id)) sel.delete(id); });
+    [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
     const b = $("#board");
     const scrolls = {}; if (!reset) $$(".gx-list").forEach((l) => (scrolls[l.dataset.col] = l.scrollTop));
     const bx = reset ? 0 : b.scrollLeft, by = reset ? 0 : b.scrollTop;
@@ -457,12 +557,13 @@
     $$(".gx-tab").forEach((x) => x.classList.toggle("active", x.dataset.board === board));
     $("#tbSep").textContent = db.sep.inbox.length;
     $("#tbConf").textContent = db.conf.inbox.length;
+    $("#simBtn").classList.toggle("on", sim);
+    $("#simBtn span").textContent = sim ? "Simulação ao vivo" : "Simulação pausada";
+    if (MONT) return renderTopMont();
     $("#tbLib").textContent = db.lib.inbox.length;
     $("#tbEmb").textContent = db.emb.inbox.length;
     const fora = Object.values(db.pedidos).filter(foraPend).length;
     $("#tbRota").textContent = fora; $("#tbRota").hidden = !fora;
-    $("#simBtn").classList.toggle("on", sim);
-    $("#simBtn span").textContent = sim ? "Simulação ao vivo" : "Simulação pausada";
 
     const td = hoje();
     const T = { sep: "Distribuição da separação", conf: "Distribuição da conferência", lib: "Liberação para faturamento", emb: "Embarque · cargas do ERP", rota: "Acompanhamento por rota" };
@@ -490,11 +591,26 @@
     $("#kpis").innerHTML = k; $("#actions").innerHTML = a;
   }
 
+  const entreguesHoje = () => db.entregues.filter((id) => sameDay(P(id).entregue));
+  function renderTopMont() {
+    $("#boardTitle").textContent = board === "sep" ? "Separação · pedidos de montagem" : "Conferência · pedidos de montagem";
+    const B = db[board], people = BOARDS[board].people, hojeN = people.reduce((t, x) => t + db.stats[x.id], 0);
+    const ent = entreguesHoje(), pul = ent.filter((id) => P(id).confPulada).length, eq = people.filter((x) => aqui(x.id)).length;
+    let k = kp(B.inbox.length, "na caixa de entrada") + kp(firstLive(board), board === "sep" ? "em separação" : "em conferência") + kp(queued(board), "na fila")
+      + kp(eq, board === "sep" ? (eq === 1 ? "separador na montagem" : "separadores na montagem") : (eq === 1 ? "conferente na montagem" : "conferentes na montagem"));
+    k += board === "sep" ? kp(hojeN, "separados hoje", "green") : kp(ent.length, "entregues à montagem hoje", "green") + (pul ? kp(pul, "sem conferência") : "");
+    const a = (board === "sep" ? `<button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>`
+      : `<span class="hint">Arraste para "Entregues à montagem" ou use "Pular conferência" para dispensar a conferência</span>`)
+      + `<button class="btn primary" data-act="autoDist">Distribuir automaticamente</button>`;
+    $("#kpis").innerHTML = k; $("#actions").innerHTML = a;
+  }
+
   // card de pedido
   function pedidoCard(p, k, o = {}) {
     const isL = live(p, k);
     const waiting = o.first && !isL && o.col !== "inbox";
-    const cls = ["card", !p.rota && "no-route", isL && "live", waiting && "waiting", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
+    const selc = MONT && k === "conf" && o.col === "inbox", s = selc && sel.has(p.id);
+    const cls = ["card", !p.rota && !p.op && "no-route", p.op && "op", isL && "live", waiting && "waiting", s && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
     const nums =`<span><b>${p.itens.length}</b> SKUs</span><span><b>${units(p)}</b> un.</span>${p.volumes ? `<span><b>${p.volumes}</b> vol.</span>` : ""}`;
     const age = o.col === "inbox" ? fmtAge(k === "sep" ? p.chegada : k === "conf" ? p.sep.fim : p.conf.fim) : "";
     let liveHtml = "";
@@ -516,6 +632,14 @@
     if (k === "conf" && !isL && p.sep.resp) from = `Separado por ${esc(nameOf(p.sep.resp))}`;
     if (k === "lib") from = o.col === "inbox" ? `Conferido por ${esc(nameOf(p.conf.resp))}` : isL ? "" : `<span class="erp-ok">Sankhya ✓</span> liberado · ordem ${p.lib.ordem}`;
     const draggable = !isL;
+    if (p.op) return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:var(--ink)">
+      <div class="c-top">${selc ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : ""}<span class="rt op">MONTAGEM</span>${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-main"><p class="c-id">${p.id}</p><span class="c-age">chegou ${fmtTime(p.chegada)}</span></div>
+      <div class="c-nums">${nums}${age ? `<span class="c-age">${age}</span>` : ""}</div>
+      ${from ? `<p class="c-from">${from}</p>` : ""}
+      ${selc ? `<button class="c-skip" data-skip="${p.id}">Pular conferência</button>` : ""}
+      ${liveHtml}
+    </article>`;
     return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:${p.rota ? rotaOf(p.rota).cor : "var(--red-brand)"}">
       <div class="c-top">${rotaTag(p.rota)}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${p.id}</p>${embTag(p)}</div>
@@ -598,6 +722,9 @@
       chips = chip("todos", "Todas", B.inbox.length)
         + rotas.map((r) => chip(r.id, `<i></i>${esc(r.nome)}`, cnt((p) => p.rota === r.id), "", `style="--rc:${r.cor}"`)).join("")
         + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + (pr ? chip("prio", "Prioridade", pr) : "");
+    } else if (MONT) {
+      if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
+      chips = chip("todos", "Todos", B.inbox.length) + chip("prio", "Prioridade", B.inbox.filter((id) => FILTROS.prio(P(id))).length);
     } else {
       if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
       const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
@@ -606,9 +733,18 @@
         + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje)) + chip("prio", "Prioridade", cnt(FILTROS.prio));
     }
     const title = { sep: "Caixa de entrada", conf: "Separados", lib: "Conferidos", emb: "Cargas do ERP" }[k];
-    const sub = { sep: "Pedidos recebidos aguardando separador", conf: "Aguardando conferente", lib: "Aguardando liberação para faturamento", emb: "Montadas no Sankhya · aguardando motorista" }[k];
+    const sub = MONT ? { sep: "Pedidos de montagem aguardando separador", conf: "Aguardando conferente ou conferência dispensada" }[k]
+      : { sep: "Pedidos recebidos aguardando separador", conf: "Aguardando conferente", lib: "Aguardando liberação para faturamento", emb: "Montadas no Sankhya · aguardando motorista" }[k];
     const cards = ids.map((id) => (k === "emb" ? cargaCard(C(id), { col: "inbox" }) : k === "lib" ? libCard(P(id), { col: "inbox" }) : pedidoCard(P(id), k, { col: "inbox" }))).join("");
     let extra = "";
+    if (MONT && k === "conf") {
+      libVisible = ids;
+      if (ids.length) {
+        const all = ids.every((id) => sel.has(id));
+        extra += `<button class="lib-all" data-selall="1"><span class="cb ${all ? "on" : ""}">${all ? CHECK : ""}</span>${all ? "Limpar seleção" : `Selecionar todos (${ids.length})`}</button>`;
+      }
+      if (sel.size) extra += `<div class="lib-bar"><p><span>${sel.size} selecionado(s)</span><button class="x" data-selclear="1">Limpar</button></p><div><button data-skip="sel">Pular conferência</button></div></div>`;
+    }
     if (k === "lib") {
       libVisible = ids;
       if (ids.length) {
@@ -635,7 +771,11 @@
     const l = db[k].cols[person.id];
     const busy = l[0] && isLive(k, l[0]);
     const L = BOARDS[k];
-    const st = busy ? `<span class="st work"><i></i>${L.verbo}</span>` : l.length ? `<span class="st wait"><i></i>Aguardando início</span>` : `<span class="st"><i></i>Livre</span>`;
+    // setor atual da pessoa: na montagem mostra os dois; na expedição, só quem foi para a montagem
+    const sx = temSetor(k) ? setorOf(person.id) : "exp", away = temSetor(k) && !aqui(person.id);
+    const sxTag = temSetor(k) && (MONT || sx === "mont") ? `<span class="sx-tag ${sx}">Na ${sx === "mont" ? "montagem" : "expedição"}</span>` : "";
+    const st = busy ? `<span class="st work"><i></i>${L.verbo}</span>` : away ? `<span class="st away"><i></i>${l.length ? "Fila aguardando · está em outro setor" : "Atuando em outro setor"}</span>`
+      : l.length ? `<span class="st wait"><i></i>Aguardando início</span>` : `<span class="st"><i></i>Livre</span>`;
     let m;
     if (k === "emb") m = [[l.length, "cargas"], [l.reduce((t, id) => t + cargaVol(C(id)) - cargaLidos(C(id)), 0), "vol. a carregar"], [db.stats[person.id], "embarcadas"]];
     else if (k === "lib") m = [[l.length, "na fila"], [l.reduce((t, id) => t + P(id).volumes, 0), "volumes"], [db.stats[person.id], "faturados"]];
@@ -645,11 +785,11 @@
       return k === "emb" ? cargaCard(C(id), o) : k === "lib" ? libCard(P(id), o) : pedidoCard(P(id), k, o);
     }).join("");
     const empty = { sep: "Arraste pedidos para cá", conf: "Arraste pedidos para cá", lib: "Arraste para liberar no Sankhya", emb: "Arraste cargas para este motorista" }[k];
-    return `<section class="col">
+    return `<section class="col ${away ? "away" : ""}">
       <header class="col-head">
         <div class="person">
           <span class="avatar" style="--av:${avColor(person.id)}">${initials(person.nome)}</span>
-          <div class="person-n"><div class="ch-row"><h3>${esc(person.nome)}</h3>${k === "emb" ? `<span class="role">Motorista</span>` : k === "lib" ? `<span class="role">Faturista</span>` : ""}</div>${st}</div>
+          <div class="person-n"><div class="ch-row"><h3>${esc(person.nome)}</h3>${k === "emb" ? `<span class="role">Motorista</span>` : k === "lib" ? `<span class="role">Faturista</span>` : sxTag}</div>${st}</div>
         </div>
         <div class="metrics">${m.map(([v, s]) => `<div><b>${v}</b><small>${s}</small></div>`).join("")}</div>
       </header>
@@ -657,7 +797,27 @@
     </section>`;
   }
 
-  const renderPeople = (k) => inboxCol(k) + BOARDS[k].people.map((x) => personCol(k, x)).join("");
+  // montagem: pedidos entregues hoje (soltar aqui = pular a conferência)
+  function doneCol() {
+    const ids = entreguesHoje();
+    const cards = ids.map((id) => {
+      const p = P(id);
+      return `<article class="card cc fin ${isFlash(id) ? "flash" : ""}" draggable="false" data-id="${id}">
+        <span class="cc-pos">${CHECK}</span>
+        <span class="cc-id">${id}${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}</span><span class="cc-vol">${fmtTime(p.entregue)}</span>
+        <span class="cc-sub">${p.confPulada ? `<em class="skip">Sem conferência</em>` : `Conferido por ${esc(nameOf(p.conf.resp))}`} · sep. ${esc(nameOf(p.sep.resp))}</span>
+      </article>`;
+    }).join("");
+    return `<section class="col done-col">
+      <header class="col-head">
+        <div class="ch-row"><h3>Entregues à montagem</h3><span class="count">${ids.length}</span></div>
+        <p class="ch-sub">Hoje · solte um pedido aqui para pular a conferência</p>
+      </header>
+      <div class="gx-list compact" data-col="done">${cards || `<div class="col-empty">Nenhum pedido entregue hoje</div>`}</div>
+    </section>`;
+  }
+
+  const renderPeople = (k) => inboxCol(k) + peopleOf(k).map((x) => personCol(k, x)).join("") + (MONT && k === "conf" ? doneCol() : "");
 
   // ---------- acompanhamento por rota ----------
   function renderRota() {
@@ -712,7 +872,7 @@
   // ---------- busca ----------
   function applySearch() {
     const q = query.trim().toLowerCase();
-    const hayP = (p) => `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
+    const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
     $$(".card").forEach((el) => {
       const id = el.dataset.id, c = board === "emb" && C(id);
       const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}` : hayP(P(id));
@@ -736,8 +896,8 @@
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", dragId);
     // faturamento: arrastar um card marcado leva todos os marcados juntos
-    if (board === "lib" && sel.has(dragId) && sel.size > 1) {
-      dragGroup = sortInbox(db.lib.inbox, "lib").filter((id) => sel.has(id));
+    if (board === SELB && sel.has(dragId) && sel.size > 1) {
+      dragGroup = sortInbox(db[SELB].inbox, SELB).filter((id) => sel.has(id));
       ph.dataset.n = `${dragGroup.length} pedidos`; ph.style.height = "44px";
       setTimeout(() => dragGroup && dragGroup.forEach((id) => { const el = $(`.card[data-id="${id}"]`, boardEl); if (el) el.classList.add("dragging"); }), 0);
       return;
@@ -772,6 +932,7 @@
       if (idx < 0) idx = real.length;
     }
     endDrag();
+    if (col === "done") return pularConf(group || [id]);
     if (group) moveMany(board, group, col, idx); else move(board, id, col, idx);
   });
   boardEl.addEventListener("dragend", endDrag);
@@ -793,6 +954,8 @@
       libVisible.forEach((id) => (all ? sel.delete(id) : sel.add(id))); render(); return;
     }
     if (e.target.closest("[data-selclear]")) { sel.clear(); render(); return; }
+    const sk = e.target.closest("[data-skip]");
+    if (sk) { e.stopPropagation(); return pularConf(sk.dataset.skip === "sel" ? sortInbox(db.conf.inbox, "conf").filter((id) => sel.has(id)) : [sk.dataset.skip]); }
     const lt = e.target.closest("[data-libto]");
     if (lt) return liberarSel(lt.dataset.libto);
     const et = e.target.closest("button[data-etag]");
@@ -811,6 +974,11 @@
   $("#actions").addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a) action(a.dataset.act); });
 
   function action(act) {
+    if (act === "novoPedido" && MONT) {
+      const p = makeOP({ prio: Math.random() < 0.2 });
+      db.sep.inbox.unshift(p.id); flashId = p.id; save(); render();
+      return toast(`${p.id} recebido · pedido de montagem`);
+    }
     if (act === "novoPedido") {
       const p = makePedido({ semRota: Math.random() < 0.3, prio: Math.random() < 0.2 });
       db.sep.inbox.unshift(p.id); flashId = p.id; save(); render();
@@ -822,11 +990,13 @@
   // distribui pelo menor volume de trabalho pendente (balanceamento)
   function autoDistribute(k) {
     const B = db[k];
-    const cand = sortInbox(B.inbox, k).filter((id) => k !== "sep" || P(id).rota);
+    const cand = sortInbox(B.inbox, k).filter((id) => MONT || k !== "sep" || P(id).rota);
     const skipped = B.inbox.length - cand.length;
     if (!cand.length) return toast(skipped ? "Defina a rota dos pedidos antes de distribuir" : "Caixa de entrada vazia");
     const loadOf = (pid) => B.cols[pid].reduce((t, id) => t + (k === "emb" ? cargaVol(C(id)) - cargaLidos(C(id)) : k === "lib" ? 1 : units(P(id)) - doneU(P(id), k)), 0);
-    const ids = Object.keys(B.cols);
+    // só para quem está atuando neste setor agora
+    const ids = Object.keys(B.cols).filter((pid) => !temSetor(k) || aqui(pid));
+    if (!ids.length) return toast(`Ninguém da ${BOARDS[k].nome.toLowerCase()} está atuando na ${W.SETORES[SETOR]} agora`);
     cand.forEach((id) => moveCore(k, id, ids.slice().sort((a, b) => loadOf(a) - loadOf(b))[0], null));
     save(); render();
     const what = { sep: "distribuído(s) por carga de trabalho", conf: "distribuído(s) por carga de trabalho", lib: "liberado(s) no Sankhya", emb: "designada(s) aos motoristas" }[k];
@@ -889,7 +1059,7 @@
   }
 
   $("#userBtn").addEventListener("click", () => {
-    openModal(`<h2>${esc(sess.nome)}</h2><p>Perfil: Gestão de Expedição</p>
+    openModal(`<h2>${esc(sess.nome)}</h2><p>Perfil: ${W.PERFIS[sess.perfil]}</p>
       <div class="m-act"><button class="btn ghost" id="mReset">Reiniciar dados de demonstração</button><button class="btn primary" id="mOut">Sair</button></div>`);
     $("#mReset").onclick = () => { seed(); closeModal(); closeDrawer(); render(true); toast("Cenário de demonstração reiniciado"); };
     $("#mOut").onclick = () => { W.logout(); location.replace("./"); };
@@ -951,29 +1121,32 @@
         ${canTop ? `<button class="btn ghost" id="drTop">Passar para o próximo da fila</button>` : ""}
       </div></section>`;
     }
+    if (p.op && k === "conf" && !isL) actions = actions.replace("</div></section>", `<button class="btn ghost" id="drSkip">Pular conferência</button></div></section>`);
     const rotaLocked = ["mont", "emb", "fim"].includes(p.etapa);
     const carga = p.carga && C(p.carga);
 
     $("#drawer").innerHTML = `
       <header class="dr-head">
-        <div><p class="dr-k">Pedido</p><h2>${p.id}</h2></div>
+        <div><p class="dr-k">${p.op ? "Pedido de montagem" : "Pedido"}</p><h2>${p.id}</h2></div>
         <span class="stage ${st.cls}">${esc(st.txt)}</span>
         <button class="dr-x" id="drClose" aria-label="Fechar">×</button>
       </header>
       <div class="dr-body">
-        <div class="dr-grid">
+        <div class="dr-grid">${p.op ? opGrid(p) : `
           <div class="dr-f"><small>Cliente</small><b>${p.cli.cod} · ${esc(p.cli.nome)}</b><span>${esc(p.cli.cidade)} · ${esc(p.cli.bairro)}</span></div>
           <div class="dr-f"><small>Vendedor</small><b>${esc(p.vendedor)}</b><span>Chegou ${fmtAge(p.chegada)} · ${fmtTime(p.chegada)}</span></div>
           <div class="dr-f"><small>Rota</small>${rotaLocked ? `<b>${esc(r ? r.nome : "—")}</b>` : `<select id="drRota" class="${p.rota ? "" : "warn"}"><option value="">— Sem rota —</option>${rotaOptions(p.rota)}</select>`}</div>
           <div class="dr-f"><small>Embarque</small>${e ? `<div class="dr-emb">${embTag(p)}<span>${e.sub}${p.embDef ? " · definido pelo coordenador" : ""}</span></div><span>${r ? `Corte ${r.corte}${r.semanal != null ? ` de ${R.DIAS[r.semanal].toLowerCase()}` : ""} · altere no Acompanhamento` : ""}</span>` : `<b>—</b><span>Defina a rota</span>`}</div>
           <div class="dr-f"><small>Prioridade</small><button class="tgl ${p.prio === "alta" ? "on" : ""}" id="drPrio">${p.prio === "alta" ? "▲ Alta" : "Normal"}</button></div>
-          <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>
+          <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>`}
         </div>
         <div class="dr-nums">
           <div><b>${p.itens.length}</b><small>SKUs</small></div>
           <div><b>${units(p)}</b><small>unidades</small></div>
-          <div><b>${p.volumes || "—"}</b><small>volumes</small></div>
-          <div><b>${p.nota || "—"}</b><small>nota fiscal</small></div>
+          ${p.op ? `<div><b>${doneU(p, "sep")}</b><small>separadas</small></div>
+          <div><b>${p.confPulada ? "—" : doneU(p, "conf")}</b><small>${p.confPulada ? "sem conferência" : "conferidas"}</small></div>`
+          : `<div><b>${p.volumes || "—"}</b><small>volumes</small></div>
+          <div><b>${p.nota || "—"}</b><small>nota fiscal</small></div>`}
         </div>
         ${liveHtml}
         <section>
@@ -997,6 +1170,21 @@
     if ($("#drCarga")) $("#drCarga").onclick = (ev) => { ev.preventDefault(); openDrawer({ t: "c", id: carga.id }); };
     if ($("#drMoveGo")) $("#drMoveGo").onclick = () => { const v = $("#drMove").value; if (v) move(k, p.id, v, null); };
     if ($("#drTop")) $("#drTop").onclick = () => move(k, p.id, loc.col, 0);
+    if ($("#drSkip")) $("#drSkip").onclick = () => pularConf([p.id]);
+  }
+
+  // dados do pedido de montagem na gaveta (sem cliente, rota, embarque e nota)
+  function opGrid(p) {
+    const sepTxt = p.sep.fim ? `separado às ${fmtTime(p.sep.fim)}` : p.sep.inicio ? "separando agora" : p.sep.resp ? "na fila" : "a designar";
+    const confTxt = p.confPulada ? `pelo coordenador às ${fmtTime(p.entregue)}` : p.conf.fim ? `conferido às ${fmtTime(p.conf.fim)}` : p.conf.inicio ? "conferindo agora"
+      : p.conf.resp ? "na fila" : p.etapa === "sep" ? "depois da separação" : "a designar ou dispensar";
+    return `
+          <div class="dr-f"><small>Tipo de operação</small><b>Montagem (OP)</b><span>Pedido do Sankhya · não entra na expedição</span></div>
+          <div class="dr-f"><small>Chegada</small><b>${fmtTime(p.chegada)}</b><span>${fmtAge(p.chegada)}</span></div>
+          <div class="dr-f"><small>Separador</small><b>${p.sep.resp ? esc(nameOf(p.sep.resp)) : "—"}</b><span>${sepTxt}</span></div>
+          <div class="dr-f"><small>Conferência</small><b>${p.confPulada ? "Dispensada" : p.conf.resp ? esc(nameOf(p.conf.resp)) : "—"}</b><span>${confTxt}</span></div>
+          <div class="dr-f"><small>Prioridade</small><button class="tgl ${p.prio === "alta" ? "on" : ""}" id="drPrio">${p.prio === "alta" ? "▲ Alta" : "Normal"}</button></div>
+          <div class="dr-f"><small>Destino</small><b>${p.etapa === "fim" ? "Entregue à montagem" : "Montagem"}</b><span>${p.etapa === "fim" ? fmtTime(p.entregue) : "sem faturamento e sem embarque"}</span></div>`;
   }
 
   function renderCargaDrawer() {
@@ -1066,7 +1254,7 @@
     // separadores e conferentes
     ["sep", "conf"].forEach((k) => {
       Object.entries(db[k].cols).forEach(([pid, l]) => {
-        if (!l.length) return;
+        if (!l.length || !aqui(pid)) return; // quem está em outro setor não pega pedido daqui
         const p = P(l[0]);
         if (!live(p, k)) {
           if (now() - (p[k].atrib || 0) < 12000) return; // operador "pega" o próximo pedido alguns segundos após a atribuição
@@ -1079,9 +1267,14 @@
         if (curItem(p, k)) return;
         p[k].fim = now(); l.shift(); db.stats[pid]++;
         if (k === "sep") {
-          p.volumes = vols(p); p.etapa = "conf"; db.conf.inbox.push(p.id);
-          log(p, `Separação finalizada por ${nameOf(pid)} · ${p.volumes} volume(s)`);
+          if (!MONT) p.volumes = vols(p);
+          p.etapa = "conf"; db.conf.inbox.push(p.id);
+          log(p, MONT ? `Separação finalizada por ${nameOf(pid)}` : `Separação finalizada por ${nameOf(pid)} · ${p.volumes} volume(s)`);
           if (board === "sep") toast(`${p.id} separado por ${nameOf(pid)} → caixa da conferência`);
+        } else if (MONT) {
+          p.etapa = "fim"; p.entregue = now(); db.entregues.unshift(p.id);
+          log(p, `Conferência finalizada por ${nameOf(pid)} · entregue à montagem`);
+          if (board === "conf") toast(`${p.id} conferido por ${nameOf(pid)} → entregue à montagem`);
         } else {
           p.etapa = "lib"; db.lib.inbox.push(p.id);
           log(p, `Conferência finalizada por ${nameOf(pid)} · aguardando liberação p/ faturamento`);
@@ -1090,6 +1283,17 @@
         if (l[0]) P(l[0])[k].atrib = now();
       });
     });
+
+    // montagem: só separação e conferência; chega um pedido OP de tempos em tempos
+    if (MONT) {
+      if (db.tick % 30 === 0) {
+        const p = makeOP({ prio: Math.random() < 0.15 });
+        db.sep.inbox.unshift(p.id); flashId = p.id; changed = true;
+        if (board === "sep") toast(`Novo pedido de montagem via integração: ${p.id}`);
+      }
+      if (changed) { save(); render(); if (openRef) renderDrawer(); }
+      return;
+    }
 
     // faturistas (Sankhya)
     Object.entries(db.lib.cols).forEach(([fid, l]) => {
@@ -1169,8 +1373,8 @@
   });
 
   $("#tabs").addEventListener("click", (e) => {
-    const b = e.target.closest(".gx-tab"); if (!b) return;
-    board = b.dataset.board; localStorage.setItem("wms-bb-gx-board", board);
+    const b = e.target.closest(".gx-tab"); if (!b || b.disabled) return;
+    board = b.dataset.board; localStorage.setItem(BKEY, board);
     closePop(); render(true);
   });
 

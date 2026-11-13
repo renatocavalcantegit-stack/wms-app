@@ -18,21 +18,35 @@ window.WMS = (() => {
     { sku: "BM-PISO-AL", ean: "7891000300053", desc: "Bomba de Piso com Manômetro", tipo: "acess", preco: 139.9 },
     { sku: "SL-GEL-CONF", ean: "7891000200063", desc: "Selim Gel Conforto", tipo: "peca", preco: 69.9 },
   ];
+  // componentes usados nos pedidos de montagem (ordem de produção)
+  const COMPONENTES = [
+    { sku: "QD-29-ALU-M", ean: "7891000400012", desc: "Quadro Aro 29 Alumínio Tam. 17", tipo: "peca", preco: 389.9 },
+    { sku: "AR-29-PD-36", ean: "7891000400029", desc: "Aro 29 Parede Dupla 36 Furos", tipo: "peca", preco: 84.9 },
+    { sku: "GD-MTB-680", ean: "7891000400036", desc: "Guidão MTB 680 mm", tipo: "peca", preco: 59.9 },
+    { sku: "MS-31-60", ean: "7891000400043", desc: "Mesa 31,8 x 60 mm", tipo: "peca", preco: 54.9 },
+    { sku: "FR-VB-KIT", ean: "7891000400050", desc: "Kit Freio V-Brake Dianteiro + Traseiro", tipo: "peca", preco: 69.9 },
+    { sku: "CB-TR-7V", ean: "7891000400067", desc: "Câmbio Traseiro 7 Velocidades", tipo: "peca", preco: 74.9 },
+    { sku: "PE-3X-170", ean: "7891000400074", desc: "Pedivela Triplo 170 mm", tipo: "peca", preco: 119.9 },
+    { sku: "CU-36-QR", ean: "7891000400081", desc: "Par de Cubos 36 Furos Blocagem", tipo: "peca", preco: 99.9 },
+  ];
   const ENDERECOS = {
     "BK-29-ALU-18": "A-01-1-02", "BK-26-ACO-RD": "A-01-1-05", "BK-20-INF-AZ": "A-02-1-01",
     "CM-29-PRESTA": "B-03-2-04", "CM-26-SCHRAD": "B-03-2-06", "PN-29-225": "B-04-1-02",
     "CP-MTB-M-PT": "C-01-3-01", "LV-GEL-G": "C-02-2-03", "SN-LED-USB": "C-02-3-05",
     "CR-KMC-9V": "B-05-2-01", "PD-PLAT-AL": "B-05-3-02", "GF-SQ-750": "C-03-1-04",
     "BM-PISO-AL": "C-04-1-01", "SL-GEL-CONF": "B-06-2-03",
+    "QD-29-ALU-M": "D-01-1-01", "AR-29-PD-36": "D-01-2-03", "GD-MTB-680": "D-02-1-02", "MS-31-60": "D-02-2-01",
+    "FR-VB-KIT": "D-03-1-04", "CB-TR-7V": "D-03-2-02", "PE-3X-170": "D-04-1-01", "CU-36-QR": "D-04-2-03",
   };
+  const CATALOGO = [...PRODUTOS, ...COMPONENTES];
 
   const find = (code) => {
     const c = String(code).trim().toUpperCase();
-    return PRODUTOS.find((p) => p.ean === c || p.sku.toUpperCase() === c) || null;
+    return CATALOGO.find((p) => p.ean === c || p.sku.toUpperCase() === c) || null;
   };
 
   const item = (sku, qtd) => ({
-    ...PRODUTOS.find((x) => x.sku === sku), end: ENDERECOS[sku], qtd, sep: 0, status: "pendente", motivo: "",
+    ...CATALOGO.find((x) => x.sku === sku), end: ENDERECOS[sku], qtd, sep: 0, status: "pendente", motivo: "",
   });
 
   const order = (id, cliente, cidade, prio, hora, itens) => ({
@@ -68,6 +82,31 @@ window.WMS = (() => {
       sep(order("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", "normal", "07:10", [item("PN-29-225", 4), item("CR-KMC-9V", 2), item("PD-PLAT-AL", 2), item("BM-PISO-AL", 1)]), { "BM-PISO-AL": 0 }),
       sep(order("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", "normal", "07:28", [item("BK-20-INF-AZ", 2), item("CP-MTB-M-PT", 2), item("SN-LED-USB", 5)])),
       sep(order("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", "alta", "07:35", [item("BK-26-ACO-RD", 2), item("CM-26-SCHRAD", 6), item("SL-GEL-CONF", 3), item("GF-SQ-750", 6), item("LV-GEL-G", 4)]), { "CM-26-SCHRAD": 5 }),
+    ].map(routeSort);
+  };
+
+  // ---------- pedidos de montagem (ordem de produção) ----------
+  // chegam do Sankhya como um pedido normal; só o tipo de operação muda (por isso o prefixo OP)
+  const OP_CLI = "Ordem de produção", OP_LOC = "Montagem";
+  const op = (id, prio, hora, itens) => order(id, OP_CLI, OP_LOC, prio, hora, itens);
+  const seedSeparacaoMont = () => [
+    op("OP-3212", "alta", "07:20", [item("QD-29-ALU-M", 10), item("AR-29-PD-36", 20), item("CU-36-QR", 10), item("PN-29-225", 20), item("CM-29-PRESTA", 20)]),
+    op("OP-3213", "normal", "08:02", [item("GD-MTB-680", 12), item("MS-31-60", 12), item("FR-VB-KIT", 12), item("SL-GEL-CONF", 12)]),
+    op("OP-3214", "normal", "08:45", [item("CB-TR-7V", 8), item("PE-3X-170", 8), item("CR-KMC-9V", 8), item("PD-PLAT-AL", 8)]),
+    op("OP-3215", "normal", "09:30", [item("QD-29-ALU-M", 6), item("AR-29-PD-36", 12), item("CM-29-PRESTA", 12), item("GD-MTB-680", 6), item("SL-GEL-CONF", 6)]),
+  ].map(routeSort);
+  const seedConferenciaMont = () => {
+    const sep = (o, faltas = {}) => {
+      o.itens.forEach((i) => {
+        const f = faltas[i.sku];
+        Object.assign(i, f != null ? { sep: f, status: "falta", motivo: "Quantidade insuficiente" } : { sep: i.qtd, status: "ok" });
+      });
+      return Object.assign(o, { status: "concluido", operador: "Thiago", fim: Date.now() - 3600e3 });
+    };
+    return [
+      sep(op("OP-3208", "alta", "06:40", [item("QD-29-ALU-M", 8), item("AR-29-PD-36", 16), item("CU-36-QR", 8), item("PN-29-225", 16)])),
+      sep(op("OP-3209", "normal", "06:58", [item("FR-VB-KIT", 10), item("CB-TR-7V", 10), item("PE-3X-170", 10), item("CR-KMC-9V", 10)]), { "PE-3X-170": 9 }),
+      sep(op("OP-3210", "normal", "07:05", [item("GD-MTB-680", 15), item("MS-31-60", 15), item("SL-GEL-CONF", 15), item("PD-PLAT-AL", 15)])),
     ].map(routeSort);
   };
 
@@ -112,8 +151,18 @@ window.WMS = (() => {
     { login: "conferente", nome: "Usuário Conferente", perfil: "conf", pin: "2222" },
     { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
     { login: "coordenador", nome: "Usuário Coordenador", perfil: "coord", pin: "4444" },
+    { login: "montagem", nome: "Coordenador de Montagem", perfil: "coordmont", pin: "5555" },
   ];
-  const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque", coord: "Gestão de Expedição" };
+  const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque", coord: "Gestão de Expedição", coordmont: "Gestão de Montagem" };
+  // setor onde o separador / conferente está atuando (escolhido no login, trocado pelo perfil)
+  const SETORES = { exp: "Expedição", mont: "Montagem" };
+  const temSetor = (perfil) => perfil === "sep" || perfil === "conf";
+  // cada setor tem a sua fila (pedido de montagem nunca entra no fluxo da expedição)
+  const stores = (setor) => setor === "mont"
+    ? { sep: "wms-bb-sep-mont-v1", conf: "wms-bb-conf-mont-v1" }
+    : { sep: "wms-bb-sep-v1", conf: "wms-bb-conf-v1" };
+  // setor atual de cada pessoa nos painéis (demonstração; no sistema real vem do app de cada um)
+  const EQUIPE_SETOR = { s5: "mont", s6: "mont", c4: "mont" };
   const SESSION = "wms-bb-session";
 
   const session = () => {
@@ -130,8 +179,14 @@ window.WMS = (() => {
     return s;
   };
   const logout = () => localStorage.removeItem(SESSION);
+  const setSetor = (setor) => {
+    const s = session(); if (!s) return null;
+    s.setor = setor; s.setorDesde = Date.now();
+    localStorage.setItem(SESSION, JSON.stringify(s));
+    return s;
+  };
   // página de cada perfil
-  const homeUrl = (perfil) => ({ conf: "conferencia.html", coord: "gestao.html" }[perfil] || "./");
+  const homeUrl = (perfil) => ({ conf: "conferencia.html", coord: "gestao.html", coordmont: "montagem.html" }[perfil] || "./");
 
   // ---------- observação dos volumes (conferência → Sankhya / embarque) ----------
   // tipos de volume: [id, nome na tela, abreviação enviada ao ERP]
@@ -155,5 +210,5 @@ window.WMS = (() => {
   };
   const obsResumo = (obs) => obsLinhas(obs).map(([n, nome]) => `${n} ${nome}`).join(" · ");
 
-  return { USERS, PERFIS, session, login, logout, homeUrl, VOL_TIPOS, obsLinhas, obsTotal, obsErp, obsResumo, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
+  return { USERS, PERFIS, SETORES, temSetor, stores, EQUIPE_SETOR, setSetor, COMPONENTES, seedSeparacaoMont, seedConferenciaMont, session, login, logout, homeUrl, VOL_TIPOS, obsLinhas, obsTotal, obsErp, obsResumo, PRODUTOS, ENDERECOS, find, item, order, routeSort, seedSeparacao, seedConferencia, seedEmbarque, parseVolume, SEP_STORE: "wms-bb-sep-v1", CONF_STORE: "wms-bb-conf-v1" };
 })();

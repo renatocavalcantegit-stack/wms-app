@@ -2,22 +2,24 @@
 (() => {
   "use strict";
 
-  const STORE = "wms-bb-sep-v1";
   const W = window.WMS;
-  const { seedSeparacao: seed } = W;
 
   // ---------- estado ----------
-  let orders = load();
   let sess = W.session();
   let user = sess ? sess.nome : "";
   let filter = "abertos";
   let current = null; // pedido em separação
 
+  // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
+  const setor = () => (sess && sess.setor) || "exp";
+  const storeKey = () => W.stores(setor()).sep;
+  const seed = () => (setor() === "mont" ? W.seedSeparacaoMont() : W.seedSeparacao());
+  let orders = [];
   function load() {
-    try { const d = JSON.parse(localStorage.getItem(STORE)); if (Array.isArray(d) && d.length) return d; } catch {}
+    try { const d = JSON.parse(localStorage.getItem(storeKey())); if (Array.isArray(d) && d.length) return d; } catch {}
     return seed();
   }
-  const save = () => localStorage.setItem(STORE, JSON.stringify(orders));
+  const save = () => localStorage.setItem(storeKey(), JSON.stringify(orders));
 
   // ---------- utils ----------
   const $ = (s) => document.querySelector(s);
@@ -54,7 +56,7 @@
   }
 
   // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)
-  const ACCESS = { sep: ["viewHome", "viewPick", "viewDone"], emb: ["viewEmbHome", "viewLoad", "viewLoadDone"] };
+  const ACCESS = { sep: ["viewSetor", "viewHome", "viewPick", "viewDone"], emb: ["viewEmbHome", "viewLoad", "viewLoadDone"] };
   function show(id) {
     if (id !== "viewLogin" && !(sess && (ACCESS[sess.perfil] || []).includes(id))) id = "viewLogin";
     $$(".view").forEach((v) => (v.hidden = v.id !== id));
@@ -96,13 +98,37 @@
   // cada perfil vai direto para a sua tela
   function goHome() {
     if (!sess) return show("viewLogin");
-    if (sess.perfil === "conf" || sess.perfil === "coord") return location.replace(W.homeUrl(sess.perfil));
+    if (sess.perfil !== "sep" && sess.perfil !== "emb") return location.replace(W.homeUrl(sess.perfil));
     if (sess.perfil === "emb") return window.Embarque.home();
+    if (!sess.setor) return openSetor(false);
+    orders = load();
     renderHome(); show("viewHome");
   }
 
+  // ---------- setor (Expedição / Montagem) ----------
+  function openSetor(canBack) {
+    $("#sxHello").textContent = `Olá, ${user}`;
+    $$(".sx-opt").forEach((b) => b.classList.toggle("cur", !!sess.setor && b.dataset.setor === sess.setor));
+    $("#sxBack").hidden = !canBack;
+    closeSheets(); show("viewSetor");
+  }
+  $(".sx-opts").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-setor]"); if (!b) return;
+    const mudou = sess.setor !== b.dataset.setor;
+    sess = W.setSetor(b.dataset.setor);
+    vibrate(30); goHome();
+    if (mudou) toast(`Você está atuando na ${W.SETORES[sess.setor]}`);
+  });
+  $("#sxBack").addEventListener("click", goHome);
+  $("#sxOut").addEventListener("click", () => $("#menuLogout").click());
+  $("#setorChip").addEventListener("click", () => openSetor(true));
+
   // ---------- home ----------
   function renderHome() {
+    const mont = setor() === "mont";
+    document.body.classList.toggle("setor-mont", mont);
+    $("#setorChipT").textContent = W.SETORES[setor()];
+    $("#setorChip").classList.toggle("mont", mont);
     $("#helloName").textContent = user;
     const dt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
     $("#helloDate").textContent = dt.charAt(0).toUpperCase() + dt.slice(1);
@@ -351,15 +377,19 @@
   $$(".menu-btn").forEach((b) => b.addEventListener("click", () => {
     $("#menuName").textContent = user;
     $("#menuPerfil").textContent = W.PERFIS[sess.perfil];
+    const ts = sess.perfil === "sep" && !!sess.setor;
+    $("#menuSetorL").hidden = $("#menuSetorBtn").hidden = !ts;
+    if (ts) $("#menuSetor").textContent = W.SETORES[sess.setor];
     openSheet("sheetMenu");
   }));
+  $("#menuSetorBtn").addEventListener("click", () => openSetor(true));
   $("#menuReset").addEventListener("click", () => {
     orders = seed(); save(); closeSheets();
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");
   });
   $("#menuLogout").addEventListener("click", () => {
-    W.logout(); sess = null; user = ""; closeSheets();
+    W.logout(); sess = null; user = ""; closeSheets(); document.body.classList.remove("setor-mont");
     $("#loginName").value = ""; $("#loginPin").value = ""; show("viewLogin");
   });
 

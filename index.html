@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=14">
+  <link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
 
@@ -42,10 +42,35 @@
           <button type="button" data-login="separador"><b>Separador</b><small>Separação</small></button>
           <button type="button" data-login="conferente"><b>Conferente</b><small>Conferência</small></button>
           <button type="button" data-login="embarque"><b>Embarque</b><small>Embarque</small></button>
-          <button type="button" data-login="coordenador"><b>Coordenador</b><small>Gestão (web)</small></button>
+          <button type="button" data-login="coordenador"><b>Coordenador</b><small>Gestão de Expedição (web)</small></button>
+          <button type="button" data-login="montagem"><b>Coord. Montagem</b><small>Gestão de Montagem (web)</small></button>
         </div>
       </div>
       <p class="login-foot">MVP experimental · dados de demonstração</p>
+    </div>
+  </section>
+
+  <!-- ===== ESCOLHA DO SETOR (separador / conferente) ===== -->
+  <section id="viewSetor" class="view sx" hidden>
+    <div class="sx-box">
+      <img src="assets/logo.png" alt="Beach Bike Atacado" class="sx-logo">
+      <p class="hello-kicker" id="sxHello"></p>
+      <h1 class="hello-title">Onde você vai atuar agora?</h1>
+      <div class="sx-opts">
+        <button class="sx-opt" data-setor="exp">
+          <span class="sx-ico"><svg viewBox="0 0 24 24"><path d="M2 6h11v10H2zM13 9h4l4 4v3h-8z"/><circle cx="6" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/></svg></span>
+          <span class="sx-t"><b>Expedição</b><small>Pedidos de venda · separação para o cliente</small></span>
+          <span class="sx-cur">Atual</span>
+        </button>
+        <button class="sx-opt mont" data-setor="mont">
+          <span class="sx-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></span>
+          <span class="sx-t"><b>Montagem</b><small>Pedidos de produção (OP) · separação para a montagem</small></span>
+          <span class="sx-cur">Atual</span>
+        </button>
+      </div>
+      <p class="sx-note">Você pode trocar de setor a qualquer momento pelo seu perfil.</p>
+      <button id="sxBack" class="btn ghost block" hidden>Voltar</button>
+      <button id="sxOut" class="sx-out">Sair</button>
     </div>
   </section>
 
@@ -53,6 +78,7 @@
   <section id="viewHome" class="view" hidden>
     <header class="appbar">
       <img src="assets/logo.png" alt="Beach Bike Atacado" class="appbar-logo">
+      <button id="setorChip" class="setor-chip" aria-label="Trocar setor"><i></i><span id="setorChipT"></span><svg viewBox="0 0 24 24"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg></button>
       <button id="btnMenu" class="icon-btn menu-btn" aria-label="Menu">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
       </button>
@@ -357,7 +383,9 @@
     <div>
       <p class="sheet-title" id="menuName"></p>
       <p class="muted">Perfil: <span id="menuPerfil"></span></p>
+      <p id="menuSetorL" class="muted" hidden>Setor: <b id="menuSetor"></b></p>
     </div>
+    <button id="menuSetorBtn" class="btn primary block" hidden>Trocar setor</button>
     <button id="menuReset" class="btn ghost block">Reiniciar dados de demonstração</button>
     <button id="menuLogout" class="btn ghost block">Sair</button>
     <p class="login-foot">WMS Beach Bike · MVP v0.1</p>
@@ -372,8 +400,8 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="data.js?v=14"></script>
-  <script src="app.js?v=14"></script>
-  <script src="embarque.js?v=14"></script>
+  <script src="data.js?v=15"></script>
+  <script src="app.js?v=15"></script>
+  <script src="embarque.js?v=15"></script>
 </body>
 </html>
