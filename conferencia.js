@@ -4,6 +4,7 @@ import { find } from "./js/demo-dados.js";
 import { VOL_TIPOS, obsTotal, obsErp, obsResumo } from "./compartilhado/regras/volumes.js";
 import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto } from "./js/dados/conferencia.js";
 import { Etiqueta } from "./etiqueta.js";
+import { $, $$, esc } from "./js/util.js";
 
 (() => {
   "use strict";
@@ -32,9 +33,7 @@ import { Etiqueta } from "./etiqueta.js";
   const save = () => salvarConferencia(SETOR, db);
 
   // ---------- utils ----------
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => document.querySelectorAll(s);
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // $, $$ e esc vêm de js/util.js; aviso e bipe da conferência têm duração e tom próprios
   const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 
   let toastT;

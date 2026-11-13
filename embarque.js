@@ -3,12 +3,13 @@ import { seedEmbarque } from "./js/demo-dados.js";
 import { obsLinhas } from "./compartilhado/regras/volumes.js";
 import { parseVolume } from "./compartilhado/regras/etiqueta-volume.js";
 import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
+import { $, $$, esc } from "./js/util.js";
+import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser, CHECK } from "./js/ui-coletor.js";
 
-window.Embarque = (() => {
+export const Embarque = (() => {
   "use strict";
 
   const STORE = "wms-bb-emb-v1";
-  const { $, $$, esc, show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser, CHECK } = window.UI;
 
   let cargas = load();
   let filter = "abertas";
