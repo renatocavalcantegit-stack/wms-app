@@ -1,25 +1,22 @@
 // WMS Beach Bike — MVP de Separação (dados locais de demonstração)
+import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
+import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao } from "./js/dados/separacao.js";
+
 (() => {
   "use strict";
 
-  const W = window.WMS;
-
   // ---------- estado ----------
-  let sess = W.session();
+  let sess = session();
   let user = sess ? sess.nome : "";
   let filter = "abertos";
   let current = null; // pedido em separação
 
   // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
   const setor = () => (sess && sess.setor) || "exp";
-  const storeKey = () => W.stores(setor()).sep;
-  const seed = () => (setor() === "mont" ? W.seedSeparacaoMont() : W.seedSeparacao());
+  // onde os pedidos ficam guardados é assunto da camada de dados (js/dados/separacao.js)
   let orders = [];
-  function load() {
-    try { const d = JSON.parse(localStorage.getItem(storeKey())); if (Array.isArray(d) && d.length) return d; } catch {}
-    return seed();
-  }
-  const save = () => localStorage.setItem(storeKey(), JSON.stringify(orders));
+  const load = () => carregarPedidos(setor());
+  const save = () => salvarPedidos(setor(), orders);
 
   // ---------- utils ----------
   const $ = (s) => document.querySelector(s);
@@ -78,7 +75,7 @@
   // ---------- login ----------
   $("#loginForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    const s = W.login($("#loginName").value, $("#loginPin").value);
+    const s = login($("#loginName").value, $("#loginPin").value);
     if (!s) {
       $("#loginErr").hidden = false; vibrate([80, 50, 80]);
       $("#loginPin").value = ""; $("#loginPin").focus();
@@ -90,7 +87,7 @@
   });
   $("#loginQuick").addEventListener("click", (e) => {
     const b = e.target.closest("[data-login]"); if (!b) return;
-    const u = W.USERS.find((x) => x.login === b.dataset.login);
+    const u = USERS.find((x) => x.login === b.dataset.login);
     $("#loginName").value = u.login; $("#loginPin").value = u.pin;
     $("#loginErr").hidden = true;
   });
@@ -98,7 +95,7 @@
   // cada perfil vai direto para a sua tela
   function goHome() {
     if (!sess) return show("viewLogin");
-    if (sess.perfil !== "sep" && sess.perfil !== "emb") return location.replace(W.homeUrl(sess.perfil));
+    if (sess.perfil !== "sep" && sess.perfil !== "emb") return location.replace(homeUrl(sess.perfil));
     if (sess.perfil === "emb") return window.Embarque.home();
     if (!sess.setor) return openSetor(false);
     orders = load();
@@ -115,9 +112,9 @@
   $(".sx-opts").addEventListener("click", (e) => {
     const b = e.target.closest("[data-setor]"); if (!b) return;
     const mudou = sess.setor !== b.dataset.setor;
-    sess = W.setSetor(b.dataset.setor);
+    sess = setSetor(b.dataset.setor);
     vibrate(30); goHome();
-    if (mudou) toast(`Você está atuando na ${W.SETORES[sess.setor]}`);
+    if (mudou) toast(`Você está atuando na ${SETORES[sess.setor]}`);
   });
   $("#sxBack").addEventListener("click", goHome);
   $("#sxOut").addEventListener("click", () => $("#menuLogout").click());
@@ -127,7 +124,7 @@
   function renderHome() {
     const mont = setor() === "mont";
     document.body.classList.toggle("setor-mont", mont);
-    $("#setorChipT").textContent = W.SETORES[setor()];
+    $("#setorChipT").textContent = SETORES[setor()];
     $("#setorChip").classList.toggle("mont", mont);
     $("#helloName").textContent = user;
     const dt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
@@ -376,20 +373,20 @@
   // ---------- menu ----------
   $$(".menu-btn").forEach((b) => b.addEventListener("click", () => {
     $("#menuName").textContent = user;
-    $("#menuPerfil").textContent = W.PERFIS[sess.perfil];
+    $("#menuPerfil").textContent = PERFIS[sess.perfil];
     const ts = sess.perfil === "sep" && !!sess.setor;
     $("#menuSetorL").hidden = $("#menuSetorBtn").hidden = !ts;
-    if (ts) $("#menuSetor").textContent = W.SETORES[sess.setor];
+    if (ts) $("#menuSetor").textContent = SETORES[sess.setor];
     openSheet("sheetMenu");
   }));
   $("#menuSetorBtn").addEventListener("click", () => openSetor(true));
   $("#menuReset").addEventListener("click", () => {
-    orders = seed(); save(); closeSheets();
+    orders = pedidosDeDemonstracao(setor()); save(); closeSheets();
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");
   });
   $("#menuLogout").addEventListener("click", () => {
-    W.logout(); sess = null; user = ""; closeSheets(); document.body.classList.remove("setor-mont");
+    logout(); sess = null; user = ""; closeSheets(); document.body.classList.remove("setor-mont");
     $("#loginName").value = ""; $("#loginPin").value = ""; show("viewLogin");
   });
 

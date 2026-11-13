@@ -1,11 +1,14 @@
 // WMS Beach Bike — Gestão de Expedição e Gestão de Montagem (web)
 // Expedição: quadros estilo kanban (Separação, Conferência, Faturamento, Embarque) + Acompanhamento por rota.
 // Montagem (montagem.html, body data-setor="mont"): pedidos OP com Separação e Conferência (ou conferência dispensada).
+import * as R from "./compartilhado/regras/rotas.js";
+import { PERFIS, SETORES, session, logout } from "./js/sessao.js";
+import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.js";
+
 (() => {
   "use strict";
 
-  const W = window.WMS, R = window.Regras;
-  const sess = W.session();
+  const sess = session();
   const MONT = document.body.dataset.setor === "mont", SETOR = MONT ? "mont" : "exp";
   if (!sess || sess.perfil !== (MONT ? "coordmont" : "coord")) { location.replace("./"); return; }
 
@@ -60,7 +63,7 @@
   };
   if (MONT) { delete BOARDS.lib; delete BOARDS.emb; }
   // setor em que cada separador / conferente está atuando agora (escolhido no app de cada um)
-  const setorOf = (id) => W.EQUIPE_SETOR[id] || "exp";
+  const setorOf = (id) => EQUIPE_SETOR[id] || "exp";
   const aqui = (id) => setorOf(id) === SETOR;
   const temSetor = (k) => k === "sep" || k === "conf";
   // na montagem aparecem todos os separadores / conferentes; quem já está na montagem vem primeiro
@@ -120,8 +123,8 @@
     const rid = semRota ? null : rota || pickRota();
     const [cidade, bairros] = pick(LOCAIS[rid || pickRota()]);
     const bairro = pick(bairros);
-    const prods = shuffle(W.PRODUTOS).slice(0, rint(2, 6));
-    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: W.ENDERECOS[x.sku], qtd: x.tipo === "bike" ? rint(1, 4) : rint(2, 12), sep: 0, conf: 0 }))
+    const prods = shuffle(PRODUTOS).slice(0, rint(2, 6));
+    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: x.tipo === "bike" ? rint(1, 4) : rint(2, 12), sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "PV-" + db.seq++, cli: { cod: "C" + String(rint(100, 899)).padStart(4, "0"), nome: `${pick(NOMES)} ${cidade === "Fortaleza" ? bairro : cidade}`, cidade, bairro },
@@ -136,8 +139,8 @@
 
   // pedido de montagem: chega do Sankhya igual a um pedido normal; só o tipo de operação muda (prefixo OP)
   function makeOP({ prio = false, chegada = now() } = {}) {
-    const pool = [...W.COMPONENTES, ...W.PRODUTOS.filter((x) => x.tipo === "peca")];
-    const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: W.ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
+    const pool = [...COMPONENTES, ...PRODUTOS.filter((x) => x.tipo === "peca")];
+    const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "OP-" + db.seq++, op: true, cli: null, vendedor: null, rota: null, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
@@ -996,7 +999,7 @@
     const loadOf = (pid) => B.cols[pid].reduce((t, id) => t + (k === "emb" ? cargaVol(C(id)) - cargaLidos(C(id)) : k === "lib" ? 1 : units(P(id)) - doneU(P(id), k)), 0);
     // só para quem está atuando neste setor agora
     const ids = Object.keys(B.cols).filter((pid) => !temSetor(k) || aqui(pid));
-    if (!ids.length) return toast(`Ninguém da ${BOARDS[k].nome.toLowerCase()} está atuando na ${W.SETORES[SETOR]} agora`);
+    if (!ids.length) return toast(`Ninguém da ${BOARDS[k].nome.toLowerCase()} está atuando na ${SETORES[SETOR]} agora`);
     cand.forEach((id) => moveCore(k, id, ids.slice().sort((a, b) => loadOf(a) - loadOf(b))[0], null));
     save(); render();
     const what = { sep: "distribuído(s) por carga de trabalho", conf: "distribuído(s) por carga de trabalho", lib: "liberado(s) no Sankhya", emb: "designada(s) aos motoristas" }[k];
@@ -1059,10 +1062,10 @@
   }
 
   $("#userBtn").addEventListener("click", () => {
-    openModal(`<h2>${esc(sess.nome)}</h2><p>Perfil: ${W.PERFIS[sess.perfil]}</p>
+    openModal(`<h2>${esc(sess.nome)}</h2><p>Perfil: ${PERFIS[sess.perfil]}</p>
       <div class="m-act"><button class="btn ghost" id="mReset">Reiniciar dados de demonstração</button><button class="btn primary" id="mOut">Sair</button></div>`);
     $("#mReset").onclick = () => { seed(); closeModal(); closeDrawer(); render(true); toast("Cenário de demonstração reiniciado"); };
-    $("#mOut").onclick = () => { W.logout(); location.replace("./"); };
+    $("#mOut").onclick = () => { logout(); location.replace("./"); };
   });
 
   // ---------- gaveta: detalhe do pedido / da carga ----------

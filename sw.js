@@ -1,7 +1,11 @@
 // Service worker: mantém o app funcionando offline.
 const CACHE = "wms-bb-v15";
 const V = "?v=15";
-const ASSETS = ["./", "index.html", "conferencia.html", "gestao.html", "montagem.html", "gestao.css" + V, "gestao.js" + V, "gestao-regras.js" + V, "styles.css" + V, "app.js" + V, "embarque.js" + V, "data.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V, "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
+const ASSETS = ["./", "index.html", "conferencia.html", "gestao.html", "montagem.html", "gestao.css" + V, "gestao.js" + V, "styles.css" + V, "app.js" + V, "embarque.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V,
+  // módulos importados pelas telas (o import não leva ?v; o service worker busca sempre a versão nova na rede)
+  "etiqueta.js", "js/sessao.js", "js/demo-dados.js", "js/dados/separacao.js", "js/dados/conferencia.js",
+  "compartilhado/regras/rotas.js", "compartilhado/regras/volumes.js", "compartilhado/regras/etiqueta-volume.js", "compartilhado/regras/produtos.js",
+  "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

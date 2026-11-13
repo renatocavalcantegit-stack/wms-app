@@ -1,9 +1,13 @@
 // WMS Beach Bike — Embarque (mobile): leitura dos volumes etiquetados no caminhão
+import { seedEmbarque } from "./js/demo-dados.js";
+import { obsLinhas } from "./compartilhado/regras/volumes.js";
+import { parseVolume } from "./compartilhado/regras/etiqueta-volume.js";
+import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
+
 window.Embarque = (() => {
   "use strict";
 
   const STORE = "wms-bb-emb-v1";
-  const W = window.WMS;
   const { $, $$, esc, show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser, CHECK } = window.UI;
 
   let cargas = load();
@@ -13,10 +17,10 @@ window.Embarque = (() => {
   function load() {
     let d;
     try { d = JSON.parse(localStorage.getItem(STORE)); } catch {}
-    if (!Array.isArray(d) || !d.length) d = W.seedEmbarque();
+    if (!Array.isArray(d) || !d.length) d = seedEmbarque();
     else {
       // dados salvos antes da observação dos volumes: completa com a do cenário de demonstração
-      const seed = new Map(W.seedEmbarque().flatMap((c) => c.pedidos).map((p) => [p.id, p.obs]));
+      const seed = new Map(seedEmbarque().flatMap((c) => c.pedidos).map((p) => [p.id, p.obs]));
       d.forEach((c) => c.pedidos.forEach((p) => { if (p.obs === undefined) p.obs = seed.get(p.id) || null; }));
     }
     importConferidos(d);
@@ -26,8 +30,7 @@ window.Embarque = (() => {
 
   // pedidos conferidos neste aparelho/navegador que ainda não estão em carga → carga avulsa
   function importConferidos(d) {
-    let conf;
-    try { conf = (JSON.parse(localStorage.getItem(W.CONF_STORE)) || {}).orders || []; } catch { conf = []; }
+    const conf = lerPedidosDaConferencia("exp");
     const inCarga = new Set(d.flatMap((c) => c.pedidos.map((p) => p.id)));
     // observação dos volumes informada na conferência vale também para pedidos que já estão em carga
     // (a quantidade de volumes acompanha enquanto o pedido ainda não começou a ser bipado)
@@ -183,7 +186,7 @@ window.Embarque = (() => {
 
   function handle(raw) {
     if (!cur || !String(raw).trim()) return;
-    const v = W.parseVolume(raw);
+    const v = parseVolume(raw);
     if (!v) return fail("Etiqueta inválida", `Código lido: ${String(raw).slice(0, 40)}`);
 
     const p = cur.pedidos.find((x) => x.id === v.id);
@@ -233,7 +236,7 @@ window.Embarque = (() => {
     obsBack = back;
     $("#soId").textContent = `${p.id} · ${p.volumes} volume${p.volumes > 1 ? "s" : ""}`;
     $("#soCli").textContent = `${p.cliente} · ${p.cidade}`;
-    $("#soList").innerHTML = W.obsLinhas(o).map(([n, nome]) => `<div class="so-row"><b>${n}</b><span>${esc(nome)}</span></div>`).join("");
+    $("#soList").innerHTML = obsLinhas(o).map(([n, nome]) => `<div class="so-row"><b>${n}</b><span>${esc(nome)}</span></div>`).join("");
     $("#soAt").hidden = !o.atencao;
     $("#soAtT").textContent = o.atencao || "";
     const em = o.em ? new Date(o.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";

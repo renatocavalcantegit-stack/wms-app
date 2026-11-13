@@ -1,9 +1,7 @@
 // Observação dos volumes: informada na conferência, gravada no pedido do Sankhya e mostrada no embarque.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WMS } from "./codigo-atual.js";
-
-const { obsTotal, obsLinhas, obsErp, obsResumo } = WMS;
+import { obsTotal, obsLinhas, obsErp, obsResumo } from "../compartilhado/regras/volumes.js";
 
 test("obsTotal: soma os volumes de todos os tipos", () => {
   assert.equal(obsTotal({ tipos: { caixa: 2, pneuaro: 1 } }), 3);

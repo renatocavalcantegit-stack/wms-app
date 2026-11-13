@@ -1,18 +1,21 @@
 // WMS Beach Bike — Conferência (desktop, leitor de código de barras tipo "caixa")
+import { SETORES, session, logout, setSetor } from "./js/sessao.js";
+import { find } from "./js/demo-dados.js";
+import { VOL_TIPOS, obsTotal, obsErp, obsResumo } from "./compartilhado/regras/volumes.js";
+import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto } from "./js/dados/conferencia.js";
+import { Etiqueta } from "./etiqueta.js";
+
 (() => {
   "use strict";
 
-  const W = window.WMS;
-
   // acesso exclusivo do perfil Conferência
-  const sess = W.session();
+  const sess = session();
   if (!sess || sess.perfil !== "conf") { location.replace("./"); return; }
   const user = sess.nome;
 
   // setor: Expedição (volumes, observação, etiquetas) ou Montagem (pedidos OP, sem volumes/etiquetas)
   const SEM_SETOR = !sess.setor;
   const SETOR = sess.setor || "exp", MONT = SETOR === "mont";
-  const STORE = W.stores(SETOR).conf;
   document.body.classList.toggle("setor-mont", MONT);
 
   // aparelho de toque (celular/tablet): sem foco automático e com câmera
@@ -23,32 +26,10 @@
   let queueFilter = "aguardando";
   let cur = null; // pedido aberto
 
-  function load() {
-    let d;
-    try { d = JSON.parse(localStorage.getItem(STORE)); } catch {}
-    if (!d || !Array.isArray(d.orders)) d = { orders: (MONT ? W.seedConferenciaMont() : W.seedConferencia()).map(prep) };
-    importFromSeparacao(d);
-    return d;
-  }
-  const save = () => localStorage.setItem(STORE, JSON.stringify(db));
-
-  function prep(o) {
-    o.conf = { status: "aguardando", itens: {}, fora: [], log: [], inicio: null, fim: null, volumes: 0, conferente: null };
-    o.itens.forEach((i) => (o.conf.itens[i.sku] = 0));
-    return o;
-  }
-
-  // traz pedidos concluídos na Separação (mesmo navegador)
-  function importFromSeparacao(d) {
-    let sep;
-    try { sep = JSON.parse(localStorage.getItem(W.stores(SETOR).sep)) || []; } catch { sep = []; }
-    sep.filter((o) => o.status === "concluido").forEach((o) => {
-      const ex = d.orders.find((x) => x.id === o.id);
-      if (ex && ex.fim === o.fim) return;
-      const copy = prep(JSON.parse(JSON.stringify(o)));
-      if (ex) d.orders[d.orders.indexOf(ex)] = copy; else d.orders.unshift(copy);
-    });
-  }
+  // onde os pedidos ficam guardados é assunto da camada de dados (js/dados/conferencia.js),
+  // que também traz os pedidos concluídos na Separação
+  function load() { return carregarConferencia(SETOR); }
+  const save = () => salvarConferencia(SETOR, db);
 
   // ---------- utils ----------
   const $ = (s) => document.querySelector(s);
@@ -72,8 +53,8 @@
 
   setInterval(() => ($("#clock").textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })), 1000);
   $("#clock").textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  $("#station").value = localStorage.getItem("wms-bb-posto") || "01";
-  $("#station").addEventListener("change", (e) => localStorage.setItem("wms-bb-posto", e.target.value));
+  $("#station").value = lerPosto();
+  $("#station").addEventListener("change", (e) => salvarPosto(e.target.value));
 
   // ---------- cálculo por item ----------
   function itemState(o, i) {
@@ -147,7 +128,7 @@
     if (!o) return;
     if (o.conf.status === "conferido" || o.conf.status === "divergente") {
       if (!confirm(`${o.id} já foi conferido. Conferir novamente?`)) return focusScan();
-      Object.assign(o, prep(o));
+      Object.assign(o, prepararParaConferencia(o));
     }
     if (o.conf.status === "aguardando") { o.conf.status = "andamento"; o.conf.inicio = Date.now(); o.conf.conferente = user; save(); }
     cur = o;
@@ -220,7 +201,7 @@
     const num = (x) => x.trim().toUpperCase().replace(/^(PV|OP)-?/, "");
     const pid = num(code.split("|")[0]);
     const ord = db.orders.find((o) => num(o.id) === pid);
-    if (ord && (!cur || !W.find(code))) {
+    if (ord && (!cur || !find(code))) {
       if (cur && cur !== ord) { setMsg(`Finalize ou volte à fila (F2) antes de abrir ${ord.id}.`, "err"); beep(false); return; }
       if (!cur) return openOrder(ord);
       if (cur === ord) { setMsg(`Pedido ${ord.id} já está aberto.`); return; }
@@ -228,7 +209,7 @@
 
     if (!cur) { setMsg("Bipe primeiro o código do pedido.", "err"); beep(false); errLast("Código não é um pedido", code); return; }
 
-    const p = W.find(code);
+    const p = find(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
 
     const it = cur.itens.find((i) => i.sku === p.sku);
@@ -274,7 +255,7 @@
       f.q -= l.q; if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
     } else cur.conf.itens[l.sku] = Math.max(0, cur.conf.itens[l.sku] - l.q);
     save(); renderItems(); renderTotals();
-    const p = W.find(l.sku);
+    const p = find(l.sku);
     setLast({ label: `Estornado −${l.q}`, desc: p.desc, code: p.sku, conf: l.fora ? "—" : cur.conf.itens[l.sku], exp: l.fora ? 0 : cur.itens.find((i) => i.sku === l.sku).sep });
     setMsg(`Última leitura estornada (${l.sku} −${l.q})`);
   }
@@ -377,10 +358,10 @@
     if (document.activeElement) document.activeElement.blur();
     $("#mObs").focus();
   }
-  const obsOk = () => W.obsTotal(obsDraft) === fin.vol && !(obsDraft.tipos.outro > 0 && !obsDraft.outro.trim());
+  const obsOk = () => obsTotal(obsDraft) === fin.vol && !(obsDraft.tipos.outro > 0 && !obsDraft.outro.trim());
   function renderObs() {
-    const t = W.obsTotal(obsDraft), v = fin.vol;
-    $("#oTipos").innerHTML = W.VOL_TIPOS.map(([id, nome], i) => {
+    const t = obsTotal(obsDraft), v = fin.vol;
+    $("#oTipos").innerHTML = VOL_TIPOS.map(([id, nome], i) => {
       const n = obsDraft.tipos[id] || 0;
       return `<div class="o-tipo ${n ? "on" : ""}">
         <button class="o-add" data-add="${id}"><kbd>${i + 1}</kbd><span>${nome}</span></button>
@@ -391,7 +372,7 @@
     $("#oOutroF").hidden = !outro;
     $("#oCount").className = "o-count " + (t === v ? "ok" : t > v ? "over" : "");
     $("#oCount").innerHTML = `<b>${t} de ${v}</b><span>${t === v ? "volumes descritos" : t > v ? `${t - v} a mais que a quantidade` : `falta${v - t > 1 ? "m" : ""} ${v - t}`}</span>`;
-    $("#oErp").textContent = t ? W.obsErp(obsDraft) : "—";
+    $("#oErp").textContent = t ? obsErp(obsDraft) : "—";
     const ok = obsOk();
     $("#oGo").disabled = !ok;
     $("#oGo").title = ok ? "" : outro && t === v ? 'Descreva o volume "Outro"' : `A soma dos volumes descritos (${t}) tem que ser igual à quantidade de volumes (${v})`;
@@ -412,14 +393,14 @@
   $("#oGo").addEventListener("click", confirmObs);
 
   function confirmObs() {
-    if (!obsOk()) { beep(false); toast(W.obsTotal(obsDraft) !== fin.vol ? `Descreva os ${fin.vol} volumes antes de continuar` : 'Descreva o volume "Outro"'); return; }
+    if (!obsOk()) { beep(false); toast(obsTotal(obsDraft) !== fin.vol ? `Descreva os ${fin.vol} volumes antes de continuar` : 'Descreva o volume "Outro"'); return; }
     const o = fin.o, tipos = {};
     Object.entries(obsDraft.tipos).forEach(([k, n]) => { if (n > 0) tipos[k] = n; });
     o.conf.obs = { tipos, outro: tipos.outro ? obsDraft.outro.trim() : "", atencao: obsDraft.atencao.trim(), por: user, em: Date.now() };
     o.conf.volumes = fin.vol;
     // integração (simulada): grava o bloco [WMS] na observação do pedido no Sankhya, sem apagar a do vendedor,
     // e a quantidade de volumes no cabeçalho (sai na NF-e)
-    o.conf.erp = { observacao: W.obsErp(o.conf.obs), qtdVolumes: fin.vol, enviado: Date.now() };
+    o.conf.erp = { observacao: obsErp(o.conf.obs), qtdVolumes: fin.vol, enviado: Date.now() };
     if (fin.fix) {
       save(); fin = null;
       openPrint(o, printThenQueue);
@@ -447,7 +428,7 @@
     }
     $("#dTitle").textContent = div ? "Conferido com divergência" : "Pedido conferido";
     $("#dSub").textContent = `${cur.id} · ${cur.conf.volumes} volume(s) · ${s.un} un. · ${mins} min`;
-    $("#dObs").textContent = W.obsResumo(cur.conf.obs);
+    $("#dObs").textContent = obsResumo(cur.conf.obs);
     $("#dPrint").innerHTML = `Imprimir ${cur.conf.volumes} etiqueta${cur.conf.volumes > 1 ? "s" : ""} <kbd>Enter</kbd>`;
     $("#mDone .done-check").style.filter = div ? "hue-rotate(-110deg) saturate(1.6)" : "";
     openModal("mDone");
@@ -470,7 +451,7 @@
     printOrder = o; printThenQueue = fromDone;
     $("#pVol").textContent = o.conf.volumes || 1;
     $("#pObs").hidden = !o.conf.obs;
-    if (o.conf.obs) $("#pObs").innerHTML = `<b>Volumes:</b> ${esc(W.obsResumo(o.conf.obs))}${o.conf.obs.atencao ? ` · <b>Atenção:</b> ${esc(o.conf.obs.atencao)}` : ""}`;
+    if (o.conf.obs) $("#pObs").innerHTML = `<b>Volumes:</b> ${esc(obsResumo(o.conf.obs))}${o.conf.obs.atencao ? ` · <b>Atenção:</b> ${esc(o.conf.obs.atencao)}` : ""}`;
     renderPreview();
     openModal("mPrint");
   }
@@ -499,7 +480,7 @@
   $("#modalScrim").addEventListener("click", () => { if (!(modal === "mSetor" && SEM_SETOR)) closeModal(); });
 
   // usuário logado / sair
-  $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; $("#opSetor").textContent = W.SETORES[SETOR]; openModal("mOp"); });
+  $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; $("#opSetor").textContent = SETORES[SETOR]; openModal("mOp"); });
 
   // ---------- setor ----------
   function openSetor() {
@@ -509,18 +490,18 @@
   }
   function pickSetor(x) {
     if (!SEM_SETOR && x === SETOR) { closeModal(); return; }
-    if (cur && cur.conf.status === "andamento") toast(`${cur.id} fica em conferência na ${W.SETORES[SETOR]}`);
-    W.setSetor(x); location.reload();
+    if (cur && cur.conf.status === "andamento") toast(`${cur.id} fica em conferência na ${SETORES[SETOR]}`);
+    setSetor(x); location.reload();
   }
   $("#mSetor .sx-opts").addEventListener("click", (e) => { const b = e.target.closest("[data-setor]"); if (b) pickSetor(b.dataset.setor); });
-  $("#sxOut").addEventListener("click", () => { W.logout(); location.replace("./"); });
+  $("#sxOut").addEventListener("click", () => { logout(); location.replace("./"); });
   $("#setorBtn").addEventListener("click", openSetor);
   $("#opSetorBtn").addEventListener("click", openSetor);
-  $("#setorT").textContent = W.SETORES[SETOR];
+  $("#setorT").textContent = SETORES[SETOR];
   $("#setorBtn").classList.toggle("mont", MONT);
   $("#setorBtn").hidden = SEM_SETOR;
   if (MONT) { $("#dGo").className = "btn primary"; $("#dGo").innerHTML = "Voltar à fila <kbd>Enter</kbd>"; }
-  $("#opLogout").addEventListener("click", () => { W.logout(); location.replace("./"); });
+  $("#opLogout").addEventListener("click", () => { logout(); location.replace("./"); });
 
   // ---------- foco do leitor + atalhos ----------
   function focusScan() { if (!modal && !TOUCH) $("#scan").focus(); }
@@ -547,7 +528,7 @@
       if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); goObs(); }
       else if (e.key === "Enter" && modal === "mObs") { e.preventDefault(); if (e.target.id === "oBack") openModal("mFinish"); else confirmObs(); }
       else if (modal === "mObs" && /^[1-9]$/.test(e.key) && !e.target.closest("input")) {
-        e.preventDefault(); const t = W.VOL_TIPOS[+e.key - 1]; if (t) obsStep(t[0], e.altKey ? -1 : 1);
+        e.preventDefault(); const t = VOL_TIPOS[+e.key - 1]; if (t) obsStep(t[0], e.altKey ? -1 : 1);
       }
       else if (e.key === "Enter" && modal === "mDone") { e.preventDefault(); if (MONT) { closeModal(); showQueue(); } else printDone(); }
       else if (e.key === "Enter" && modal === "mPrint" && !e.target.closest("button")) { e.preventDefault(); doPrint(); }

@@ -1,8 +1,9 @@
 // Etiqueta de volume 80x60 mm com QR (layout inspirado em etiquetas de marketplace)
-window.Etiqueta = (() => {
+import { ascii, qrText } from "./compartilhado/regras/etiqueta-volume.js";
+
+export const Etiqueta = (() => {
   "use strict";
 
-  const ascii = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\x20-\x7E]/g, "");
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   // QR como SVG (vetorial: nítido em qualquer impressora térmica)
@@ -24,8 +25,7 @@ window.Etiqueta = (() => {
     return { uf, cid: c.replace(/[^A-Z]/g, "").slice(0, 3) };
   }
 
-  // conteúdo do QR: lido pela própria Conferência (abre o pedido)
-  const qrText = (o, v, n) => `${o.id}|${v}/${n}|${ascii(o.cliente).toUpperCase()}|${ascii(String(o.cidade).replace(/\s*·\s*/, "-")).toUpperCase()}`;
+  // conteúdo do QR (qrText): vem de compartilhado/regras/etiqueta-volume.js, lido pela própria Conferência
 
   function label(o, v, n) {
     const r = rota(o.cidade);

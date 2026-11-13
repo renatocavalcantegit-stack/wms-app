@@ -2,9 +2,7 @@
 // Semana usada nos testes (novembro/2026): seg 09 · ter 10 · qua 11 · qui 12 · sex 13 · sáb 14 · dom 15.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Regras } from "./codigo-atual.js";
-
-const { rota, iso, addDays, diffDays, fmtDia, embarca, proximoEmbarque, calcEmbarque, tag, regraTexto } = Regras;
+import { rota, iso, addDays, diffDays, fmtDia, embarca, proximoEmbarque, calcEmbarque, tag, regraTexto } from "../compartilhado/regras/rotas.js";
 
 // momento de chegada do pedido, no fuso local (ex.: chegada("2026-11-09", "08:30"))
 const chegada = (dia, hora) => new Date(`${dia}T${hora}`).getTime();

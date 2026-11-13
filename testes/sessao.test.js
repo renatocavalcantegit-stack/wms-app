@@ -3,9 +3,8 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
-import { WMS } from "./codigo-atual.js";
+import { USERS, session, login, logout, setSetor, homeUrl, temSetor } from "../js/sessao.js";
 
-const { USERS, session, login, logout, setSetor, homeUrl, temSetor } = WMS;
 const separador = USERS.find((u) => u.perfil === "sep");
 
 beforeEach(limparArmazenamento);

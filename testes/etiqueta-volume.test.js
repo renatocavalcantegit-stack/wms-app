@@ -1,10 +1,7 @@
 // Etiqueta de volume: o texto do QR impresso na conferência e a leitura dele no embarque.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WMS, Etiqueta } from "./codigo-atual.js";
-
-const { parseVolume } = WMS;
-const { qrText } = Etiqueta;
+import { qrText, parseVolume } from "../compartilhado/regras/etiqueta-volume.js";
 
 test("qrText: pedido | volume/total | cliente | cidade-UF, sem acentos e em maiúsculas", () => {
   const pedido = { id: "PV-10404", cliente: "Trilha Livre Bike Shop", cidade: "Petrolina · PE" };

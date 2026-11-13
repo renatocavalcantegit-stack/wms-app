@@ -1,9 +1,8 @@
 // Catálogo: busca de produto pelo código lido e ordem de separação pelo endereço.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WMS } from "./codigo-atual.js";
-
-const { find, routeSort } = WMS;
+import { routeSort } from "../compartilhado/regras/produtos.js";
+import { find } from "../js/demo-dados.js";
 
 test("find: acha o produto pelo EAN ou pelo SKU, ignorando espaços e maiúsculas/minúsculas", () => {
   assert.equal(find("7891000100011").sku, "BK-29-ALU-18");
