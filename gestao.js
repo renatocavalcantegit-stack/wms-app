@@ -130,7 +130,7 @@
     const c = {
       id: "CG-" + String(db.cargaSeq++).padStart(4, "0"), rota: rid, motorista: mot || null, veiculo: veic, placa: placa(),
       doca: pad(rint(1, 4)), data: ids.map((id) => P(id).embarque).sort()[0] || hoje(), pedidos: [...ids], lidos: {},
-      status: "aguardando", atrib: ts, inicio: null, fim: null, lacre: "", alertas: [], hist: [], criado: ts,
+      status: "aguardando", atrib: ts, inicio: null, fim: null, alertas: [], hist: [], criado: ts,
     };
     db.cargas[c.id] = c;
     ids.forEach((id) => {
@@ -250,9 +250,9 @@
         c.alertas.push({ t: t - 2 * MIN, txt: `Bip duplicado: ${c.pedidos[0]} vol. 1 — ignorado` });
       }
       if (status === "embarcada") {
-        Object.assign(c, { status: "embarcada", inicio: t - (minsAgo + 18) * MIN, fim: t - minsAgo * MIN, lacre: String(rint(4400, 4890)).padStart(6, "0") });
-        c.pedidos.forEach((id) => { c.lidos[id] = P(id).volumes; const p = P(id); p.etapa = "fim"; p.embarcado = c.fim; log(p, `Embarcado · ${c.veiculo} ${c.placa} · lacre ${c.lacre}`, c.fim); });
-        log(c, `Carregamento iniciado na doca ${c.doca} · ${OPERADOR}`, c.inicio); log(c, `Embarcada · lacre ${c.lacre}`, c.fim);
+        Object.assign(c, { status: "embarcada", inicio: t - (minsAgo + 18) * MIN, fim: t - minsAgo * MIN });
+        c.pedidos.forEach((id) => { c.lidos[id] = P(id).volumes; const p = P(id); p.etapa = "fim"; p.embarcado = c.fim; log(p, `Embarcado · ${c.veiculo} ${c.placa}`, c.fim); });
+        log(c, `Carregamento iniciado na doca ${c.doca} · ${OPERADOR}`, c.inicio); log(c, `Embarcada · ${c.veiculo} ${c.placa}`, c.fim);
         const l = db.emb.cols[mot]; l.splice(l.indexOf(c.id), 1); db.stats[mot]++;
       }
       return c;
@@ -431,7 +431,7 @@
     if (p.etapa === "mont") return S("Aguardando montagem de carga", "erp", "emb", `NF ${p.nota}`);
     if (p.etapa === "emb") { const c = C(p.carga); return S("Aguardando embarque", "ship", "emb", `${c.id}${c.status === "carregando" ? " · carregando" : c.motorista ? "" : " · sem motorista"}`); }
     const c = C(p.carga);
-    return S("Embarcado", "done", "fim", c ? `${c.id} · lacre ${c.lacre}` : "");
+    return S("Embarcado", "done", "fim", c ? `${c.id} · ${c.placa}` : "");
   }
 
   // ---------- render ----------
@@ -1004,7 +1004,7 @@
     if (!c) return closeDrawer();
     const vol = cargaVol(c), lid = cargaLidos(c), pc = vol ? Math.round((lid / vol) * 100) : 0, cur = cargaCur(c);
     const loc = locate("emb", c.id);
-    const st = c.status === "embarcada" ? { txt: `Embarcada · lacre ${c.lacre}`, cls: "" } : c.status === "carregando" ? { txt: `Carregando · doca ${c.doca}`, cls: "live" }
+    const st = c.status === "embarcada" ? { txt: `Embarcada · ${fmtTime(c.fim)}`, cls: "" } : c.status === "carregando" ? { txt: `Carregando · doca ${c.doca}`, cls: "live" }
       : !c.motorista ? { txt: "Aguardando motorista", cls: "wait" } : { txt: `Na fila de ${nameOf(c.motorista)} · ${loc ? loc.list.indexOf(c.id) + 1 : 1}ª`, cls: "wait" };
     const liveHtml = c.status === "carregando" ? `<div class="dr-live">
         <div class="cl-row"><span class="cl-tag"><i></i>Bipando agora · ${OPERADOR}</span><span class="timer" data-since="${c.inicio}">00:00</span></div>
@@ -1037,7 +1037,7 @@
           <div><b>${c.pedidos.length}</b><small>pedidos</small></div>
           <div><b>${vol}</b><small>volumes</small></div>
           <div><b>${lid}</b><small>bipados</small></div>
-          <div><b>${c.lacre || "—"}</b><small>lacre</small></div>
+          <div><b>${(c.alertas || []).length}</b><small>alertas</small></div>
         </div>
         ${liveHtml}
         <section>
@@ -1144,12 +1144,12 @@
         if (c.lidos[cur] >= P(cur).volumes) log(P(cur), `Todos os volumes carregados (${c.id})`);
       }
       if (!cargaCur(c)) {
-        c.status = "embarcada"; c.fim = now(); c.lacre = String(4500 + Math.floor(Math.random() * 400)).padStart(6, "0");
+        c.status = "embarcada"; c.fim = now();
         l.shift(); db.stats[mid]++;
-        c.pedidos.forEach((id) => { const p = P(id); p.etapa = "fim"; p.embarcado = now(); log(p, `Embarcado · ${c.veiculo} ${c.placa} · lacre ${c.lacre}`); });
-        log(c, `Embarcada · lacre ${c.lacre}`);
+        c.pedidos.forEach((id) => { const p = P(id); p.etapa = "fim"; p.embarcado = now(); log(p, `Embarcado · ${c.veiculo} ${c.placa}`); });
+        log(c, `Embarcada · ${c.veiculo} ${c.placa}`);
         if (l[0]) C(l[0]).atrib = now();
-        toast(`${c.id} embarcada · ${nameOf(mid)} · lacre ${c.lacre}`);
+        toast(`${c.id} embarcada · ${nameOf(mid)} · ${c.placa}`);
       }
     });
 

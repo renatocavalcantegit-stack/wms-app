@@ -78,7 +78,7 @@ window.WMS = (() => {
     const p = (id, cliente, cidade, volumes, tipos, atencao = "", outro = "") =>
       ({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Usuário Conferente", em: null } : null });
     const c = (id, rota, veiculo, placa, motorista, doca, saida, pedidos) => ({
-      id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, lacre: "", operador: null, log: [], obs: "",
+      id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, operador: null, log: [], obs: "",
     });
     return [
       c("CG-0231", "Recife / RMR", "VUC", "QYK-4B21", "José Carlos", "02", "10:30", [

@@ -41,7 +41,7 @@ window.Embarque = (() => {
     if (!novos.length) return;
     let av = d.find((c) => c.id === "CG-AVULSA" && c.status !== "embarcada" && c.status !== "parcial");
     if (!av) {
-      av = { id: "CG-AVULSA", rota: "Avulsa", veiculo: "A definir", placa: "—", motorista: "—", doca: "01", saida: "—", pedidos: [], status: "aberta", inicio: null, fim: null, lacre: "", operador: null, log: [], obs: "" };
+      av = { id: "CG-AVULSA", rota: "Avulsa", veiculo: "A definir", placa: "—", motorista: "—", doca: "01", saida: "—", pedidos: [], status: "aberta", inicio: null, fim: null, operador: null, log: [], obs: "" };
       d.unshift(av);
     }
     novos.forEach((o) => av.pedidos.push({ id: o.id, cliente: o.cliente, cidade: o.cidade, volumes: o.conf.volumes || 1, lidos: [], obs: o.conf.obs || null }));
@@ -272,11 +272,10 @@ window.Embarque = (() => {
     if (lidos(c) === 0) return toast("Nenhum volume lido ainda");
     const parcial = falt.length > 0;
     $("#sfTitle").textContent = parcial ? "Embarque parcial?" : "Finalizar embarque";
-    $("#sfSub").textContent = parcial ? `${falt.length} volume(s) não foram lidos e ficarão na doca.` : `${totVol(c)} volumes no veículo ${c.placa}. Informe o lacre.`;
+    $("#sfSub").textContent = parcial ? `${falt.length} volume(s) não foram lidos e ficarão na doca.` : `${totVol(c)} volumes no veículo ${c.placa}.`;
     $("#sfMissing").innerHTML = falt.map(({ p, v }) => `<div class="line"><span class="dot falta">!</span>
       <span class="line-desc"><b>${p.id}</b> · volume ${v}/${p.volumes}<small>${esc(p.cliente)}</small></span></div>`).join("");
     $("#sfObsWrap").hidden = !parcial;
-    $("#sfLacre").value = c.lacre || "";
     const go = $("#sfGo");
     go.className = "btn block " + (parcial ? "danger" : "primary");
     go.textContent = parcial ? "Embarcar parcial" : "Confirmar embarque";
@@ -285,16 +284,14 @@ window.Embarque = (() => {
 
   $("#sfGo").addEventListener("click", () => {
     const c = cur, parcial = lidos(c) < totVol(c);
-    const lacre = $("#sfLacre").value.trim();
-    if (!lacre) { toast("Informe o número do lacre"); $("#sfLacre").focus(); return; }
-    Object.assign(c, { status: parcial ? "parcial" : "embarcada", fim: Date.now(), lacre, obs: $("#sfObs").value.trim() });
+    Object.assign(c, { status: parcial ? "parcial" : "embarcada", fim: Date.now(), obs: $("#sfObs").value.trim() });
     save(); closeSheets();
     const mins = Math.max(1, Math.round((c.fim - c.inicio) / 60000));
     $("#ldTitle").textContent = parcial ? "Embarque parcial registrado" : "Carga embarcada";
     $("#ldSub").textContent = `${c.id} · ${c.rota} · ${c.veiculo} ${c.placa}`;
     $("#ldTime").textContent = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, "0")}`;
     $("#ldVol").textContent = `${lidos(c)}/${totVol(c)}`;
-    $("#ldLacre").textContent = lacre;
+    $("#ldPed").textContent = c.pedidos.length;
     $("#ldMissing").innerHTML = parcial ? $("#sfMissing").innerHTML : "";
     $("#viewLoadDone .done-check").classList.toggle("warn", parcial);
     vibrate([40, 60, 120]);

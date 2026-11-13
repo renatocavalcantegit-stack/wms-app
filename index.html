@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
 
@@ -255,7 +255,7 @@
       <div class="done-stats">
         <div><span id="ldTime" class="kpi-n">–</span><span class="kpi-l">Tempo</span></div>
         <div><span id="ldVol" class="kpi-n">0</span><span class="kpi-l">Volumes</span></div>
-        <div><span id="ldLacre" class="kpi-n">–</span><span class="kpi-l">Lacre</span></div>
+        <div><span id="ldPed" class="kpi-n">0</span><span class="kpi-l">Pedidos</span></div>
       </div>
       <div id="ldMissing" class="done-list"></div>
       <button id="ldBack" class="btn primary block">Voltar às cargas</button>
@@ -306,10 +306,6 @@
     <p id="sfTitle" class="sheet-title">Finalizar embarque</p>
     <p id="sfSub" class="muted"></p>
     <div id="sfMissing" class="sheet-list"></div>
-    <label class="field">
-      <span>Número do lacre</span>
-      <input id="sfLacre" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: 004512">
-    </label>
     <label class="field" id="sfObsWrap">
       <span>Observação (volumes não embarcados)</span>
       <input id="sfObs" type="text" maxlength="80" placeholder="Ex.: volume avariado, retorna à doca">
@@ -376,8 +372,8 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="data.js?v=13"></script>
-  <script src="app.js?v=13"></script>
-  <script src="embarque.js?v=13"></script>
+  <script src="data.js?v=14"></script>
+  <script src="app.js?v=14"></script>
+  <script src="embarque.js?v=14"></script>
 </body>
 </html>
