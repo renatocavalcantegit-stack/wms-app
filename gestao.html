@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=10">
-  <link rel="stylesheet" href="gestao.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="gestao.css?v=11">
 </head>
 <body class="gx">
 
@@ -31,9 +31,17 @@
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
         Conferência <b id="tbConf">0</b>
       </button>
+      <button class="gx-tab" data-board="lib">
+        <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h7M9 17h5"/></svg>
+        Faturamento <b id="tbLib">0</b>
+      </button>
       <button class="gx-tab" data-board="emb">
         <svg viewBox="0 0 24 24"><path d="M2 6h11v10H2zM13 9h4l4 4v3h-8z"/><circle cx="6" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>
         Embarque <b id="tbEmb">0</b>
+      </button>
+      <button class="gx-tab" data-board="rota">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        Acompanhamento <b id="tbRota" class="red" hidden>0</b>
       </button>
     </nav>
 
@@ -72,7 +80,8 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="data.js?v=10"></script>
-  <script src="gestao.js?v=10"></script>
+  <script src="data.js?v=11"></script>
+  <script src="gestao-regras.js?v=11"></script>
+  <script src="gestao.js?v=11"></script>
 </body>
 </html>
