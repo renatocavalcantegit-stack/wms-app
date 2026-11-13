@@ -221,7 +221,10 @@
     }));
 
     // --- liberação para faturamento
-    [early(), at("11:35"), early(), early()].forEach((ch, i) => { const p = makePedido({ chegada: ch, rota: i === 1 ? "maracanau" : null, prio: i === 3 }); advance(p, "lib"); db.lib.inbox.push(p.id); });
+    // caixa com vários conferidos por rota, para o filtro e a liberação em lote
+    [["centro"], ["caucaia"], ["maracanau", at("11:35")], ["centro"], ["messejana"], ["caucaia", null, true], ["centro"],
+     ["cascavel"], ["messejana"], ["centro"], ["caucaia"], ["nortlog"]]
+      .forEach(([rota, ch, prio]) => { const p = makePedido({ chegada: ch || early(), rota, prio: !!prio }); advance(p, "lib"); db.lib.inbox.push(p.id); });
     const libPlan = { f1: ["live", 0, 0], f2: [0] };
     Object.entries(libPlan).forEach(([fid, plan]) => plan.forEach((step) => {
       const p = makePedido({ chegada: early(), rota: pick(DIARIAS) }); advance(p, "lib");
@@ -281,8 +284,12 @@
   let query = "";
   let openRef = null; // { t: "p" | "c", id }
   let sim = localStorage.getItem("wms-bb-gx-sim") !== "off";
-  let flashId = null;
-  let dragId = null, pendingRender = false;
+  let flashId = null; // id ou lista de ids destacados no próximo render
+  const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
+  let dragId = null, dragGroup = null, pendingRender = false;
+  // seleção em lote na caixa de entrada do faturamento
+  const sel = new Set();
+  let libVisible = [];
 
   // ---------- formatação ----------
   const fmtDur = (ms) => {
@@ -296,6 +303,7 @@
   const ICON_WARN = '<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>';
   const CARET = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>';
   const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+  const ICON_DOC = '<svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h7M9 17h5"/></svg>';
 
   // etiqueta da data de embarque (Hoje, Amanhã, Quinta, Fora do horário…)
   function embInfo(p) {
@@ -385,6 +393,25 @@
     else toast(`${id} → ${toCol === "inbox" ? "caixa de entrada" : nameOf(toCol)}`);
   }
 
+  // movimento em lote (faturamento): mantém a sequência e insere a partir de idx
+  function moveMany(k, ids, toCol, idx) {
+    let ok = 0, err = null;
+    ids.forEach((id) => {
+      const e = moveCore(k, id, toCol, idx == null ? null : idx + ok);
+      if (e) err = e; else { ok++; sel.delete(id); }
+    });
+    if (!ok) { toast(err || "Nada para mover"); render(); return; }
+    flashId = ids;
+    save(); render(); if (openRef) renderDrawer();
+    if (toCol === "inbox") return toast(`${ok} pedido(s) voltaram para a caixa · liberação cancelada no Sankhya`);
+    const ords = ids.map((id) => P(id).lib.ordem).filter((n) => n != null);
+    toast(`${ok} pedido(s) liberado(s) p/ ${nameOf(toCol)} · ordem ${Math.min(...ords)}–${Math.max(...ords)} enviada ao Sankhya`);
+  }
+  function liberarSel(fid) {
+    const ids = sortInbox(db.lib.inbox, "lib").filter((id) => sel.has(id));
+    if (ids.length) moveMany("lib", ids, fid, null);
+  }
+
   // ---------- status (acompanhamento e detalhe) ----------
   function statusOf(p) {
     const S = (txt, cls, grp, sub = "") => ({ txt, cls, grp, sub });
@@ -410,6 +437,7 @@
   // ---------- render ----------
   function render(reset = false) {
     if (dragId) { pendingRender = true; return; }
+    [...sel].forEach((id) => { if (!db.lib.inbox.includes(id)) sel.delete(id); });
     const b = $("#board");
     const scrolls = {}; if (!reset) $$(".gx-list").forEach((l) => (scrolls[l.dataset.col] = l.scrollTop));
     const bx = reset ? 0 : b.scrollLeft, by = reset ? 0 : b.scrollTop;
@@ -466,8 +494,8 @@
   function pedidoCard(p, k, o = {}) {
     const isL = live(p, k);
     const waiting = o.first && !isL && o.col !== "inbox";
-    const cls = ["card", !p.rota && "no-route", isL && "live", waiting && "waiting", flashId === p.id && "flash"].filter(Boolean).join(" ");
-    const nums = `<span><b>${p.itens.length}</b> SKUs</span><span><b>${units(p)}</b> un.</span>${p.volumes ? `<span><b>${p.volumes}</b> vol.</span>` : ""}`;
+    const cls = ["card", !p.rota && "no-route", isL && "live", waiting && "waiting", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
+    const nums =`<span><b>${p.itens.length}</b> SKUs</span><span><b>${units(p)}</b> un.</span>${p.volumes ? `<span><b>${p.volumes}</b> vol.</span>` : ""}`;
     const age = o.col === "inbox" ? fmtAge(k === "sep" ? p.chegada : k === "conf" ? p.sep.fim : p.conf.fim) : "";
     let liveHtml = "";
     if (isL && k !== "lib") {
@@ -499,11 +527,24 @@
     </article>`;
   }
 
+  // card compacto do faturamento (2 linhas): posição/seleção · pedido + etiquetas · volumes / rota · cliente
+  function libCard(p, o = {}) {
+    const isL = live(p, "lib"), inbox = o.col === "inbox", s = inbox && sel.has(p.id), r = rotaOf(p.rota);
+    const cls = ["card", "cc", isL && "live", s && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
+    const left = isL ? ICON_DOC : inbox ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : o.pos || "";
+    const right = isL ? `<span class="timer" data-since="${p.lib.inicio}">00:00</span>` : `<span class="cc-vol">${p.volumes} vol.</span>`;
+    return `<article class="${cls}" draggable="${!isL}" data-id="${p.id}" style="--rc:${r ? r.cor : "var(--red-brand)"}">
+      <span class="cc-pos">${left}</span>
+      <span class="cc-id">${p.id}${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}${embTag(p)}</span>${right}
+      <span class="cc-sub"><i></i>${esc(r ? r.nome : "Sem rota")} · ${esc(p.cli.nome)}</span>${isL ? `<span class="cc-st">faturando</span>` : ""}
+    </article>`;
+  }
+
   // card de carga (embarque)
   function cargaCard(c, o = {}) {
     const vol = cargaVol(c), lid = cargaLidos(c), isL = c.status === "carregando";
     const waiting = o.first && !isL && o.col !== "inbox";
-    const cls = ["card", "cg", isL && "live", waiting && "waiting", flashId === c.id && "flash"].filter(Boolean).join(" ");
+    const cls = ["card", "cg", isL && "live", waiting && "waiting", isFlash(c.id) && "flash"].filter(Boolean).join(" ");
     const cidades = new Set(c.pedidos.map((id) => P(id).cli.cidade)).size;
     let liveHtml = "";
     if (isL) {
@@ -539,13 +580,24 @@
   const FILTROS = { semrota: (p) => !p.rota, fora: foraPend, hoje: (p) => p.embarque === hoje(), prio: (p) => p.prio === "alta" };
 
   function inboxCol(k) {
-    const B = db[k], f = filters[k];
-    let ids = sortInbox(B.inbox, k), chips;
+    const B = db[k];
+    let f = filters[k], ids = sortInbox(B.inbox, k), chips;
+    // filtro de rota que esvaziou (tudo liberado) volta para "Todas"
+    if (k === "lib" && f !== "todos" && !B.inbox.some((id) => (rotaOf(f) ? P(id).rota === f : FILTROS[f] && FILTROS[f](P(id))))) f = filters.lib = "todos";
     const chip = (id, label, n, extra = "", style = "") => `<button class="gchip ${extra} ${f === id ? "active" : ""}" data-filter="${esc(id)}" ${style}>${label} <b>${n}</b></button>`;
     if (k === "emb") {
       if (f !== "todas") ids = ids.filter((id) => C(id).rota === f);
       const rotas = [...new Set(B.inbox.map((id) => C(id).rota))];
       chips = chip("todas", "Todas", B.inbox.length) + rotas.map((r) => chip(r, `<i></i>${esc(rotaOf(r).nome)}`, B.inbox.filter((id) => C(id).rota === r).length, "", `style="--rc:${rotaOf(r).cor}"`)).join("");
+    } else if (k === "lib") {
+      // faturamento: filtro por rota para liberar vários pedidos de uma vez
+      if (rotaOf(f)) ids = ids.filter((id) => P(id).rota === f); else if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
+      const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
+      const rotas = R.ROTAS.filter((r) => B.inbox.some((id) => P(id).rota === r.id));
+      const fo = cnt(foraPend), pr = cnt(FILTROS.prio);
+      chips = chip("todos", "Todas", B.inbox.length)
+        + rotas.map((r) => chip(r.id, `<i></i>${esc(r.nome)}`, cnt((p) => p.rota === r.id), "", `style="--rc:${r.cor}"`)).join("")
+        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + (pr ? chip("prio", "Prioridade", pr) : "");
     } else {
       if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
       const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
@@ -555,14 +607,27 @@
     }
     const title = { sep: "Caixa de entrada", conf: "Separados", lib: "Conferidos", emb: "Cargas do ERP" }[k];
     const sub = { sep: "Pedidos recebidos aguardando separador", conf: "Aguardando conferente", lib: "Aguardando liberação para faturamento", emb: "Montadas no Sankhya · aguardando motorista" }[k];
-    const cards = ids.map((id) => (k === "emb" ? cargaCard(C(id), { col: "inbox" }) : pedidoCard(P(id), k, { col: "inbox" }))).join("");
+    const cards = ids.map((id) => (k === "emb" ? cargaCard(C(id), { col: "inbox" }) : k === "lib" ? libCard(P(id), { col: "inbox" }) : pedidoCard(P(id), k, { col: "inbox" }))).join("");
+    let extra = "";
+    if (k === "lib") {
+      libVisible = ids;
+      if (ids.length) {
+        const all = ids.every((id) => sel.has(id)), rf = rotaOf(f);
+        extra += `<button class="lib-all" data-selall="1"><span class="cb ${all ? "on" : ""}">${all ? CHECK : ""}</span>${all ? "Limpar seleção" : rf ? `Selecionar os ${ids.length} de ${esc(rf.nome)}` : `Selecionar todos (${ids.length})`}</button>`;
+      }
+      if (sel.size) {
+        const v = [...sel].reduce((t, id) => t + P(id).volumes, 0);
+        extra += `<div class="lib-bar"><p><span>${sel.size} selecionado(s) · ${v} vol.</span><button class="x" data-selclear="1">Limpar</button></p><div>${FATS.map((x) => `<button data-libto="${x.id}">Liberar para ${esc(x.nome.split(" ")[0])}</button>`).join("")}</div></div>`;
+      }
+    }
     return `<section class="col inbox">
       <header class="col-head">
         <div class="ch-row"><h3>${title}</h3><span class="count">${B.inbox.length}</span></div>
         <p class="ch-sub">${sub}</p>
         <div class="gchips">${chips}</div>
+        ${extra}
       </header>
-      <div class="gx-list" data-col="inbox">${cards || `<div class="col-empty">Nada por aqui 🎉</div>`}</div>
+      <div class="gx-list ${k === "lib" ? "compact" : ""}" data-col="inbox">${cards || `<div class="col-empty">Nada por aqui 🎉</div>`}</div>
     </section>`;
   }
 
@@ -577,7 +642,7 @@
     else m = [[l.length, "pedidos"], [l.reduce((t, id) => t + units(P(id)) - doneU(P(id), k), 0), "un. pendentes"], [db.stats[person.id], "hoje"]];
     const cards = l.map((id, i) => {
       const o = { col: person.id, first: i === 0, pos: busy && i === 0 ? "" : `${busy ? i : i + 1}${k === "emb" ? "ª" : "º"}` };
-      return k === "emb" ? cargaCard(C(id), o) : pedidoCard(P(id), k, o);
+      return k === "emb" ? cargaCard(C(id), o) : k === "lib" ? libCard(P(id), o) : pedidoCard(P(id), k, o);
     }).join("");
     const empty = { sep: "Arraste pedidos para cá", conf: "Arraste pedidos para cá", lib: "Arraste para liberar no Sankhya", emb: "Arraste cargas para este motorista" }[k];
     return `<section class="col">
@@ -588,7 +653,7 @@
         </div>
         <div class="metrics">${m.map(([v, s]) => `<div><b>${v}</b><small>${s}</small></div>`).join("")}</div>
       </header>
-      <div class="gx-list" data-col="${person.id}">${cards || `<div class="col-empty">${empty}</div>`}</div>
+      <div class="gx-list ${k === "lib" ? "compact" : ""}" data-col="${person.id}">${cards || `<div class="col-empty">${empty}</div>`}</div>
     </section>`;
   }
 
@@ -670,6 +735,13 @@
     dragId = c.dataset.id;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", dragId);
+    // faturamento: arrastar um card marcado leva todos os marcados juntos
+    if (board === "lib" && sel.has(dragId) && sel.size > 1) {
+      dragGroup = sortInbox(db.lib.inbox, "lib").filter((id) => sel.has(id));
+      ph.dataset.n = `${dragGroup.length} pedidos`; ph.style.height = "44px";
+      setTimeout(() => dragGroup && dragGroup.forEach((id) => { const el = $(`.card[data-id="${id}"]`, boardEl); if (el) el.classList.add("dragging"); }), 0);
+      return;
+    }
     ph.style.height = c.offsetHeight + "px";
     setTimeout(() => c.classList.add("dragging"), 0);
   });
@@ -691,28 +763,38 @@
     e.preventDefault();
     const seq = [...list.children].filter((x) => x === ph || (x.classList.contains("card") && !x.classList.contains("dragging")));
     let idx = seq.indexOf(ph);
-    const id = dragId, col = list.dataset.col;
+    const id = dragId, col = list.dataset.col, group = dragGroup;
     // na caixa de entrada a lista exibida pode estar filtrada/ordenada: índice relativo à lista real
     if (col === "inbox") {
-      const real = db[board].inbox.filter((x) => x !== id);
+      const real = db[board].inbox.filter((x) => (group ? !group.includes(x) : x !== id));
       const after = seq[idx + 1];
       idx = after ? real.indexOf(after.dataset.id) : real.length;
       if (idx < 0) idx = real.length;
     }
     endDrag();
-    move(board, id, col, idx);
+    if (group) moveMany(board, group, col, idx); else move(board, id, col, idx);
   });
   boardEl.addEventListener("dragend", endDrag);
   function endDrag() {
     ph.remove();
     $$(".dragging").forEach((x) => x.classList.remove("dragging"));
     $$(".gx-list.over").forEach((l) => l.classList.remove("over"));
-    dragId = null;
+    dragId = null; dragGroup = null; delete ph.dataset.n;
     if (pendingRender) { pendingRender = false; render(); }
   }
 
   // ---------- cliques no quadro ----------
   boardEl.addEventListener("click", (e) => {
+    // seleção em lote (faturamento)
+    const cb = e.target.closest("[data-sel]");
+    if (cb) { e.stopPropagation(); const id = cb.dataset.sel; sel.has(id) ? sel.delete(id) : sel.add(id); render(); return; }
+    if (e.target.closest("[data-selall]")) {
+      const all = libVisible.length && libVisible.every((id) => sel.has(id));
+      libVisible.forEach((id) => (all ? sel.delete(id) : sel.add(id))); render(); return;
+    }
+    if (e.target.closest("[data-selclear]")) { sel.clear(); render(); return; }
+    const lt = e.target.closest("[data-libto]");
+    if (lt) return liberarSel(lt.dataset.libto);
     const et = e.target.closest("button[data-etag]");
     if (et) { e.stopPropagation(); return openPop(et.dataset.etag, et); }
     const f = e.target.closest("[data-filter]");
