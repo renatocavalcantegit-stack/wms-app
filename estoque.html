@@ -17,9 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=27">
-  <link rel="stylesheet" href="estoque.css?v=27">
-  <link rel="stylesheet" href="etiqueta-recebimento.css?v=27">
+  <link rel="stylesheet" href="styles.css?v=28">
+  <link rel="stylesheet" href="estoque.css?v=28">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=28">
 </head>
 <body class="es">
 
@@ -79,9 +79,12 @@
           <span class="es-t"><b>Transferência</b><small>Entre endereços</small></span>
         </button>
       </div>
-      <p class="es-grupo">Auditoria <em>Em breve</em></p>
-      <div class="es-menu soon">
-        <button class="es-op" data-soon="Inventário"><span class="es-t"><b>Inventário</b></span></button>
+      <p class="es-grupo">Auditoria</p>
+      <div class="es-menu">
+        <button class="es-op" data-ir="viewInv">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10l1.5 1.5L13 9M9 16h6"/></svg></span>
+          <span class="es-t"><b>Inventário</b><small id="mnInv">Contagem dos endereços</small></span>
+        </button>
       </div>
     </main>
   </section>
@@ -244,6 +247,29 @@
     </main>
   </section>
 
+  <!-- ===== AUDITORIA · INVENTÁRIO: inventário → (rua) → QR do endereço → produto → quantidade → INCLUIR → FINALIZAR CONTAGEM ===== -->
+  <section id="viewInv" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-ivvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Inventário</p><p class="pick-client" id="ivPasso">Inventários em aberto</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <div id="ivTopo" class="mv-topo"></div>
+      <form id="ivForm" class="scan" hidden>
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
+        <input id="ivInput" type="text" autocomplete="off" placeholder="Bipe o QR do endereço ou digite o ID">
+        <button type="button" class="scan-cam cam-btn" data-cam="ivInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      </form>
+      <p id="ivMsg" class="scan-msg"></p>
+      <div id="ivRes" class="rc-res"></div>
+    </main>
+    <footer class="pick-foot" id="ivFoot" hidden>
+      <button id="ivProximo" class="btn ghost">Próximo endereço</button>
+      <button id="ivFinalizar" class="btn primary grow">Finalizar contagem</button>
+    </footer>
+  </section>
+
   <!-- ===== SHEETS ===== -->
   <div id="scrim" class="scrim" hidden></div>
 
@@ -298,7 +324,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=27"></script>
-  <script type="module" src="estoque.js?v=27"></script>
+  <script src="vendor/qrcode.js?v=28"></script>
+  <script type="module" src="estoque.js?v=28"></script>
 </body>
 </html>

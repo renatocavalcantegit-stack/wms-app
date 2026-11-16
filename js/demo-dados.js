@@ -3,6 +3,7 @@
 // Os produtos são os mais vendidos de verdade (js/demo-catalogo.js); os clientes ficam em js/demo-clientes.js.
 import { acharProduto, routeSort } from "../compartilhado/regras/produtos.js";
 import { escolherOrigens, necessidade } from "../compartilhado/regras/movimentacao.js";
+import { enderecoInventariavel, previstosDoEndereco } from "../compartilhado/regras/inventario.js";
 import { PRODUTOS_BIKE, PRODUTOS_MOTO, PRODUTOS_NOVOS_DO_ERP } from "./demo-catalogo.js";
 
 // ---------- equipe ----------
@@ -319,11 +320,85 @@ function movimentacaoInicial(enderecos, associacoes, saldos) {
   return { limites, tarefas, proximaTarefa: id };
 }
 
+// ---------- inventário ----------
+// 1) rotativo já sincronizado (histórico, só consulta);
+// 2) completo da rua 3003 em andamento: endereços concluídos (com e sem divergência, um aprovado), um em recontagem,
+//    um com quantidades incluídas e não finalizadas, um produto achado fora da previsão e o resto pendente;
+// 3) rotativo de pickings da rua 3001, recém-criado (nada contado).
+function inventarioInicial(enderecos, associacoes, saldos) {
+  const qtd = (enderecoId, produto) => saldos.find((x) => x.enderecoId === enderecoId && x.produto === produto)?.qtd || 0;
+  const quando = (minutosAtras) => new Date(Date.now() - minutosAtras * 60000).toISOString();
+  const item = (enderecoId, produto, previsto = true) => ({ enderecoId, produto, previsto, contagens: [], decisao: null, decididoPor: null, decididoEm: null, ajuste: null });
+  // registra as contagens C1, C2… (operadores fictícios, alternando)
+  const contar = (it, qtds, minutosAtras) => qtds.forEach((q, k) =>
+    it.contagens.push({ n: k + 1, qtd: q, operador: k % 2 ? "estoquista2" : "estoquista", quando: quando(minutosAtras - k * 25) }));
+  const base = (id, tipo, descricao, minutosAtras) => ({ id, tipo, descricao, status: "aberto", ruas: [], enderecos: [], itens: [],
+    rascunhos: {}, contados: {}, criado: quando(minutosAtras), criadoPor: "gestorestoque",
+    finalizado: null, finalizadoPor: null, sincronizado: null, sincronizadoPor: null, sincErro: null, novosPadrao: [] });
+  const ordenar = (lista) => lista.sort((a, b) => a.codigo.localeCompare(b.codigo));
+
+  // 1) histórico: rotativo de 4 pickings da rua 3002, sincronizado ontem
+  const h = base(1, "rotativo", "Rotativo semanal · rua 3002", 60 * 30);
+  const pk3002 = ordenar(enderecos.filter((e) => enderecoInventariavel(e) && e.rua === 3002 && e.tipo === "picking"))
+    .filter((e) => previstosDoEndereco(e.id, saldos, associacoes).length).slice(0, 4);
+  pk3002.forEach((e, k) => {
+    const p = previstosDoEndereco(e.id, saldos, associacoes)[0], s = qtd(e.id, p);
+    const it = item(e.id, p); h.itens.push(it);
+    it.saldoSinc = k === 1 ? s + 2 : s; // saldo do sistema quando sincronizou
+    // contagens: a 1ª bate, a 2ª faltou 2 (aprovado), a 3ª sobrou 3 com C3 (rejeitado), a 4ª bate
+    // o sistema tinha 2 a mais; o ajuste aprovado deixou o saldo igual ao contado
+    if (k === 1) { contar(it, [s, s], 60 * 28); Object.assign(it, { decisao: "aprovado", decididoPor: "gestorestoque", decididoEm: quando(60 * 26),
+      ajuste: { antes: s + 2, delta: -2, depois: s, quando: quando(60 * 25) } }); }
+    else if (k === 2) { contar(it, [s + 1, s + 3, s + 3], 60 * 28); Object.assign(it, { decisao: "rejeitado", decididoPor: "gestorestoque", decididoEm: quando(60 * 26) }); }
+    else contar(it, [s, s], 60 * 28);
+  });
+  h.enderecos = pk3002.map((e) => e.id); pk3002.forEach((e) => (h.contados[e.id] = true));
+  Object.assign(h, { status: "sincronizado", finalizado: quando(60 * 25.5), finalizadoPor: "gestorestoque", sincronizado: quando(60 * 25), sincronizadoPor: "gestorestoque" });
+
+  // 2) completo da rua 3003, em andamento
+  const c = base(2, "completo", "Inventário geral · rua 3003", 180);
+  c.ruas = [3003];
+  const ends = ordenar(enderecos.filter((e) => enderecoInventariavel(e) && e.rua === 3003));
+  c.enderecos = ends.map((e) => e.id);
+  ends.forEach((e) => previstosDoEndereco(e.id, saldos, associacoes).forEach((p) => c.itens.push(item(e.id, p))));
+  const comItens = ends.filter((e) => c.itens.some((i) => i.enderecoId === e.id));
+  const itensDe = (e) => c.itens.filter((i) => i.enderecoId === e.id);
+  comItens.forEach((e, k) => {
+    if (k > 6) return;
+    itensDe(e).forEach((it) => {
+      const s = qtd(e.id, it.produto);
+      if (k === 0) contar(it, [s, s], 150);                                   // bate
+      if (k === 1) contar(it, [s - 1, s - 1], 140);                           // faltou 1: aguardando aprovação
+      if (k === 2) { contar(it, [s + 4, s + 2, s + 2], 130); Object.assign(it, { decisao: "aprovado", decididoPor: "gestorestoque", decididoEm: quando(40) }); }
+      if (k === 3) contar(it, [s, s - 3], 90);                                // C1 ≠ C2: aguarda a C3
+      if (k === 4) contar(it, [0, 0], 80);                                    // previsto e não encontrado: zero
+      if (k === 5) contar(it, [s, s], 70);
+    });
+    if (k <= 5) c.contados[e.id] = true;
+  });
+  // produto encontrado fora da previsão (no 1º endereço contado): entra na contagem e vai para aprovação
+  const fora = item(comItens[0].id, "2825", false); contar(fora, [6, 6], 150); c.itens.push(fora);
+  // endereços vazios do prédio 1 já contados (nada previsto, nada achado)
+  ends.filter((e) => e.predio === 1 && !itensDe(e).length).slice(0, 8).forEach((e) => (c.contados[e.id] = true));
+  // quantidades incluídas e ainda não finalizadas (o operador saiu no meio)
+  const meio = comItens[6];
+  c.rascunhos[meio.id] = itensDe(meio).slice(0, 1).map((it) => ({ produto: it.produto, qtd: qtd(meio.id, it.produto), operador: "estoquista", quando: quando(12) }));
+
+  // 3) rotativo recém-criado: 6 pickings da rua 3001
+  const r = base(3, "rotativo", "Rotativo · cabos e câmaras da rua 3001", 25);
+  ordenar(enderecos.filter((e) => enderecoInventariavel(e) && e.rua === 3001 && e.tipo === "picking"))
+    .filter((e) => previstosDoEndereco(e.id, saldos, associacoes).length).slice(0, 6)
+    .forEach((e) => { r.itens.push(item(e.id, previstosDoEndereco(e.id, saldos, associacoes)[0])); r.enderecos.push(e.id); });
+
+  return { inventarios: [h, c, r], proximoInventario: 4 };
+}
+
 export function estoqueDeDemonstracao() {
   const enderecos = enderecosDeDemonstracao();
   const inicial = estoqueInicial(enderecos);
   const rec = recebimentoInicial(enderecos, inicial.saldos);
   const mov = movimentacaoInicial(enderecos, inicial.associacoes, inicial.saldos);
+  const inv = inventarioInicial(enderecos, inicial.associacoes, inicial.saldos);
   return {
     enderecos,
     produtos: CATALOGO.map(doErp),
@@ -331,8 +406,9 @@ export function estoqueDeDemonstracao() {
     ...inicial,
     notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,
     limites: mov.limites, tarefas: mov.tarefas,
+    inventarios: inv.inventarios,
     movimentos: [],
-    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa },
+    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa, inventario: inv.proximoInventario },
   };
 }
 

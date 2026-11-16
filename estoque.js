@@ -1,6 +1,6 @@
 // WMS Beach Bike — app do coletor do Estoquista: Cadastro (consulta de produto, embalagem e endereçar produto).
 // A Recepção (conferência, armazenamento e consulta de recebimentos) fica em estoque-recepcao.js.
-// A Movimentação (abastecimento e transferência) fica em estoque-movimentacao.js. Auditoria entra na próxima etapa.
+// A Movimentação (abastecimento e transferência) fica em estoque-movimentacao.js. A Auditoria (inventário) fica em estoque-inventario.js.
 // As regras ficam em compartilhado/regras/ e os dados passam por js/dados/.
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
@@ -8,6 +8,7 @@ import { show, openSheet, closeSheets, toast, openCam } from "./js/ui-coletor.js
 import { num, tipoTag, msg, confirmar, cartaoProduto, escolherProduto } from "./js/ui-estoque.js";
 import { abrirRecepcao, atualizarRecepcao, resumoDoMenu } from "./estoque-recepcao.js";
 import { abrirMovimentacao, atualizarMovimentacao, resumoMovimentacao } from "./estoque-movimentacao.js";
+import { abrirInventario, atualizarInventario, resumoInventario } from "./estoque-inventario.js";
 import { etiquetaHtml, rolosHtml } from "./js/etiqueta-produto.js";
 import { linhasDoRolo } from "./compartilhado/regras/etiqueta-produto.js";
 import {
@@ -32,6 +33,7 @@ function home() {
   $("#helloDate").textContent = dt.charAt(0).toUpperCase() + dt.slice(1);
   resumoDoMenu();
   resumoMovimentacao();
+  resumoInventario();
   show("viewEstHome");
 }
 $$(".es-op").forEach((b) => b.addEventListener("click", () => {
@@ -49,6 +51,7 @@ function abrir(tela) {
   if (tela === "viewEnderecar") iniciarEnderecar();
   if (["viewRecConf", "viewRecArm", "viewRecCons"].includes(tela)) abrirRecepcao(tela);
   if (["viewAbast", "viewTransf"].includes(tela)) abrirMovimentacao(tela);
+  if (tela === "viewInv") abrirInventario();
   show(tela);
   setTimeout(() => $(`#${tela} input`)?.focus(), 50);
 }
@@ -278,6 +281,7 @@ aoMudarEstoque(() => {
   if (!$("#viewEnderecar").hidden && endSel) desenharEndereco();
   atualizarRecepcao();
   atualizarMovimentacao();
+  atualizarInventario();
 });
 
 home();

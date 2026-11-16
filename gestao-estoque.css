@@ -149,3 +149,34 @@ tr.ge-erro .ge-num-in { border-color: var(--red); background: var(--red-soft); }
   .qe-partes dd { margin: 0; font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 17pt; line-height: 1.05; }
   .qe-rod { font-size: 7pt; text-align: center; }
 }
+
+/* aba Inventário */
+.ge-tab tr.ge-click { cursor: pointer; }
+.ge-tab tr.ge-click:hover td { background: var(--bg); }
+.iv-barra { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--line); margin-right: 8px; vertical-align: middle; overflow: hidden; }
+.iv-barra i { display: block; height: 100%; background: var(--ok); }
+.iv-kpis .iv-pct { cursor: default; }
+.iv-sinc { font-size: 12.5px !important; }
+.iv-erro { margin: 0 0 12px; }
+.iv-agoras { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12.5px; color: var(--ink-2); margin: 0 0 12px; }
+.iv-agoras > b { font-size: 11px; letter-spacing: .6px; text-transform: uppercase; color: var(--warn); }
+.iv-agora { background: var(--warn-soft); border-radius: 8px; padding: 4px 8px; }
+.iv-tab .iv-c { color: var(--ink-2); min-width: 34px; }
+.iv-pos { color: var(--ok); font-weight: 700; }
+.iv-ajuste, .iv-quem { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+.iv-novo { min-width: 560px; }
+.iv-tipos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.iv-tipo { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.iv-tipo input { display: none; }
+.iv-tipo.on { border-color: var(--ink); }
+.iv-tipo small { color: var(--ink-3); font-size: 12px; line-height: 1.4; }
+.iv-ruas { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 4px; }
+.iv-ruas label { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.iv-ruas small { color: var(--ink-3); }
+.iv-filtros { margin: 0; }
+.iv-filtros input, .iv-filtros select { height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; font-size: 13px; }
+.iv-filtros input { flex: 1; }
+.iv-pares { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 10px; }
+.iv-par { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.iv-par:last-child { border-bottom: 0; }
+.iv-todos { font-weight: 700; }

@@ -102,3 +102,7 @@
   .et-linha { width: 90mm; height: 20mm; display: flex; gap: 1.5mm; break-after: page; overflow: hidden; }
   .et-linha:last-child { break-after: auto; }
 }
+/* Inventário */
+.iv-prev { font-size: 12px !important; font-weight: 800 !important; font-family: inherit !important; }
+.iv-tirar { width: 30px; height: 30px; margin-left: 6px; border-radius: 8px; font-size: 18px; line-height: 1; color: var(--ink-3); background: #EDEDF0; flex: none; }
+.rc-nota > .rc-doca:first-child { flex-direction: row; align-items: center; }

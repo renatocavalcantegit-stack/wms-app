@@ -16,6 +16,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   etiqueta-produto.js    etiqueta de produto com QR: rolo 90 × 20 mm, 3 por linha
   recebimento.js         recebimento: status da nota, conferência (soma, bloqueia acima da nota), volumes, armazenamento da doca
   movimentacao.js        mínimo/máximo, origens do abastecimento (menor saldo, mais perto), passos da tarefa, transferência
+  inventario.js          contagens C1 a C5, situação do item e do endereço, decisão, sincronização atômica
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -27,6 +28,7 @@ js/
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos
   dados/recebimento.js   camada de dados do Recebimento: notas, conferências, volumes, armazenamento, notas do ERP
   dados/movimentacao.js  camada de dados da Movimentação: tarefas de abastecimento, limites, transferência, baixa da separação
+  dados/inventario.js    camada de dados do Inventário: criar, incluir, finalizar contagem, decidir, finalizar e sincronizar
   qr.js                  desenho do QR Code em SVG
   etiqueta-produto.js    desenho da etiqueta de produto (QR em SVG, linhas de 3)
   etiqueta-recebimento.js   etiqueta do volume do recebimento (80 × 60 mm, QR com o código do volume)
@@ -45,6 +47,8 @@ gestao-estoque.html + .js   Gestão de Estoque (WEB): endereços, produtos/embal
 gestao-entrada.js        Gestão de Estoque (WEB), aba Entrada: notas, detalhe, volumes, cancelar pendente
 estoque-movimentacao.js  coletor do Estoquista, Movimentação: abastecimento (aéreo → picking) e transferência
 gestao-movimentacao.js   Gestão de Estoque (WEB), aba Movimentação: tarefas de abastecimento e mínimo/máximo do picking
+estoque-inventario.js    coletor do Estoquista, Auditoria: contagem do inventário (endereço → produto → quantidade → INCLUIR)
+gestao-inventario.js     Gestão de Estoque (WEB), aba Inventário: criar, acompanhar, aprovar divergências, finalizar, sincronizar, histórico
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
 testes/                  testes automatizados (rodam no Node, sem instalar nada)

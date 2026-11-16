@@ -10,15 +10,15 @@ import {
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 
-// v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
+// v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
-const CHAVE = "wms-bb-estoque-v4";
+const CHAVE = "wms-bb-estoque-v5";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
   try {
     const d = JSON.parse(localStorage.getItem(CHAVE));
-    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas) && Array.isArray(d.tarefas)) return d;
+    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas) && Array.isArray(d.tarefas) && Array.isArray(d.inventarios)) return d;
   } catch {}
   return estoqueDeDemonstracao();
 }
