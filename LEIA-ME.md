@@ -17,6 +17,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   recebimento.js         recebimento: status da nota, conferência (soma, bloqueia acima da nota), volumes, armazenamento da doca
   movimentacao.js        mínimo/máximo, origens do abastecimento (menor saldo, mais perto), passos da tarefa, transferência
   inventario.js          contagens C1 a C5, situação do item e do endereço, decisão, sincronização atômica
+  separacao.js           doca de expedição, lote (2 a 6 pedidos numa viagem, caixas A–F), pedido dividido entre separadores (2 a 4 partes)
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -36,11 +37,11 @@ js/
   util.js                atalhos de tela: $, $$ e esc
   ui-coletor.js          aviso, bipe, troca de tela, sheets e câmera do app do coletor
 
-index.html + app.js      app do coletor: login e Separação
+index.html + app.js      app do coletor: login e Separação (pedido, lote "Separar vários", parte de pedido dividido, leitura da doca)
 embarque.js              Embarque (também no app do coletor)
 conferencia.html + .js   Conferência (notebook com leitor)
 etiqueta.js              desenho e impressão da etiqueta de volume
-gestao.html, montagem.html + gestao.js   painéis de Gestão (ainda com simulador próprio)
+gestao.html, montagem.html + gestao.js   painéis de Gestão (ainda com simulador próprio): lotes, divisão de pedido e doca
 estoque.html + .js       coletor do Estoquista: consulta de produto, embalagem, endereçar produto
 estoque-recepcao.js      coletor do Estoquista, Recepção: conferência, armazenamento e consulta de recebimentos
 gestao-estoque.html + .js   Gestão de Estoque (WEB): endereços, produtos/embalagens, endereçamento

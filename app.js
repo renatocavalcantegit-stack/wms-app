@@ -1,11 +1,21 @@
 // WMS Beach Bike — MVP de Separação (dados locais de demonstração)
+// Três jeitos de separar:
+//   · um pedido (ou uma PARTE de um pedido grande que o coordenador dividiu entre separadores);
+//   · um LOTE: vários pedidos numa viagem só, com uma caixa por pedido no carrinho (A, B, C…);
+//   · e, no fim de qualquer um deles, o separador lê o QR da DOCA DE EXPEDIÇÃO onde deixou a mercadoria.
+// As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
-import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao } from "./js/dados/separacao.js";
+import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao } from "./js/dados/separacao.js";
+import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao } from "./js/dados/movimentacao.js";
+import { lerEstoque } from "./js/dados/estoque.js";
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";
-import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
+import { lerCodigoDoEndereco, acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
+import {
+  validarDocaExpedicao, validarLote, posicoesDoLote, montarParadas, paradaConcluida, destinoDaLeitura, distribuirAchado, MAX_PEDIDOS_LOTE,
+} from "./compartilhado/regras/separacao.js";
 
 (() => {
   "use strict";
@@ -14,24 +24,33 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
   let sess = session();
   let user = sess ? sess.nome : "";
   let filter = "abertos";
-  let current = null; // pedido em separação
+  let current = null; // pedido (ou parte) em separação
+  let lote = null;    // lote em separação (vários pedidos)
+  let docaAlvo = null; // o que está esperando a leitura da doca: { pedidos: [ids], lote: id|null }
+  let selecionando = false; const selecionados = new Set(); // "Separar vários"
 
   // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
   const setor = () => (sess && sess.setor) || "exp";
   // onde os pedidos ficam guardados é assunto da camada de dados (js/dados/separacao.js)
-  let orders = [];
-  const load = () => carregarPedidos(setor());
-  const save = () => salvarPedidos(setor(), orders);
+  let orders = [], lotes = [];
+  const load = () => { orders = carregarPedidos(setor()); lotes = carregarLotes(setor()); };
+  const save = () => { salvarPedidos(setor(), orders); salvarLotes(setor(), lotes); };
+  const pedido = (id) => orders.find((x) => x.id === id);
+  const pedidosDoLote = (l) => l.pedidos.map(pedido).filter(Boolean);
+  const loteAtivo = (l) => l.status !== "concluido";
 
   // ---------- utils ----------
   // atalhos de tela, aviso, bipe, sheets e câmera vêm de js/util.js e js/ui-coletor.js
   const units = (o) => o.itens.reduce((t, i) => t + i.qtd, 0);
   const doneCount = (o) => o.itens.filter((i) => i.status !== "pendente").length;
+  // nome do pedido na tela: parte de pedido dividido aparece como "PV-10426 · parte 1/2"
+  const nomeDo = (o) => (o.parte ? `${o.parte.pai} · parte ${o.parte.n}/${o.parte.de}` : o.id);
   const ICONS = {
     bike: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="16" r="3.5"/><circle cx="18.5" cy="16" r="3.5"/><path d="M5.5 16l4-8h6l3 8M9.5 8L12 16h-2M14 5h3"/></svg>',
     peca: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>',
     acess: '<svg viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>',
   };
+  const fmtMin = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
 
   // ---------- login ----------
   $("#loginForm").addEventListener("submit", (e) => {
@@ -59,7 +78,7 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     if (sess.perfil !== "sep" && sess.perfil !== "emb") return location.replace(homeUrl(sess.perfil));
     if (sess.perfil === "emb") return Embarque.home();
     if (!sess.setor) return openSetor(false);
-    orders = load();
+    load();
     renderHome(); show("viewHome");
   }
 
@@ -94,50 +113,134 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     $("#kpiAnd").textContent = orders.filter((o) => o.status === "andamento").length;
     $("#kpiDone").textContent = orders.filter((o) => o.status === "concluido").length;
 
-    const list = orders
+    // pedido de um lote em aberto aparece dentro do cartão do lote (não sozinho)
+    const noLoteAtivo = new Set(lotes.filter(loteAtivo).flatMap((l) => l.pedidos));
+    const avulsos = orders.filter((o) => !noLoteAtivo.has(o.id))
       .filter((o) => filter === "todos" || (filter === "concluido" ? o.status === "concluido" : o.status !== "concluido"))
-      .sort((a, b) => rank(a) - rank(b));
+      .map((o) => ({ r: rank(o), html: orderCard(o) }));
+    const deLote = selecionando || filter === "concluido" ? [] : lotes.filter(loteAtivo).map((l) => ({ r: rankLote(l), html: loteCard(l) }));
+    const list = [...deLote, ...avulsos].sort((a, b) => a.r - b.r);
 
-    $("#orderList").innerHTML = list.length ? list.map(orderCard).join("") :
+    $("#loteBar").hidden = filter === "concluido" || mont && !orders.some(podeSelecionar);
+    $("#btnVarios").textContent = selecionando ? "Cancelar seleção" : "Separar vários";
+    $("#btnVarios").classList.toggle("on", selecionando);
+    $("#loteDica").hidden = !selecionando;
+    $("#selBar").hidden = !selecionando;
+    $("#selBarN").textContent = selecionados.size;
+    $("#selGo").disabled = selecionados.size < 2;
+
+    $("#orderList").innerHTML = list.length ? list.map((x) => x.html).join("") :
       `<p class="empty">${filter === "concluido" ? "Nenhum pedido concluído ainda." : "Tudo separado por aqui. 🎉"}</p>`;
   }
   const rank = (o) => ({ andamento: 0, pendente: 1, concluido: 2 }[o.status] * 10 + (o.prio === "alta" ? 0 : 1));
+  const rankLote = (l) => (l.status === "andamento" ? 0 : 10) + (pedidosDoLote(l).some((o) => o.prio === "alta") ? 0 : 1);
+  // pode entrar num lote: pedido que ainda não começou, fora de lote e que não é parte de pedido dividido
+  const podeSelecionar = (o) => o.status === "pendente" && !o.lote && !o.parte;
 
   function orderCard(o) {
     const pct = Math.round((doneCount(o) / o.itens.length) * 100);
+    const sel = selecionando && podeSelecionar(o), marcado = selecionados.has(o.id);
     const tag = o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
       : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
-    return `<button class="order ${o.status === "concluido" ? "is-done" : ""}" data-id="${o.id}">
+    const extra = o.parte ? `<p class="order-note">Pedido dividido pelo coordenador · ${esc(o.parte.ruas || "")}</p>` : "";
+    const doca = o.doca ? `<p class="order-note ok">Deixado na doca ${o.doca.codigo}</p>` : "";
+    return `<button class="order ${o.status === "concluido" ? "is-done" : ""} ${selecionando && !sel ? "is-off" : ""} ${marcado ? "is-sel" : ""}" data-id="${esc(o.id)}">
       <div class="order-top">
-        <div><p class="order-id">${o.id}</p><p class="order-client">${esc(o.cliente)}</p></div>${tag}
+        ${sel ? `<span class="order-cb">${marcado ? CHECK : ""}</span>` : ""}
+        <div class="grow"><p class="order-id">${esc(nomeDo(o))}</p><p class="order-client">${esc(o.cliente)}</p></div>${tag}
       </div>
+      ${extra}
       <div class="order-meta"><span><b>${o.itens.length}</b> itens</span><span><b>${units(o)}</b> un.</span><span>${o.cidade}</span><span>${o.hora}</span></div>
       ${o.status !== "pendente" ? `<div class="order-bar"><i style="width:${pct}%"></i></div>` : ""}
+      ${doca}
     </button>`;
   }
 
-  $(".tabs").addEventListener("click", (e) => {
+  function loteCard(l) {
+    const ps = pedidosDoLote(l);
+    const itens = ps.reduce((t, o) => t + o.itens.length, 0), un = ps.reduce((t, o) => t + units(o), 0);
+    const feitos = ps.reduce((t, o) => t + doneCount(o), 0);
+    const tag = l.status === "andamento" ? `<span class="tag andamento">Em separação</span>` : `<span class="tag lote">Lote</span>`;
+    return `<button class="order lote" data-lote="${l.id}">
+      <div class="order-top">
+        <div class="grow"><p class="order-id">${l.id} · ${ps.length} pedidos</p>
+        <p class="order-client">${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma viagem só</p></div>${tag}
+      </div>
+      <div class="lote-peds">${ps.map((o) => `<span><b class="pos">${l.posicoes[o.id]}</b>${esc(o.id)}</span>`).join("")}</div>
+      <div class="order-meta"><span><b>${itens}</b> itens</span><span><b>${un}</b> un.</span></div>
+      ${l.status === "andamento" ? `<div class="order-bar"><i style="width:${Math.round((feitos / itens) * 100)}%"></i></div>` : ""}
+    </button>`;
+  }
+
+  $("#homeTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".tab"); if (!b) return;
     filter = b.dataset.filter;
-    $$(".tab").forEach((t) => t.classList.toggle("active", t === b));
+    if (filter === "concluido") { selecionando = false; selecionados.clear(); }
+    $$("#homeTabs .tab").forEach((t) => t.classList.toggle("active", t === b));
     renderHome();
   });
 
+  // "Separar vários": o separador marca os pedidos dele e monta um lote
+  $("#btnVarios").addEventListener("click", () => {
+    selecionando = !selecionando; selecionados.clear();
+    if (selecionando && filter !== "abertos") { filter = "abertos"; $$("#homeTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.filter === "abertos")); }
+    renderHome();
+  });
+  $("#selCancel").addEventListener("click", () => { selecionando = false; selecionados.clear(); renderHome(); });
+  // monte o carrinho: mostra a posição de cada pedido antes de começar
+  $("#selGo").addEventListener("click", () => {
+    const ps = [...selecionados].map(pedido);
+    const erro = validarLote(ps);
+    if (erro) { toast(erro); vibrate([80, 50, 80]); return; }
+    const pos = posicoesDoLote(ps);
+    $("#startOrder").textContent = "Monte o carrinho";
+    $("#startClient").textContent = "Uma caixa por pedido. A letra é a posição da caixa no carrinho.";
+    const pr = $("#startPrio"); pr.className = "tag lote"; pr.textContent = `${ps.length} pedidos`;
+    $("#startItems").innerHTML = [...ps].sort((a, b) => pos[a.id].localeCompare(pos[b.id])).map((o) => posLine(pos[o.id], o)).join("");
+    $("#startUndo").hidden = true;
+    const go = $("#startGo"); go.textContent = "Criar lote e iniciar"; go.dataset.id = ""; go.dataset.lote = ""; go.dataset.novo = "1";
+    openSheet("sheetStart");
+  });
+  const posLine = (pos, o) => `<div class="line"><b class="pos big">${pos}</b><span class="line-desc">${esc(o.id)} · ${esc(o.cliente)}<small>${o.itens.length} itens · ${units(o)} un.${o.prio === "alta" ? " · prioridade" : ""}</small></span></div>`;
+
   $("#orderList").addEventListener("click", (e) => {
+    const lc = e.target.closest("[data-lote]");
+    if (lc) return abrirLote(lotes.find((l) => l.id === lc.dataset.lote));
     const card = e.target.closest(".order"); if (!card) return;
-    const o = orders.find((x) => x.id === card.dataset.id);
-    $("#startOrder").textContent = o.id;
-    $("#startClient").textContent = `${o.cliente} · ${o.itens.length} itens · ${units(o)} un.`;
+    const o = pedido(card.dataset.id);
+    if (selecionando) {
+      if (!podeSelecionar(o)) return toast(o.parte ? "Parte de pedido dividido não entra em lote." : "Só pedidos pendentes entram no lote.");
+      if (!selecionados.has(o.id) && selecionados.size >= MAX_PEDIDOS_LOTE) return toast(`O lote aceita no máximo ${MAX_PEDIDOS_LOTE} pedidos.`);
+      selecionados.has(o.id) ? selecionados.delete(o.id) : selecionados.add(o.id);
+      vibrate(20); return renderHome();
+    }
+    $("#startOrder").textContent = nomeDo(o);
+    $("#startClient").textContent = `${o.cliente} · ${o.itens.length} itens · ${units(o)} un.${o.parte ? ` · ${o.parte.ruas}` : ""}`;
     const pr = $("#startPrio");
     pr.className = "tag " + (o.status === "concluido" ? "concluido" : o.status === "andamento" ? "andamento" : o.prio === "alta" ? "alta" : "");
     pr.textContent = o.status === "concluido" ? "Concluído" : o.status === "andamento" ? "Em separação" : o.prio === "alta" ? "Prioridade" : "Normal";
     $("#startItems").innerHTML = o.itens.map((i) => lineHtml(i)).join("");
+    $("#startUndo").hidden = true;
     const go = $("#startGo");
     go.textContent = o.status === "andamento" ? "Continuar separação" : o.status === "concluido" ? "Separar novamente" : "Iniciar separação";
-    go.dataset.id = o.id;
+    go.dataset.id = o.id; go.dataset.lote = ""; go.dataset.novo = "";
     openSheet("sheetStart");
   });
+
+  function abrirLote(l) {
+    const ps = pedidosDoLote(l);
+    $("#startOrder").textContent = `${l.id} · ${ps.length} pedidos`;
+    $("#startClient").textContent = `${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma caixa por pedido no carrinho`;
+    const pr = $("#startPrio"); pr.className = "tag " + (l.status === "andamento" ? "andamento" : "lote"); pr.textContent = l.status === "andamento" ? "Em separação" : "Lote";
+    $("#startItems").innerHTML = ps.map((o) => posLine(l.posicoes[o.id], o)).join("");
+    // o separador só desfaz o lote que ele mesmo montou, e antes de começar
+    $("#startUndo").hidden = !(l.status === "pendente" && l.criadoPor.tipo === "separador");
+    $("#startUndo").dataset.lote = l.id;
+    const go = $("#startGo"); go.textContent = l.status === "andamento" ? "Continuar lote" : "Iniciar lote";
+    go.dataset.id = ""; go.dataset.lote = l.id; go.dataset.novo = "";
+    openSheet("sheetStart");
+  }
 
   function lineHtml(i, idx, cur) {
     const dot = i.status === "ok" ? `<span class="dot ok">${CHECK}</span>`
@@ -149,53 +252,126 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     </button>`;
   }
 
+  $("#startUndo").addEventListener("click", () => {
+    const l = lotes.find((x) => x.id === $("#startUndo").dataset.lote);
+    pedidosDoLote(l).forEach((o) => Object.assign(o, { lote: null, pos: null }));
+    lotes = lotes.filter((x) => x !== l);
+    save(); closeSheets(); renderHome(); toast(`${l.id} desfeito · os pedidos voltaram para a lista`);
+  });
+
   $("#startGo").addEventListener("click", () => {
-    const o = orders.find((x) => x.id === $("#startGo").dataset.id);
+    const go = $("#startGo");
+    if (go.dataset.novo) return criarLoteEIniciar();
+    if (go.dataset.lote) return iniciarLote(lotes.find((l) => l.id === go.dataset.lote));
+    const o = pedido(go.dataset.id);
     if (o.status === "concluido") {
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: "pendente", motivo: "" }));
-      o.status = "pendente"; o.atual = 0;
+      Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null });
     }
     if (o.status === "pendente") { o.status = "andamento"; o.inicio = Date.now(); o.operador = user; }
-    current = o; save(); closeSheets();
+    current = o; lote = null; save(); closeSheets();
+    // todos os itens já resolvidos (saiu do app na hora de ler a doca): vai direto para a doca
+    if (!o.itens.some((i) => i.status === "pendente")) return abrirDoca({ pedidos: [o.id], lote: null });
     show("viewPick"); renderPick(true);
   });
 
+  function criarLoteEIniciar() {
+    const ps = [...selecionados].map(pedido);
+    const erro = validarLote(ps); if (erro) return toast(erro);
+    const posicoes = posicoesDoLote(ps);
+    const n = Math.max(0, ...lotes.map((l) => +l.id.slice(2) || 0)) + 1;
+    const l = { id: `L-${n}`, pedidos: ps.map((o) => o.id).sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes, status: "pendente",
+      criadoPor: { tipo: "separador", login: sess.login, nome: user }, criado: Date.now(), inicio: null, fim: null, operador: null, atual: 0 };
+    ps.forEach((o) => Object.assign(o, { lote: l.id, pos: posicoes[o.id] }));
+    lotes.push(l);
+    selecionando = false; selecionados.clear();
+    iniciarLote(l);
+  }
+
+  function iniciarLote(l) {
+    if (l.status === "pendente") {
+      Object.assign(l, { status: "andamento", inicio: Date.now(), operador: user });
+      pedidosDoLote(l).forEach((o) => Object.assign(o, { status: "andamento", inicio: l.inicio, operador: user }));
+    }
+    lote = l; current = null; save(); closeSheets();
+    if (paradas().every(paradaConcluida)) return abrirDoca({ pedidos: [...l.pedidos], lote: l.id });
+    if (paradaConcluida(paradas()[l.atual] || { linhas: [] })) proximaParada();
+    show("viewPick"); renderPick(true);
+  }
+
   // ---------- separação ----------
+  // pedido: um item de cada vez. Lote: uma PARADA de cada vez (mesmo produto no mesmo endereço para todos os pedidos).
   function item() { return current.itens[current.atual]; }
+  const paradas = () => montarParadas(pedidosDoLote(lote), lote.posicoes);
+  const parada = () => paradas()[lote.atual];
+  const itemDaLinha = (l) => pedido(l.pedido).itens[l.idx];
 
   function renderPick(anim) {
+    if (lote) return renderParada(anim);
     const o = current, i = item();
-    $("#pickOrder").textContent = o.id;
+    $("#pickOrder").textContent = nomeDo(o);
     $("#pickClient").textContent = o.cliente;
     $("#pickProgress").style.width = (doneCount(o) / o.itens.length) * 100 + "%";
     $("#pickStep").textContent = `Item ${o.atual + 1} de ${o.itens.length}` + (i.status === "ok" ? " · confirmado" : i.status === "falta" ? " · falta registrada" : "");
-
-    // endereço da prateleira (R3001-P7-A100-AP101) em 4 blocos grandes; números longos ganham letra menor
-    const e = lerCodigoDoEndereco(i.end) || {};
-    $("#addrParts").innerHTML = [["Rua", e.rua], ["Prédio", e.predio], ["Andar", e.andar], ["Apto", e.apto]]
-      .map(([l, v]) => `<div class="addr-part${String(v).length > 3 ? " long" : ""}"><b>${v ?? "–"}</b><small>${l}</small></div>`).join("");
-
+    desenharEndereco(i.end);
     $("#prodThumb").innerHTML = ICONS[i.tipo] || ICONS.peca;
     $("#prodDesc").textContent = i.desc;
     $("#prodSku").textContent = i.sku;
     $("#prodEan").textContent = "EAN " + i.ean;
+    $("#loteBox").hidden = true;
     renderQty();
     setMsg("");
     $("#scanInput").value = "";
-
     if (anim) { const c = $("#pickCard"); c.classList.remove("enter"); void c.offsetWidth; c.classList.add("enter"); }
   }
 
+  // endereço da prateleira (R3001-P7-A100-AP101) em 4 blocos grandes; números longos ganham letra menor
+  function desenharEndereco(end) {
+    const e = lerCodigoDoEndereco(end) || {};
+    $("#addrParts").innerHTML = [["Rua", e.rua], ["Prédio", e.predio], ["Andar", e.andar], ["Apto", e.apto]]
+      .map(([l, v]) => `<div class="addr-part${String(v).length > 3 ? " long" : ""}"><b>${v ?? "–"}</b><small>${l}</small></div>`).join("");
+  }
+
+  function renderParada(anim) {
+    const ps = paradas(), p = ps[lote.atual];
+    const feitas = ps.filter(paradaConcluida).length;
+    $("#pickOrder").textContent = `${lote.id} · ${lote.pedidos.length} pedidos`;
+    $("#pickClient").textContent = lote.pedidos.map((id) => `${lote.posicoes[id]} ${id}`).join(" · ");
+    $("#pickProgress").style.width = (feitas / ps.length) * 100 + "%";
+    $("#pickStep").textContent = `Parada ${lote.atual + 1} de ${ps.length}` + (paradaConcluida(p) ? " · confirmada" : "");
+    desenharEndereco(p.end);
+    $("#prodThumb").innerHTML = ICONS[p.tipo] || ICONS.peca;
+    $("#prodDesc").textContent = p.desc;
+    $("#prodSku").textContent = p.sku;
+    $("#prodEan").textContent = "EAN " + p.ean;
+    desenharCaixas(p);
+    renderQty();
+    setMsg("");
+    $("#scanInput").value = "";
+    if (anim) { const c = $("#pickCard"); c.classList.remove("enter"); void c.offsetWidth; c.classList.add("enter"); }
+  }
+  // as caixas do carrinho nesta parada: quanto vai em cada uma (a próxima peça bipada vai para a destacada)
+  function desenharCaixas(p) {
+    const destino = destinoDaLeitura(p);
+    $("#loteBox").hidden = false;
+    $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${p.total}</b> · distribua nas caixas</p>` + p.linhas.map((l) => {
+      const o = pedido(l.pedido), cheio = l.sep >= l.qtd;
+      return `<div class="caixa ${destino === l ? "atual" : ""} ${cheio ? "cheia" : ""} ${l.status === "falta" ? "falta" : ""}">
+        <b class="pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}</small></span>
+        <span class="caixa-q">${l.sep}<small>/${l.qtd}</small></span></div>`;
+    }).join("");
+  }
+
   function renderQty(bump) {
-    const i = item();
-    $("#qtySep").textContent = i.sep;
-    $("#qtyReq").textContent = i.qtd;
+    const lido = lote ? parada().lido : item().sep, total = lote ? parada().total : item().qtd;
+    $("#qtySep").textContent = lido;
+    $("#qtyReq").textContent = total;
     const q = $(".qty");
-    q.classList.toggle("full", i.sep === i.qtd);
-    q.classList.toggle("over", i.sep > i.qtd);
+    q.classList.toggle("full", lido === total);
+    q.classList.toggle("over", lido > total);
     if (bump) { const v = $(".qty-val"); v.classList.remove("bump"); void v.offsetWidth; v.classList.add("bump"); }
-    $("#btnConfirm").disabled = i.sep === 0 || i.sep > i.qtd;
-    $("#btnConfirm").textContent = i.sep < i.qtd && i.sep > 0 ? `Confirmar ${i.sep} de ${i.qtd}` : "Confirmar item";
+    $("#btnConfirm").disabled = lido === 0 || lido > total;
+    $("#btnConfirm").textContent = lido < total && lido > 0 ? `Confirmar ${lido} de ${total}` : lote ? "Confirmar parada" : "Confirmar item";
   }
 
   function setMsg(txt, kind = "") {
@@ -203,6 +379,16 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
   }
 
   function changeQty(d) {
+    if (lote) {
+      const p = parada();
+      // + vai para a caixa da vez; − tira da última caixa que recebeu
+      const l = d > 0 ? destinoDaLeitura(p) : [...p.linhas].reverse().find((x) => x.sep > 0);
+      if (!l) return;
+      const i = itemDaLinha(l);
+      i.sep = Math.max(0, i.sep + d); i.status = "pendente";
+      save(); desenharCaixas(parada()); renderQty(true);
+      return;
+    }
     const i = item();
     i.sep = Math.max(0, i.sep + d);
     if (i.status !== "pendente") i.status = "pendente";
@@ -211,11 +397,17 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
   $("#qtyMinus").addEventListener("click", () => changeQty(-1));
   $("#qtyPlus").addEventListener("click", () => changeQty(1));
 
+  function erroLeitura(txt) {
+    setMsg(txt, "err"); beep(false); vibrate([80, 50, 80]);
+    const f = $("#scanForm"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err");
+  }
+
   function handleCode(raw) {
     const code = raw.trim().toUpperCase();
     if (!code) return;
-    const i = item();
     $("#scanInput").value = "";
+    if (lote) return lerNoLote(code);
+    const i = item();
     if (code === i.ean || code === i.sku.toUpperCase()) {
       if (i.sep >= i.qtd) { setMsg("Quantidade já atingida para este item.", "err"); beep(false); vibrate([60, 40, 60]); return; }
       i.sep++; i.status = "pendente"; save();
@@ -225,43 +417,74 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
       if (i.sep === i.qtd) setTimeout(() => item() === i && confirmItem(), 450);
     } else {
       const other = current.itens.find((x) => x.ean === code || x.sku.toUpperCase() === code);
-      setMsg(other ? `Produto de outro endereço (${other.end}).` : "Código não pertence a este item.", "err");
-      beep(false); vibrate([80, 50, 80]);
-      const f = $("#scanForm"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err");
+      erroLeitura(other ? `Produto de outro endereço (${other.end}).` : "Código não pertence a este item.");
     }
+  }
+  // lote: cada peça bipada vai para a caixa da vez (A primeiro, que tem a prioridade)
+  function lerNoLote(code) {
+    const p = parada();
+    if (code !== p.ean && code !== p.sku.toUpperCase()) {
+      const outra = paradas().find((x) => x.ean === code || x.sku.toUpperCase() === code);
+      return erroLeitura(outra ? `Produto de outra parada (${outra.end}).` : "Código não pertence a esta parada.");
+    }
+    const l = destinoDaLeitura(p);
+    if (!l) { setMsg("Quantidade já atingida nesta parada.", "err"); beep(false); vibrate([60, 40, 60]); return; }
+    const i = itemDaLinha(l);
+    i.sep++; i.status = "pendente"; save();
+    beep(true); vibrate(30);
+    const agora = parada();
+    desenharCaixas(agora); renderQty(true);
+    setMsg(`Caixa ${l.pos} · ${l.pedido}${i.sep === i.qtd ? " ✓" : ` · faltam ${i.qtd - i.sep}`}`, "ok");
+    if (agora.lido === agora.total) setTimeout(() => lote && parada().sku === agora.sku && parada().end === agora.end && confirmItem(), 450);
   }
   $("#scanForm").addEventListener("submit", (e) => { e.preventDefault(); handleCode($("#scanInput").value); });
 
   function confirmItem() {
+    if (lote) {
+      const p = parada();
+      if (p.lido === 0 || p.lido > p.total) return;
+      if (p.lido < p.total) { openShort(p.lido); return; }
+      p.linhas.forEach((l) => { itemDaLinha(l).status = "ok"; baixar(l.pedido, itemDaLinha(l)); });
+      save(); return next();
+    }
     const i = item();
     if (i.sep === 0 || i.sep > i.qtd) return;
     if (i.sep < i.qtd) { openShort(i.sep); return; }
     i.status = "ok"; save();
-    baixarDoPicking(i);
+    baixar(current.id, i);
     next();
   }
 
   // o que foi separado sai do saldo do picking no Estoque (e, se ficar no mínimo, nasce a tarefa de abastecimento)
-  function baixarDoPicking(i) {
-    baixarPorSeparacao({ endereco: i.end, produto: i.sku, qtd: i.sep, usuario: sess?.login, pedido: current.id });
+  function baixar(pedidoId, i) {
+    if (i.sep > 0) baixarPorSeparacao({ endereco: i.end, produto: i.sku, qtd: i.sep, usuario: sess?.login, pedido: pedidoId });
   }
   $("#btnConfirm").addEventListener("click", confirmItem);
 
   function next() {
+    if (lote) return proximaParada(true);
     const o = current;
     const pend = o.itens.findIndex((x, k) => k > o.atual && x.status === "pendente");
     const any = pend >= 0 ? pend : o.itens.findIndex((x) => x.status === "pendente");
-    if (any < 0) return finish();
+    if (any < 0) return abrirDoca({ pedidos: [o.id], lote: null });
     o.atual = any; save(); renderPick(true);
+  }
+  function proximaParada(desenhar = false) {
+    const ps = paradas();
+    const pend = ps.findIndex((x, k) => k > lote.atual && !paradaConcluida(x));
+    const any = pend >= 0 ? pend : ps.findIndex((x) => !paradaConcluida(x));
+    if (any < 0) return abrirDoca({ pedidos: [...lote.pedidos], lote: lote.id });
+    lote.atual = any; save();
+    if (desenhar) renderPick(true);
   }
 
   // falta
   let reason = "Endereço vazio";
   function openShort(qtd) {
-    const i = item();
-    $("#shortDesc").textContent = `${i.desc} · solicitado ${i.qtd} un.`;
-    $("#shortQty").value = qtd ?? i.sep;
-    $("#shortQty").max = i.qtd - 1;
+    const total = lote ? parada().total : item().qtd, lido = lote ? parada().lido : item().sep;
+    $("#shortDesc").textContent = `${lote ? parada().desc : item().desc} · solicitado ${total} un.${lote ? " · o que achar vai primeiro para a caixa A" : ""}`;
+    $("#shortQty").value = qtd ?? lido;
+    $("#shortQty").max = total - 1;
     openSheet("sheetShort");
   }
   $("#btnShort").addEventListener("click", () => openShort());
@@ -271,48 +494,131 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     $$("#shortReasons .chip").forEach((x) => x.classList.toggle("active", x === c));
   });
   $("#shortGo").addEventListener("click", () => {
+    if (lote) {
+      const p = parada();
+      const q = Math.max(0, Math.min(p.total - 1, parseInt($("#shortQty").value, 10) || 0));
+      // o achado vai primeiro para a caixa A (prioridade), depois B… quem ficou sem completar fica com falta
+      distribuirAchado(p.linhas, q).forEach((x) => {
+        const i = pedido(x.pedido).itens[x.idx];
+        Object.assign(i, { sep: x.sep, status: x.falta ? "falta" : "ok", motivo: x.falta ? reason : "" });
+        baixar(x.pedido, i);
+      });
+      save(); closeSheets(); vibrate(40);
+      toast(`Falta registrada · ${q}/${p.total}`);
+      return next();
+    }
     const i = item();
     const q = Math.max(0, Math.min(i.qtd - 1, parseInt($("#shortQty").value, 10) || 0));
     Object.assign(i, { sep: q, status: "falta", motivo: reason });
     save(); closeSheets(); vibrate(40);
-    baixarDoPicking(i);
+    baixar(current.id, i);
     toast(`Falta registrada · ${q}/${i.qtd}`);
     next();
   });
 
-  // lista de itens
+  // lista de itens (pedido) ou de paradas (lote)
   $("#pickListBtn").addEventListener("click", () => {
-    $("#pickItems").innerHTML = current.itens.map((i, k) => lineHtml(i, k, k === current.atual)).join("");
+    if (lote) {
+      $("#listTitle").textContent = "Paradas do lote";
+      $("#pickItems").innerHTML = paradas().map((p, k) => {
+        const st = paradaConcluida(p) ? (p.linhas.some((l) => l.status === "falta") ? "falta" : "ok") : "pendente";
+        const dot = st === "ok" ? `<span class="dot ok">${CHECK}</span>` : st === "falta" ? `<span class="dot falta">!</span>` : `<span class="dot"></span>`;
+        return `<button class="line ${k === lote.atual ? "current" : ""}" data-idx="${k}">${dot}<span class="line-addr">${p.end}</span>
+          <span class="line-desc">${esc(p.desc)}<small>${p.linhas.map((l) => `${l.pos} ${l.qtd}`).join(" · ")}</small></span><span class="line-q">${st === "pendente" ? p.total : p.lido + "/" + p.total}</span></button>`;
+      }).join("");
+    } else {
+      $("#listTitle").textContent = "Itens do pedido";
+      $("#pickItems").innerHTML = current.itens.map((i, k) => lineHtml(i, k, k === current.atual)).join("");
+    }
     openSheet("sheetList");
   });
   $("#pickItems").addEventListener("click", (e) => {
     const l = e.target.closest(".line"); if (!l) return;
-    current.atual = +l.dataset.idx; save(); closeSheets(); renderPick(true);
+    if (lote) lote.atual = +l.dataset.idx; else current.atual = +l.dataset.idx;
+    save(); closeSheets(); renderPick(true);
   });
 
   $("#pickBack").addEventListener("click", () => {
-    current = null; renderHome(); show("viewHome");
+    current = null; lote = null; renderHome(); show("viewHome");
     toast("Separação pausada · continue quando quiser");
   });
 
-  function finish() {
-    const o = current;
-    o.status = "concluido"; o.fim = Date.now(); save();
-    const mins = Math.max(1, Math.round((o.fim - o.inicio) / 60000));
-    const faltas = o.itens.filter((i) => i.status === "falta");
-    $("#doneOrder").textContent = `${o.id} · ${o.cliente}`;
-    $("#doneTime").textContent = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, "0")}`;
-    $("#doneOk").textContent = o.itens.length - faltas.length;
+  // ---------- doca de expedição: onde o separador deixou a mercadoria ----------
+  // Leitura só por QR ou ID digitado (não se escolhe na lista). A lista mostra quantos pedidos esperam em cada doca.
+  function abrirDoca(alvo) {
+    docaAlvo = alvo;
+    const ps = alvo.pedidos.map(pedido);
+    $("#docaTitulo").textContent = alvo.lote ? `${alvo.lote} · ${ps.length} pedidos` : nomeDo(ps[0]);
+    $("#docaSub").textContent = alvo.lote ? "Todas as caixas do carrinho vão para a mesma doca." : ps[0].cliente;
+    $("#docaInput").value = ""; setDocaMsg("");
+    desenharDocas();
+    show("viewDoca");
+    setTimeout(() => $("#docaInput").focus(), 60);
+  }
+  function setDocaMsg(t, k = "") { const m = $("#docaMsg"); m.textContent = t; m.className = "scan-msg " + k; }
+  function desenharDocas() {
+    const docas = lerEstoque().enderecos.filter((e) => e.tipo === "expedicao" && e.ativo).sort((a, b) => compararEnderecos(a.codigo, b.codigo));
+    const ocup = ocupacaoDasDocas();
+    $("#docaList").innerHTML = docas.map((d) => {
+      const n = ocup[d.id] || 0;
+      return `<div class="line"><span class="line-addr">${d.codigo}</span><span class="line-desc">ID ${d.id}</span>
+        <span class="tag ${n ? "andamento" : "concluido"}">${n ? `${n} pedido${n > 1 ? "s" : ""}` : "Livre"}</span></div>`;
+    }).join("") || `<p class="empty">Nenhuma doca de expedição cadastrada. Peça ao gestor de estoque para cadastrar.</p>`;
+  }
+  // pedidos que estão esperando o conferente em cada doca (separados e ainda não conferidos)
+  function ocupacaoDasDocas() {
+    const conf = lerPedidosDaConferencia(setor());
+    const conferidos = new Set(conf.filter((o) => ["conferido", "divergente"].includes(o.conf?.status)).map((o) => o.id));
+    const onde = new Map();
+    conf.filter((o) => o.doca && !conferidos.has(o.id)).forEach((o) => onde.set(o.id, o.doca.id));
+    orders.filter((o) => o.status === "concluido" && o.doca && !conferidos.has(o.parte ? o.parte.pai : o.id)).forEach((o) => onde.set(o.id, o.doca.id));
+    const n = {};
+    onde.forEach((id) => (n[id] = (n[id] || 0) + 1));
+    return n;
+  }
+  $("#docaForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const lido = $("#docaInput").value.trim(); if (!lido) return;
+    $("#docaInput").value = "";
+    const end = acharEndereco(lerEstoque().enderecos, lido);
+    const erro = validarDocaExpedicao(end);
+    if (erro) {
+      setDocaMsg(erro, "err"); beep(false); vibrate([80, 50, 80]);
+      const f = $("#docaForm"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err");
+      return;
+    }
+    beep(true);
+    concluir({ id: end.id, codigo: end.codigo });
+  });
+  $("#docaBack").addEventListener("click", () => {
+    // ainda falta a doca: o pedido continua "em separação" e volta para a lista
+    current = null; lote = null; docaAlvo = null; renderHome(); show("viewHome");
+    toast("Falta informar a doca · continue quando quiser");
+  });
+
+  function concluir(doca) {
+    const fim = Date.now(), ps = docaAlvo.pedidos.map(pedido);
+    ps.forEach((o) => Object.assign(o, { status: "concluido", fim, doca: { ...doca, quando: fim, por: user } }));
+    const l = docaAlvo.lote ? lotes.find((x) => x.id === docaAlvo.lote) : null;
+    if (l) Object.assign(l, { status: "concluido", fim, doca });
+    save();
+    const inicio = l ? l.inicio : ps[0].inicio;
+    const itens = ps.flatMap((o) => o.itens), faltas = itens.filter((i) => i.status === "falta");
+    $("#doneOrder").textContent = l ? `${l.id} · ${ps.map((o) => `${l.posicoes[o.id]} ${o.id}`).join(" · ")}` : `${nomeDo(ps[0])} · ${ps[0].cliente}`;
+    $("#doneDoca").innerHTML = `Mercadoria na doca <b>${doca.codigo}</b>${l ? ` · ${ps.length} pedidos` : ""}`;
+    $("#doneTime").textContent = fmtMin(fim - inicio);
+    $("#doneOk").textContent = itens.length - faltas.length;
     $("#doneShort").textContent = faltas.length;
     $("#doneShortList").innerHTML = faltas.map((i) => lineHtml(i)).join("");
     vibrate([40, 60, 120]);
-    current = null;
+    current = null; lote = null; docaAlvo = null;
     show("viewDone");
   }
   $("#doneBack").addEventListener("click", () => { renderHome(); show("viewHome"); });
 
   // ---------- câmera (abre pelo botão; o leitor fica em js/ui-coletor.js) ----------
   $("#camBtn").addEventListener("click", () => openCam(handleCode));
+  $("#docaCam").addEventListener("click", () => openCam((c) => { $("#docaInput").value = c; $("#docaForm").requestSubmit(); }));
 
   // ---------- menu ----------
   $$(".menu-btn").forEach((b) => b.addEventListener("click", () => {
@@ -325,7 +631,8 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
   }));
   $("#menuSetorBtn").addEventListener("click", () => openSetor(true));
   $("#menuReset").addEventListener("click", () => {
-    orders = pedidosDeDemonstracao(setor()); save(); closeSheets();
+    orders = pedidosDeDemonstracao(setor()); lotes = lotesDeDemonstracao(setor()); save(); closeSheets();
+    selecionando = false; selecionados.clear();
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");
   });

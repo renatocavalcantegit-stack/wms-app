@@ -15,7 +15,7 @@ const pedidoSeparado = (fim) => {
 };
 
 test("separação: no primeiro acesso começa com os pedidos de demonstração do setor", () => {
-  assert.equal(carregarPedidos("exp").length, 5);
+  assert.equal(carregarPedidos("exp").length, 9); // 7 pedidos + 2 partes do pedido dividido
   const mont = carregarPedidos("mont");
   assert.equal(mont.length, 4);
   assert.ok(mont.every((o) => o.id.startsWith("OP-")));
@@ -31,8 +31,8 @@ test("separação: o que foi salvo é o que volta, e cada setor tem a sua fila",
 });
 
 test("separação: dado corrompido no aparelho volta para a demonstração em vez de travar", () => {
-  localStorage.setItem("wms-bb-sep-v3", "{corrompido");
-  assert.equal(carregarPedidos("exp").length, 5);
+  localStorage.setItem("wms-bb-sep-v4", "{corrompido");
+  assert.equal(carregarPedidos("exp").length, 9);
 });
 
 test("conferência: no primeiro acesso começa com os pedidos de demonstração, prontos para conferir", () => {

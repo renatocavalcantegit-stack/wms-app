@@ -75,6 +75,11 @@ import { $, $$, esc } from "./js/util.js";
   }
 
   // ---------- fila ----------
+  // onde o separador deixou a mercadoria. Pedido dividido: uma doca por parte.
+  function docasDo(o) {
+    if (o.partes && o.partes.length) return o.partes.map((p) => `<span class="doca-chip" title="Parte ${p.n}/${p.de} · ${esc(p.operador || "")}">${p.n}/${p.de} ${p.doca ? p.doca.codigo : "—"}</span>`).join("");
+    return o.doca ? `<span class="doca-chip">${o.doca.codigo}</span>` : `<span class="muted">—</span>`;
+  }
   function renderQueue() {
     const ag = db.orders.filter((o) => o.conf.status === "aguardando" || o.conf.status === "andamento");
     const cf = db.orders.filter((o) => o.conf.status === "conferido" || o.conf.status === "divergente");
@@ -93,7 +98,7 @@ import { $, $$, esc } from "./js/util.js";
       return `<tr data-id="${o.id}">
         <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
-        <td>${esc(o.operador || "—")}</td><td>${tag}${o.conf.volumes && o.conf.fim ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
+        <td>${esc(o.operador || "—")}</td><td class="doca-cel">${docasDo(o)}</td><td>${tag}${o.conf.volumes && o.conf.fim ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
     }).join("");
     $("#queueEmpty").hidden = list.length > 0;
     $("#queueEmpty").textContent = queueFilter === "aguardando" ? "Nenhum pedido aguardando conferência." : "Nenhum pedido conferido ainda.";
@@ -134,7 +139,7 @@ import { $, $$, esc } from "./js/util.js";
     $("#queue").hidden = true; $("#order").hidden = false;
     $("#oId").textContent = o.id;
     $("#oClient").textContent = o.cliente;
-    $("#oSub").textContent = `${o.cidade} · separado por ${o.operador || "—"} · ${o.itens.length} itens`;
+    $("#oSub").innerHTML = `${esc(o.cidade)} · separado por ${esc(o.operador || "—")} · ${o.itens.length} itens · ${o.partes && o.partes.length ? "pegar nas docas " : "pegar na doca "}${docasDo(o)}`;
     const t = $("#oTag");
     t.className = "tag " + (o.prio === "alta" ? "alta" : "");
     t.textContent = o.prio === "alta" ? "Prioridade" : "Normal";

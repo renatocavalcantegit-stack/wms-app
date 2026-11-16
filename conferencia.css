@@ -317,3 +317,7 @@ tr.excesso .s-dot, tr.fora .s-dot { background: var(--red); }
 #mDone.mont #dPrint, #mDone.mont #dPreview, #mDone.mont #dObs { display: none; }
 #mDone.mont .m-split { grid-template-columns: 1fr; justify-content: stretch; }
 #mDone.mont #dGo { width: 100%; }
+
+/* doca de expedição onde o separador deixou o pedido (pedido dividido: uma por parte) */
+.doca-chip { display: inline-block; margin: 1px 4px 1px 0; padding: 3px 7px; border-radius: 6px; background: #E8F0FE; color: #1A56DB; font: 700 11px "JetBrains Mono", monospace; white-space: nowrap; }
+.doca-cel { white-space: nowrap; }

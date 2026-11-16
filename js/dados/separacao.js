@@ -1,15 +1,17 @@
 // WMS Beach Bike — camada de dados da Separação.
-// Só este arquivo sabe ONDE os pedidos da separação ficam guardados.
+// Só este arquivo sabe ONDE os pedidos e os lotes da separação ficam guardados.
 // Hoje: no localStorage do aparelho. Na Fase 1: banco local (IndexedDB) + fila de sincronização com o servidor,
 // sem precisar mudar as telas.
-import { seedSeparacao, seedSeparacaoMont } from "../demo-dados.js";
+import { seedSeparacao, seedSeparacaoMont, seedLotes } from "../demo-dados.js";
 
-// v3: produtos e clientes reais na demonstração (a versão nova da chave descarta os pedidos antigos)
+// v4: doca de expedição, lotes e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v3" : "wms-bb-sep-v3");
+const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v4" : "wms-bb-sep-v4");
+const chaveLotes = (setor) => (setor === "mont" ? "wms-bb-lotes-mont-v1" : "wms-bb-lotes-v1");
 
 // pedidos de demonstração do setor (usados no primeiro acesso e em "reiniciar demonstração")
 export const pedidosDeDemonstracao = (setor) => (setor === "mont" ? seedSeparacaoMont() : seedSeparacao());
+export const lotesDeDemonstracao = (setor) => (setor === "mont" ? [] : seedLotes());
 
 // pedidos guardados no aparelho; se ainda não há nenhum, começa com os de demonstração
 export function carregarPedidos(setor) {
@@ -27,4 +29,16 @@ export function lerPedidosSalvos(setor) {
     const d = JSON.parse(localStorage.getItem(chave(setor)));
     return Array.isArray(d) ? d : [];
   } catch { return []; }
+}
+
+// lotes (vários pedidos numa viagem). Sem nada gravado ainda, vêm os de demonstração junto com os pedidos.
+export function carregarLotes(setor) {
+  try {
+    const d = JSON.parse(localStorage.getItem(chaveLotes(setor)));
+    if (Array.isArray(d)) return d;
+  } catch {}
+  return lerPedidosSalvos(setor).length ? [] : lotesDeDemonstracao(setor);
+}
+export function salvarLotes(setor, lotes) {
+  localStorage.setItem(chaveLotes(setor), JSON.stringify(lotes));
 }

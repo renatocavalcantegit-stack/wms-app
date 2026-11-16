@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=28">
+  <link rel="stylesheet" href="styles.css?v=29">
 </head>
 <body>
 
@@ -98,14 +98,25 @@
         <div class="kpi accent"><span id="kpiDone" class="kpi-n">0</span><span class="kpi-l">Concluídos</span></div>
       </div>
 
-      <div class="tabs" role="tablist">
+      <div class="tabs" id="homeTabs" role="tablist">
         <button class="tab active" data-filter="abertos">Abertos</button>
         <button class="tab" data-filter="concluido">Concluídos</button>
         <button class="tab" data-filter="todos">Todos</button>
       </div>
 
+      <!-- vários pedidos numa viagem só (lote): o separador marca os pedidos e monta o carrinho -->
+      <div id="loteBar" class="lote-bar">
+        <button id="btnVarios" class="btn ghost">Separar vários</button>
+        <p id="loteDica" class="lote-dica" hidden>Toque nos pedidos que vão juntos no carrinho (2 a 6).</p>
+      </div>
+
       <div id="orderList" class="orders"></div>
     </main>
+
+    <div id="selBar" class="sel-bar" hidden>
+      <button id="selCancel" class="btn ghost">Cancelar</button>
+      <button id="selGo" class="btn primary grow">Montar lote · <span id="selBarN">0</span></button>
+    </div>
   </section>
 
   <!-- ===== SEPARAÇÃO ===== -->
@@ -140,6 +151,9 @@
         </div>
       </div>
 
+      <!-- lote: as caixas do carrinho nesta parada -->
+      <div id="loteBox" class="lote-box" hidden></div>
+
       <div class="qty">
         <button id="qtyMinus" class="qty-btn" aria-label="Diminuir">−</button>
         <div class="qty-center">
@@ -165,6 +179,36 @@
     </footer>
   </section>
 
+  <!-- ===== DOCA DE EXPEDIÇÃO (fim da separação) ===== -->
+  <section id="viewDoca" class="view pick" hidden>
+    <header class="pick-bar">
+      <button id="docaBack" class="icon-btn" aria-label="Voltar">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="pick-head">
+        <p id="docaTitulo" class="pick-order"></p>
+        <p id="docaSub" class="pick-client"></p>
+      </div>
+    </header>
+    <main class="pick-main">
+      <div class="doca-hero">
+        <span class="addr-label">Último passo</span>
+        <p class="doca-t">Leia o QR da doca onde você deixou a mercadoria</p>
+        <p class="muted">O conferente vai buscar o pedido nessa doca.</p>
+      </div>
+      <form id="docaForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
+        <input id="docaInput" type="text" autocomplete="off" placeholder="Bipe o QR ou digite o ID da doca">
+        <button type="button" id="docaCam" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        </button>
+      </form>
+      <p id="docaMsg" class="scan-msg"></p>
+      <div class="load-head"><span>Docas de expedição</span><small>pedidos esperando o conferente</small></div>
+      <div id="docaList" class="sheet-list doca-list"></div>
+    </main>
+  </section>
+
   <!-- ===== CONCLUÍDO ===== -->
   <section id="viewDone" class="view done" hidden>
     <div class="done-box">
@@ -173,6 +217,7 @@
       </div>
       <h1>Separação concluída</h1>
       <p id="doneOrder" class="muted"></p>
+      <p id="doneDoca" class="done-doca"></p>
       <div class="done-stats">
         <div><span id="doneTime" class="kpi-n">–</span><span class="kpi-l">Tempo</span></div>
         <div><span id="doneOk" class="kpi-n">0</span><span class="kpi-l">Itens ok</span></div>
@@ -354,12 +399,13 @@
       <span id="startPrio" class="tag"></span>
     </div>
     <div id="startItems" class="sheet-list"></div>
+    <button id="startUndo" class="btn ghost block" hidden>Desfazer lote</button>
     <button id="startGo" class="btn primary block">Iniciar separação</button>
   </div>
 
   <div id="sheetList" class="sheet" hidden>
     <div class="sheet-grip"></div>
-    <p class="sheet-title">Itens do pedido</p>
+    <p id="listTitle" class="sheet-title">Itens do pedido</p>
     <div id="pickItems" class="sheet-list"></div>
   </div>
 
@@ -402,6 +448,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=28"></script>
+  <script type="module" src="app.js?v=29"></script>
 </body>
 </html>

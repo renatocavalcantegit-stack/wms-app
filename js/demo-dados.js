@@ -4,6 +4,7 @@
 import { acharProduto, routeSort } from "../compartilhado/regras/produtos.js";
 import { escolherOrigens, necessidade } from "../compartilhado/regras/movimentacao.js";
 import { enderecoInventariavel, previstosDoEndereco } from "../compartilhado/regras/inventario.js";
+import { posicoesDoLote, sugerirDivisao, ruasDaParte } from "../compartilhado/regras/separacao.js";
 import { PRODUTOS_BIKE, PRODUTOS_MOTO, PRODUTOS_NOVOS_DO_ERP } from "./demo-catalogo.js";
 
 // ---------- equipe ----------
@@ -61,16 +62,47 @@ const item = (sku, qtd) => ({
 
 const order = (id, cliente, cidade, prio, hora, itens) => ({
   id, cliente, cidade, prio, hora, status: "pendente", itens, inicio: null, fim: null, operador: null, atual: 0,
+  doca: null, lote: null, pos: null, parte: null,
 });
 
-// pedidos para separar
-export const seedSeparacao = () => [
-  order("PV-10421", "Horizonte Cedro Comercial", "Fortaleza · CE", "alta", "07:42", [item("176", 20), item("122", 30), item("536", 6), item("17057", 10)]),
-  order("PV-10422", "Arco Cedro Comercial", "Maracanaú · CE", "normal", "08:05", [item("16016", 10), item("1797", 50), item("3243", 4)]),
-  order("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", "alta", "08:31", [item("883", 8), item("167", 10), item("283", 6), item("4084", 4), item("2843", 2)]),
-  order("PV-10424", "Diego Valente Pires", "Sobral · CE", "normal", "09:10", [item("13633", 4), item("19212", 12), item("17480", 6)]),
-  order("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", "normal", "09:48", [item("8745", 10), item("17726", 12), item("8545", 20), item("2825", 6)]),
-].map(routeSort);
+// docas de expedição (rua 9002) — mesmos IDs do cadastro de endereços do Estoque
+export const docaDeExpedicao = (n) => ({ id: 608007 + n, codigo: `R9002-P1-A100-AP${100 + n}` });
+
+// pedido grande da demonstração, já dividido pelo coordenador em 2 partes (blocos de ruas seguidas)
+function pedidoDividido() {
+  const grande = routeSort(order("PV-10426", "Rota Norte Distribuidora", "Caucaia · CE", "normal", "09:55",
+    [item("176", 40), item("122", 24), item("536", 12), item("17057", 20), item("16016", 30), item("1797", 60), item("13633", 10), item("19212", 18),
+      item("8745", 24), item("17726", 24), item("8545", 30), item("2825", 12)]));
+  const grupos = sugerirDivisao(grande.itens, 2);
+  return grupos.map((idxs, k) => ({
+    ...grande, id: `${grande.id}/${k + 1}`, itens: idxs.map((i) => ({ ...grande.itens[i] })),
+    parte: { pai: grande.id, n: k + 1, de: grupos.length, ruas: ruasDaParte(grande.itens, idxs), por: "coordenador" },
+  }));
+}
+
+// pedidos para separar: avulsos, dois num lote montado pelo coordenador (PV-10424 e PV-10425) e um pedido dividido
+export const seedSeparacao = () => {
+  const lista = [
+    order("PV-10421", "Horizonte Cedro Comercial", "Fortaleza · CE", "alta", "07:42", [item("176", 20), item("122", 30), item("536", 6), item("17057", 10)]),
+    order("PV-10422", "Arco Cedro Comercial", "Maracanaú · CE", "normal", "08:05", [item("16016", 10), item("1797", 50), item("3243", 4)]),
+    order("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", "alta", "08:31", [item("883", 8), item("167", 10), item("283", 6), item("4084", 4), item("2843", 2)]),
+    order("PV-10424", "Diego Valente Pires", "Sobral · CE", "normal", "09:10", [item("13633", 4), item("19212", 12), item("17480", 6)]),
+    order("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", "normal", "09:48", [item("8745", 10), item("17726", 12), item("8545", 20), item("2825", 6), item("19212", 6)]),
+    order("PV-10427", "Praia Mansa Bikes", "Fortaleza · CE", "normal", "10:05", [item("176", 6), item("536", 2), item("3243", 2)]),
+    order("PV-10428", "Vento Leste Comercial", "Fortaleza · CE", "normal", "10:12", [item("122", 10), item("176", 4), item("17057", 4)]),
+  ].map(routeSort);
+  const [l] = seedLotes();
+  lista.filter((o) => l.pedidos.includes(o.id)).forEach((o) => Object.assign(o, { lote: l.id, pos: l.posicoes[o.id] }));
+  return [...lista, ...pedidoDividido()];
+};
+// lote montado pelo coordenador (2 pedidos de Sobral/Eusébio com um produto em comum: o 19212 vira uma parada só)
+export const seedLotes = () => {
+  const ped = [{ id: "PV-10424", prio: "normal", hora: "09:10" }, { id: "PV-10425", prio: "normal", hora: "09:48" }];
+  const posicoes = posicoesDoLote(ped);
+  return [{ id: "L-1", pedidos: ped.map((p) => p.id).sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes,
+    status: "pendente", criadoPor: { tipo: "coordenador", login: "coordenador", nome: "Coordenador" }, criado: Date.now() - 20 * 60e3,
+    inicio: null, fim: null, operador: null, atual: 0 }];
+};
 
 // pedidos já separados, aguardando conferência
 export const seedConferencia = () => {
@@ -79,8 +111,9 @@ export const seedConferencia = () => {
       const f = faltas[i.sku];
       Object.assign(i, f != null ? { sep: f, status: "falta", motivo: "Quantidade insuficiente" } : { sep: i.qtd, status: "ok" });
     });
-    return Object.assign(o, { status: "concluido", operador: "Davi", fim: Date.now() - 3600e3 });
+    return Object.assign(o, { status: "concluido", operador: "Davi", fim: Date.now() - 3600e3, doca: docaDeExpedicao(1 + (n++ % 2)) });
   };
+  let n = 0;
   return [
     sep(order("PV-10401", "Farol Cedro Comercial", "Fortaleza · CE", "alta", "06:55", [item("176", 10), item("16016", 4), item("17057", 2), item("19212", 3)])),
     sep(order("PV-10402", "Paineira Cedro Comercial", "Fortaleza · CE", "normal", "07:10", [item("536", 4), item("283", 2), item("3243", 2), item("2843", 1)]), { "2843": 0 }),
@@ -156,7 +189,7 @@ const doErp = (p, i) => ({
 
 // endereços de demonstração: ruas 3001 a 3004, prédios 1 a 6;
 // andares 100, 200 e 300 são picking (apartamentos x01 a x06) e o andar 500 é aéreo (501 a 503).
-// Docas na rua 9001. O ID é o que vai no QR da prateleira.
+// Docas de recebimento na rua 9001 e de expedição na 9002. O ID é o que vai no QR da prateleira.
 function enderecosDeDemonstracao() {
   const lista = [];
   let id = 607500;
@@ -168,6 +201,8 @@ function enderecosDeDemonstracao() {
       for (let a = 1; a <= 3; a++) add(rua, predio, 500, 500 + a, "aereo");
     }
   for (let a = 1; a <= 4; a++) add(9001, 1, 100, 100 + a, "doca");
+  // docas de expedição na rua 9002: o separador deixa o pedido aqui e o conferente busca
+  for (let a = 1; a <= 6; a++) add(9002, 1, 100, 100 + a, "expedicao");
   // dois endereços já desativados, para mostrar o filtro de INATIVOS
   lista.find((e) => e.codigo === "R3004-P6-A500-AP503").ativo = false;
   lista.find((e) => e.codigo === "R3004-P6-A300-AP306").ativo = false;

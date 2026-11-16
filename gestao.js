@@ -3,7 +3,10 @@
 // Montagem (montagem.html, body data-setor="mont"): pedidos OP com Separação e Conferência (ou conferência dispensada).
 import * as R from "./compartilhado/regras/rotas.js";
 import { PERFIS, SETORES, session, logout } from "./js/sessao.js";
-import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR, SEPARADORES, CONFERENTES, FATURISTAS, MOTORISTAS } from "./js/demo-dados.js";
+import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR, SEPARADORES, CONFERENTES, FATURISTAS, MOTORISTAS, docaDeExpedicao } from "./js/demo-dados.js";
+import {
+  validarLote, posicoesDoLote, montarParadas, MAX_PEDIDOS_LOTE, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, MIN_PARTES, MAX_PARTES,
+} from "./compartilhado/regras/separacao.js";
 import { CLIENTES } from "./js/demo-clientes.js";
 
 (() => {
@@ -13,8 +16,9 @@ import { CLIENTES } from "./js/demo-clientes.js";
   const MONT = document.body.dataset.setor === "mont", SETOR = MONT ? "mont" : "exp";
   if (!sess || sess.perfil !== (MONT ? "coordmont" : "coord")) { location.replace("./"); return; }
 
-  // v3 dos dados: equipe, produtos e clientes reais e ritmo em tempo real (a chave nova descarta a simulação antiga)
-  const STORE = MONT ? "wms-bb-gestao-mont-v3" : "wms-bb-gestao-v4";
+  // v4 dos dados: doca de expedição, lotes (vários pedidos numa viagem) e pedido dividido entre separadores
+  // (a chave nova descarta a simulação antiga)
+  const STORE = MONT ? "wms-bb-gestao-mont-v4" : "wms-bb-gestao-v5";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -88,6 +92,36 @@ import { CLIENTES } from "./js/demo-clientes.js";
   let db;
   const P = (id) => db.pedidos[id];
   const C = (id) => db.cargas[id];
+
+  // ---------- lote: vários pedidos numa viagem só (um cartão "L-n" no quadro da separação) ----------
+  // No quadro, o lote ocupa o lugar dos pedidos dele. Para o andamento, ele vira uma "vista": todos os itens
+  // dos pedidos na ordem do endereço, com a separação (resp, início, fim, tempos) guardada no próprio lote.
+  const isLote = (id) => String(id).startsWith("L-");
+  const LT = (id) => db.lotes[id];
+  const membros = (l) => l.pedidos.map(P);
+  function vista(l) {
+    const ms = membros(l);
+    const itens = ms.flatMap((p) => p.itens).sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
+    return {
+      id: l.id, lt: l, itens, sep: l.sep, membros: ms, rota: ms[0].rota, op: ms[0].op,
+      prio: ms.some((p) => p.prio === "alta") ? "alta" : "normal",
+      embarque: ms.map((p) => p.embarque).filter(Boolean).sort()[0] || null, chegada: Math.min(...ms.map((p) => p.chegada)),
+    };
+  }
+  // o que está numa lista do quadro: pedido, parte de pedido ou lote
+  const E = (id) => (isLote(id) ? vista(LT(id)) : P(id));
+  // histórico: no lote, vai para cada pedido dele
+  const logE = (e, txt, t) => (e.lt ? e.membros.forEach((m) => log(m, txt, t)) : log(e, txt, t));
+  // pedido que pode entrar num lote ou ser dividido: ainda na caixa, fora de lote e inteiro
+  const inteiro = (p) => !p.lote && !p.parte && !p.dividido;
+  // nome do pedido na tela (parte: "PV-10431 · 1/2")
+  const nomeP = (p) => (p.parte ? `${p.parte.pai} · ${p.parte.n}/${p.parte.de}` : p.id);
+  // pedidos de verdade (as partes de um pedido dividido não contam em separado)
+  const reais = () => Object.values(db.pedidos).filter((p) => !p.parte);
+  // doca de expedição onde o separador deixou a mercadoria (pedido dividido: uma por parte)
+  const docaCod = (d) => (d ? d.codigo : "—");
+  const docasHtml = (p) => p.partesSep ? p.partesSep.map((x) => `<span class="dchip" title="Parte ${x.n}/${x.de} · ${esc(nameOf(x.resp))}">${x.n}/${x.de} ${docaCod(x.doca)}</span>`).join("")
+    : p.doca ? `<span class="dchip">${p.doca.codigo}</span>` : "";
   const hoje = () => R.iso(new Date());
   const rotaOf = (id) => R.rota(id);
   const units = (p) => p.itens.reduce((t, i) => t + i.qtd, 0);
@@ -95,7 +129,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
   const itensOk = (p, k) => p.itens.filter((i) => i[k] >= i.qtd).length;
   const pct = (p, k) => Math.round((doneU(p, k) / units(p)) * 100);
   const live = (p, k) => !!(p[k] && p[k].inicio && !p[k].fim);
-  const isLive = (k, id) => (k === "emb" ? C(id).status === "carregando" : live(P(id), k));
+  const isLive = (k, id) => (k === "emb" ? C(id).status === "carregando" : live(E(id), k));
   const curItem = (p, k) => p.itens.find((i) => i[k] < i.qtd);
   const nameOf = (id) => (PEOPLE.find((x) => x.id === id) || {}).nome || "—";
   const initials = (n) => n.split(" ").map((x) => x[0]).slice(0, 2).join("");
@@ -138,13 +172,13 @@ import { CLIENTES } from "./js/demo-clientes.js";
       : `Embarque previsto: ${R.tag(e.data, R.iso(new Date(t))).label.toLowerCase()} (${R.fmtDia(e.data)})`, t);
   }
 
-  function makePedido({ semRota = false, prio = false, chegada = now(), rota = null } = {}) {
+  function makePedido({ semRota = false, prio = false, chegada = now(), rota = null, itens: nItens = null } = {}) {
     // o cliente vem do ranking (com peso); a rota e o vendedor são os do cadastro do cliente
     const cli = pickPeso(rota ? CLI.filter((c) => c.rota === rota) : CLI_COM_ROTA, (c) => c.peso);
     const rid = semRota ? null : cli.rota;
     // produtos que vendem mais aparecem mais (peso pela raiz da quantidade vendida)
     const restantes = [...PRODUTOS], prods = [];
-    for (let n = qtdItens(); n > 0; n--) { const x = pickPeso(restantes, (y) => Math.sqrt(y.vendidos)); prods.push(x); restantes.splice(restantes.indexOf(x), 1); }
+    for (let n = nItens || qtdItens(); n > 0; n--) { const x = pickPeso(restantes, (y) => Math.sqrt(y.vendidos)); prods.push(x); restantes.splice(restantes.indexOf(x), 1); }
     const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: qtdDoItem(x), sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
@@ -175,7 +209,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
   // dados iniciais da montagem
   function seedMont() {
     rnd = mulberry32(3301);
-    db = { v: 3, setor: "mont", seq: 3216, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
+    db = { v: 4, setor: "mont", seq: 3216, loteSeq: 1, lotes: {}, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
     SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
     CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
     const t = now(), early = () => t - rint(70, 160) * MIN;
@@ -183,7 +217,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     const sepsAqui = SEPS.filter((x) => aqui(x.id)).map((x) => x.id), confsAqui = CONFS.filter((x) => aqui(x.id)).map((x) => x.id);
     const sepDone = (p) => {
       const r = pick(sepsAqui);
-      Object.assign(p.sep, { resp: r, atrib: stamp(p, 0.05), inicio: stamp(p, 0.1), fim: stamp(p, 0.45) }); fillUnits(p, "sep", 1);
+      Object.assign(p.sep, { resp: r, atrib: stamp(p, 0.05), inicio: stamp(p, 0.1), fim: stamp(p, 0.45) }); fillUnits(p, "sep", 1); p.doca = docaDeExpedicao(rint(1, 6));
       log(p, `Separação atribuída a ${nameOf(r)}`, p.sep.atrib); log(p, `Separação iniciada por ${nameOf(r)}`, p.sep.inicio); log(p, `Separação finalizada por ${nameOf(r)}`, p.sep.fim);
       p.etapa = "conf";
     };
@@ -252,7 +286,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     if (MONT) return seedMont();
     rnd = mulberry32(2026);
     db = {
-      v: 3, seq: 10431, cargaSeq: 240, nfSeq: 236001, pedidos: {}, cargas: {}, mont: [],
+      v: 4, seq: 10431, cargaSeq: 240, nfSeq: 236001, loteSeq: 1, pedidos: {}, cargas: {}, mont: [], lotes: {},
       sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, lib: { inbox: [], cols: {} }, emb: { inbox: [], cols: {} }, stats: {}, tick: 0,
     };
     SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("sep") : 0; });
@@ -273,9 +307,9 @@ import { CLIENTES } from "./js/demo-clientes.js";
       if (n > 0) {
         const r = pick(SEPS.filter((x) => aqui(x.id))).id;
         Object.assign(p.sep, { resp: r, atrib: stamp(p, 0.04), inicio: stamp(p, 0.07), fim: stamp(p, 0.22) });
-        fillUnits(p, "sep", 1); p.volumes = vols(p);
+        fillUnits(p, "sep", 1); p.volumes = vols(p); p.doca = docaDeExpedicao(rint(1, 6));
         log(p, `Separação atribuída a ${nameOf(r)}`, p.sep.atrib); log(p, `Separação iniciada por ${nameOf(r)}`, p.sep.inicio);
-        log(p, `Separação finalizada por ${nameOf(r)} · ${p.volumes} volume(s)`, p.sep.fim);
+        log(p, `Separação finalizada por ${nameOf(r)} · ${p.volumes} volume(s) · doca ${p.doca.codigo}`, p.sep.fim);
       }
       if (n > 1) {
         const r = pick(CONFS).id;
@@ -319,6 +353,16 @@ import { CLIENTES } from "./js/demo-clientes.js";
       if (step === "wait") p.sep.atrib = t;
       db.sep.cols[sid].push(p.id);
     }));
+
+    // --- lote montado pelo coordenador (mesma rota e mesma data de embarque), esperando separador
+    const lt = ["centro", "centro", "centro"].map((rota) => makePedido({ rota, chegada: early() }));
+    lt.forEach((p) => db.sep.inbox.push(p.id));
+    criarLote(lt.map((p) => p.id), t - 8 * MIN);
+    // --- pedido grande dividido em 2 partes: a parte 1 já está com um separador, a parte 2 espera na caixa
+    const grande = makePedido({ rota: "caucaia", chegada: early(), itens: 16 });
+    db.sep.inbox.push(grande.id);
+    const [p1] = dividir(grande, sugerirDivisao(grande.itens, 2), t - 12 * MIN);
+    db.sep.inbox.splice(db.sep.inbox.indexOf(p1.id), 1); db.sep.cols.s8.push(p1.id); emAndamento(p1, "sep", "s8", 0.3);
 
     // --- conferência
     [early(), early(), at("11:22"), early()].forEach((ch, i) => { const p = makePedido({ chegada: ch, rota: i === 2 ? "caucaia" : null }); advance(p, "conf"); db.conf.inbox.push(p.id); });
@@ -383,7 +427,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
   }
 
   function load() {
-    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 3 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
+    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 4 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
     seed();
   }
   const save = () => localStorage.setItem(STORE, JSON.stringify(db));
@@ -403,6 +447,8 @@ import { CLIENTES } from "./js/demo-clientes.js";
   // seleção em lote na caixa de entrada do faturamento (expedição) / da conferência (montagem)
   const sel = new Set();
   let libVisible = [];
+  // seleção na caixa de entrada da separação (para agrupar em lote)
+  const selSep = new Set();
 
   // ---------- formatação ----------
   const fmtDur = (ms) => {
@@ -475,6 +521,12 @@ import { CLIENTES } from "./js/demo-clientes.js";
       return null;
     }
 
+    if (isLote(id)) {
+      const l = LT(id), v = vista(l);
+      if (changed) { l.sep.resp = toCol === "inbox" ? null : toCol; l.sep.atrib = toCol === "inbox" ? null : now(); }
+      if (changed) logE(v, toCol === "inbox" ? `Lote ${id} devolvido à caixa de entrada` : `Lote ${id} atribuído a ${nameOf(toCol)} · ${idx + 1}º da fila`);
+      return null;
+    }
     const p = P(id);
     if (changed) { p[k].resp = toCol === "inbox" ? null : toCol; p[k].atrib = toCol === "inbox" ? null : now(); }
     if (k === "lib") {
@@ -491,7 +543,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   function move(k, id, toCol, idx, checked = false) {
     // regra: pedido sem rota não vai para separador sem antes definir a rota
-    if (!MONT && !checked && k === "sep" && toCol !== "inbox" && !P(id).rota) return askRota(id, () => move(k, id, toCol, idx, true));
+    if (!MONT && !checked && k === "sep" && toCol !== "inbox" && !isLote(id) && !P(id).rota) return askRota(id, () => move(k, id, toCol, idx, true));
     const before = locate(k, id);
     const err = moveCore(k, id, toCol, idx);
     if (err) { toast(err); render(); return; }
@@ -503,7 +555,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
       toast(same ? `Ordem de faturamento atualizada no Sankhya (${n} pedido(s) de ${nameOf(toCol)})` : `${id} liberado p/ faturamento · ${nameOf(toCol)} · ordem ${P(id).lib.ordem} enviada ao Sankhya`);
     } else if (k === "lib") toast(`${id} voltou para a caixa · liberação cancelada no Sankhya`);
     else if (k === "emb") toast(toCol === "inbox" ? `${id} sem motorista` : `${id} → ${nameOf(toCol)}`);
-    else toast(`${id} → ${toCol === "inbox" ? "caixa de entrada" : nameOf(toCol)}`);
+    else toast(`${isLote(id) ? `Lote ${id}` : nomeP(P(id))} → ${toCol === "inbox" ? "caixa de entrada" : nameOf(toCol)}`);
   }
 
   // movimento em lote (faturamento): mantém a sequência e insere a partir de idx
@@ -544,11 +596,119 @@ import { CLIENTES } from "./js/demo-clientes.js";
     toast(ok === 1 ? `${ids.find((id) => P(id).confPulada)} entregue à montagem · conferência dispensada` : `${ok} pedidos entregues à montagem · conferência dispensada${err ? ` · ${err}` : ""}`);
   }
 
+  // ---------- lote: criar, desfazer e concluir ----------
+  // ids: pedidos da caixa de entrada da separação. O lote entra no lugar do primeiro deles.
+  function criarLote(ids, t = now()) {
+    const ps = ids.map(P);
+    const erro = validarLote(ps) || (ps.some((p) => !db.sep.inbox.includes(p.id)) ? "Só pedidos da caixa de entrada entram no lote." : null)
+      || (!MONT && ps.some((p) => !p.rota) ? "Defina a rota dos pedidos antes de agrupar." : null);
+    if (erro) return erro;
+    const posicoes = posicoesDoLote(ps);
+    const l = { id: "L-" + db.loteSeq++, pedidos: [...ids].sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes, sep: blank(), criado: t, por: sess.nome, status: "pendente" };
+    db.lotes[l.id] = l;
+    const at = Math.min(...ids.map((id) => db.sep.inbox.indexOf(id)));
+    db.sep.inbox = db.sep.inbox.filter((id) => !ids.includes(id));
+    db.sep.inbox.splice(Math.min(at, db.sep.inbox.length), 0, l.id);
+    ps.forEach((p) => { p.lote = l.id; log(p, `Agrupado no lote ${l.id} por ${sess.nome} · caixa ${posicoes[p.id]} do carrinho`, t); });
+    return null;
+  }
+  // desfazer: só antes de começar. Os pedidos voltam para onde o lote estava (caixa ou fila do separador).
+  function desfazerLote(id) {
+    const l = LT(id), loc = locate("sep", id);
+    if (!l || !loc) return "Lote não encontrado";
+    if (l.sep.inicio) return "Lote já começou: não dá para desfazer.";
+    loc.list.splice(loc.list.indexOf(id), 1, ...l.pedidos);
+    membros(l).forEach((p) => {
+      p.lote = null;
+      if (loc.col !== "inbox") { p.sep.resp = loc.col; p.sep.atrib = now(); }
+      log(p, `Lote ${id} desfeito por ${sess.nome}`);
+    });
+    delete db.lotes[id];
+    return null;
+  }
+  // o separador terminou a viagem: cada pedido segue sozinho para a conferência, todos na mesma doca
+  function concluirLote(l, pid) {
+    const doca = docaDeExpedicao(rint(1, 6)), fim = now();
+    l.sep.fim = fim; l.status = "concluido"; l.doca = doca;
+    membros(l).forEach((p) => {
+      Object.assign(p.sep, { resp: pid, atrib: l.sep.atrib, inicio: l.sep.inicio, fim });
+      if (!MONT) p.volumes = vols(p);
+      p.doca = doca; p.etapa = "conf"; db.conf.inbox.push(p.id);
+      log(p, `Separação finalizada por ${nameOf(pid)} no lote ${l.id} (caixa ${l.posicoes[p.id]}) · doca ${doca.codigo}`, fim);
+    });
+    db.stats[pid] += l.pedidos.length;
+  }
+
+  // ---------- pedido grande dividido entre separadores (só o coordenador) ----------
+  // grupos: índices dos itens de cada parte. As partes entram na caixa de entrada no lugar do pedido.
+  function dividir(p, grupos, t = now()) {
+    const de = grupos.length;
+    const partes = grupos.map((idxs, k) => {
+      // a parte guarda de qual item do pedido veio cada linha (origem), para juntar no fim
+      const linhas = [...idxs].sort((a, b) => p.itens[a].end.localeCompare(p.itens[b].end, "pt-BR", { numeric: true }));
+      const q = {
+        ...JSON.parse(JSON.stringify(p)), id: `${p.id}/${k + 1}`, hist: [],
+        itens: linhas.map((i) => ({ ...p.itens[i], sep: 0, conf: 0 })),
+        parte: { pai: p.id, n: k + 1, de, origem: linhas, ruas: ruasDaParte(p.itens, idxs) }, sep: blank(),
+      };
+      db.pedidos[q.id] = q;
+      log(q, `Parte ${k + 1}/${de} de ${p.id} · ${q.itens.length} itens · ${q.parte.ruas}`, t);
+      return q;
+    });
+    const loc = locate("sep", p.id);
+    const at = loc.list.indexOf(p.id);
+    loc.list.splice(at, 1);
+    db.sep.inbox.splice(loc.col === "inbox" ? at : db.sep.inbox.length, 0, ...partes.map((q) => q.id));
+    Object.assign(p.sep, { resp: null, atrib: null });
+    p.dividido = { partes: partes.map((q) => q.id), por: sess.nome, quando: t };
+    log(p, `Separação dividida em ${de} partes por ${sess.nome} · ${partes.map((q) => `${q.parte.n}: ${q.parte.ruas}`).join(" · ")}`, t);
+    return partes;
+  }
+  const partesDe = (p) => (p.dividido ? p.dividido.partes.map(P) : []);
+  // desfazer: só se nenhuma parte começou
+  function desfazerDivisao(pai) {
+    const p = P(pai), ps = partesDe(p);
+    if (ps.some((q) => q.sep.inicio)) return "Uma parte já começou: não dá para desfazer a divisão.";
+    ps.forEach((q) => { const loc = locate("sep", q.id); if (loc) loc.list.splice(loc.list.indexOf(q.id), 1); delete db.pedidos[q.id]; });
+    delete p.dividido;
+    db.sep.inbox.unshift(p.id);
+    log(p, `Divisão desfeita por ${sess.nome} · pedido voltou inteiro para a caixa de entrada`);
+    return null;
+  }
+  // parte terminou: quando TODAS terminarem, o pedido vai inteiro para a conferência, com a doca de cada parte
+  function concluirParte(q, pid) {
+    q.doca = docaDeExpedicao(rint(1, 6)); q.etapa = "fim";
+    log(q, `Parte separada por ${nameOf(pid)} · doca ${q.doca.codigo}`);
+    const p = P(q.parte.pai), ps = partesDe(p);
+    log(p, `Parte ${q.parte.n}/${q.parte.de} separada por ${nameOf(pid)} · doca ${q.doca.codigo}`);
+    if (!ps.every((x) => x.sep.fim)) return false;
+    ps.forEach((x) => x.itens.forEach((it, j) => { const o = p.itens[x.parte.origem[j]]; if (o) o.sep = it.sep; }));
+    Object.assign(p.sep, {
+      resp: ps[0].sep.resp, atrib: Math.min(...ps.map((x) => x.sep.atrib || x.sep.inicio)),
+      inicio: Math.min(...ps.map((x) => x.sep.inicio)), fim: Math.max(...ps.map((x) => x.sep.fim)),
+    });
+    p.partesSep = ps.map((x) => ({ n: x.parte.n, de: x.parte.de, resp: x.sep.resp, doca: x.doca, fim: x.sep.fim, ruas: x.parte.ruas }));
+    if (!MONT) p.volumes = vols(p);
+    p.etapa = "conf"; db.conf.inbox.push(p.id);
+    log(p, `Todas as partes separadas · pedido inteiro na conferência · docas ${p.partesSep.map((x) => x.doca.codigo).join(", ")}`);
+    return true;
+  }
+
   // ---------- status (acompanhamento e detalhe) ----------
   function statusOf(p) {
     const S = (txt, cls, grp, sub = "") => ({ txt, cls, grp, sub });
     const loc = locateP(p.id);
     if (p.op && p.etapa === "fim") return S(p.confPulada ? "Entregue à montagem · sem conferência" : "Entregue à montagem", "done", "fim", p.entregue ? fmtTime(p.entregue) : "");
+    if (p.etapa === "sep" && p.lote) {
+      const l = LT(p.lote), ll = locate("sep", l.id), v = vista(l);
+      if (!ll || ll.col === "inbox") return S("Aguardando designar separador", "wait", "sep", `lote ${l.id}`);
+      return live(v, "sep") ? S("Em separação", "work", "sep", `lote ${l.id} · ${pct(v, "sep")}%`) : S("Aguardando início da separação", "next", "sep", `lote ${l.id} · ${ll.list.indexOf(l.id) + 1}º na fila`);
+    }
+    if (p.etapa === "sep" && p.dividido) {
+      const ps = partesDe(p), prontas = ps.filter((q) => q.sep.fim).length, sub = `dividido · ${prontas}/${ps.length} partes prontas`;
+      if (ps.some((q) => live(q, "sep") || q.sep.fim)) return S("Em separação", "work", "sep", sub);
+      return ps.some((q) => q.sep.resp) ? S("Aguardando início da separação", "next", "sep", sub) : S("Aguardando designar separador", "wait", "sep", sub);
+    }
     if (p.etapa === "sep") {
       if (!loc || loc.col === "inbox") return S("Aguardando designar separador", "wait", "sep", p.rota ? "" : "sem rota");
       return live(p, "sep") ? S("Em separação", "work", "sep", `${pct(p, "sep")}%`) : S("Aguardando início da separação", "next", "sep", `${loc.list.indexOf(p.id) + 1}º na fila`);
@@ -571,6 +731,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
   function render(reset = false) {
     if (dragId) { pendingRender = true; return; }
     [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
+    [...selSep].forEach((id) => { if (!db.sep.inbox.includes(id)) selSep.delete(id); });
     const b = $("#board");
     const scrolls = {}; if (!reset) $$(".gx-list").forEach((l) => (scrolls[l.dataset.col] = l.scrollTop));
     const bx = reset ? 0 : b.scrollLeft, by = reset ? 0 : b.scrollTop;
@@ -595,7 +756,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     if (MONT) return renderTopMont();
     $("#tbLib").textContent = db.lib.inbox.length;
     $("#tbEmb").textContent = db.emb.inbox.length;
-    const fora = Object.values(db.pedidos).filter(foraPend).length;
+    const fora = reais().filter(foraPend).length;
     $("#tbRota").textContent = fora; $("#tbRota").hidden = !fora;
 
     const td = hoje();
@@ -604,9 +765,9 @@ import { CLIENTES } from "./js/demo-clientes.js";
     let k = "", a = "";
     if (board === "sep" || board === "conf") {
       const B = db[board], hojeN = BOARDS[board].people.reduce((t, x) => t + db.stats[x.id], 0);
-      k = kp(B.inbox.length, "na caixa de entrada") + (board === "sep" ? kp(B.inbox.filter((id) => !P(id).rota).length, "sem rota", "red") : "")
+      k = kp(B.inbox.length, "na caixa de entrada") + (board === "sep" ? kp(B.inbox.filter((id) => !E(id).rota).length, "sem rota", "red") : "")
         + kp(firstLive(board), board === "sep" ? "em separação" : "em conferência") + kp(queued(board), "na fila") + kp(hojeN, board === "sep" ? "separados hoje" : "conferidos hoje", "green");
-      a = (board === "sep" ? `<button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>` : "") + `<button class="btn primary" data-act="autoDist">Distribuir automaticamente</button>`;
+      a = (board === "sep" ? `<button class="btn ghost" data-act="sugerirLotes">Sugerir lotes</button><button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>` : "") + `<button class="btn primary" data-act="autoDist">Distribuir automaticamente</button>`;
     } else if (board === "lib") {
       const fat = Object.values(db.pedidos).filter((p) => p.lib.fim && sameDay(p.lib.fim)).length;
       k = kp(db.lib.inbox.length, "aguardando liberação") + kp(queued("lib"), "liberados na fila") + kp(firstLive("lib"), "faturando") + kp(db.mont.length, "aguardando carga no ERP") + kp(fat, "faturados hoje", "green");
@@ -616,7 +777,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
       k = kp(db.emb.inbox.length, "sem motorista", db.emb.inbox.length ? "red" : "") + kp(firstLive("emb"), "carregando") + kp(queued("emb"), "na fila") + kp(db.mont.length, "pedidos aguardando carga no ERP") + kp(emb, "embarcadas hoje", "green");
       a = `<span class="hint">Cargas montadas no Sankhya · com motorista já caem na coluna dele</span><button class="btn primary" data-act="autoDist">Designar motoristas</button>`;
     } else {
-      const ps = Object.values(db.pedidos).filter((p) => acRota === "todas" || (acRota === "semrota" ? !p.rota : p.rota === acRota));
+      const ps = reais().filter((p) => acRota === "todas" || (acRota === "semrota" ? !p.rota : p.rota === acRota));
       k = kp(ps.length, "pedidos") + kp(ps.filter((p) => p.embarque === td && p.etapa !== "fim").length, "a embarcar hoje")
         + kp(ps.filter(foraPend).length, "fora do horário", "red") + kp(ps.filter((p) => p.etapa === "fim").length, "embarcados", "green");
       a = `<span class="hint show">Clique na etiqueta de embarque para definir a data</span>`;
@@ -643,7 +804,11 @@ import { CLIENTES } from "./js/demo-clientes.js";
     const isL = live(p, k);
     const waiting = o.first && !isL && o.col !== "inbox";
     const selc = MONT && k === "conf" && o.col === "inbox", s = selc && sel.has(p.id);
-    const cls = ["card", !p.rota && !p.op && "no-route", p.op && "op", isL && "live", waiting && "waiting", s && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
+    // caixa da separação: marcar pedidos para agrupar em lote
+    const selL = k === "sep" && o.col === "inbox" && inteiro(p), sL = selL && selSep.has(p.id);
+    const cbL = selL ? `<span class="cb" data-selsep="${p.id}" title="Marcar para agrupar em lote">${sL ? CHECK : ""}</span>` : "";
+    const parteTag = p.parte ? `<span class="c-parte" title="Pedido dividido pelo coordenador">PARTE ${p.parte.n}/${p.parte.de}</span>` : "";
+    const cls = ["card", !p.rota && !p.op && "no-route", p.op && "op", isL && "live", waiting && "waiting", (s || sL) && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
     const nums =`<span><b>${p.itens.length}</b> SKUs</span><span><b>${units(p)}</b> un.</span>${p.volumes ? `<span><b>${p.volumes}</b> vol.</span>` : ""}`;
     const age = o.col === "inbox" ? fmtAge(k === "sep" ? p.chegada : k === "conf" ? p.sep.fim : p.conf.fim) : "";
     let liveHtml = "";
@@ -662,24 +827,52 @@ import { CLIENTES } from "./js/demo-clientes.js";
       liveHtml = `<div class="c-live"><div class="cl-row"><span class="cl-tag"><i></i>${k === "lib" ? "Próximo a faturar" : "Aguardando início"}</span><span class="timer" data-since="${p[k].atrib || now()}">00:00</span></div></div>`;
     }
     let from = "";
-    if (k === "conf" && !isL && p.sep.resp) from = `Separado por ${esc(nameOf(p.sep.resp))}`;
+    if (k === "conf" && !isL && p.sep.resp) from = `Separado por ${esc(p.partesSep ? [...new Set(p.partesSep.map((x) => nameOf(x.resp)))].join(" + ") : nameOf(p.sep.resp))}`;
+    // conferência: onde buscar a mercadoria
+    const doca = k === "conf" && (p.doca || p.partesSep) ? `<p class="c-doca">${p.partesSep ? "Docas" : "Doca"} ${docasHtml(p)}</p>` : "";
+    if (k === "sep" && p.parte) from = `Dividido pelo coordenador · ${esc(p.parte.ruas)}`;
     if (k === "lib") from = o.col === "inbox" ? `Conferido por ${esc(nameOf(p.conf.resp))}` : isL ? "" : `<span class="erp-ok">Sankhya ✓</span> liberado · ordem ${p.lib.ordem}`;
     const draggable = !isL;
     if (p.op) return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:var(--ink)">
-      <div class="c-top">${selc ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : ""}<span class="rt op">MONTAGEM</span>${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
-      <div class="c-main"><p class="c-id">${p.id}</p><span class="c-age">chegou ${fmtTime(p.chegada)}</span></div>
+      <div class="c-top">${selc ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : ""}${cbL}<span class="rt op">MONTAGEM</span>${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-main"><p class="c-id">${nomeP(p)}</p><span class="c-age">chegou ${fmtTime(p.chegada)}</span></div>
       <div class="c-nums">${nums}${age ? `<span class="c-age">${age}</span>` : ""}</div>
-      ${from ? `<p class="c-from">${from}</p>` : ""}
+      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}
       ${selc ? `<button class="c-skip" data-skip="${p.id}">Pular conferência</button>` : ""}
       ${liveHtml}
     </article>`;
     return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:${p.rota ? rotaOf(p.rota).cor : "var(--red-brand)"}">
-      <div class="c-top">${rotaTag(p.rota)}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
-      <div class="c-main"><p class="c-id">${p.id}</p>${embTag(p)}</div>
+      <div class="c-top">${cbL}${rotaTag(p.rota)}${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-main"><p class="c-id">${nomeP(p)}</p>${embTag(p)}</div>
       <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
       <p class="c-vend">${ICON_USER}Vend.: ${esc(p.vendedor)}</p>
       <div class="c-nums">${nums}${age ? `<span class="c-age">${age}</span>` : ""}</div>
-      ${from ? `<p class="c-from">${from}</p>` : ""}
+      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}
+      ${liveHtml}
+    </article>`;
+  }
+
+  // card do lote (separação): vários pedidos numa viagem, uma caixa por pedido no carrinho
+  function loteCard(l, o = {}) {
+    const v = vista(l), isL = live(v, "sep"), waiting = o.first && !isL && o.col !== "inbox";
+    const cls = ["card", "lote", isL && "live", waiting && "waiting", isFlash(l.id) && "flash"].filter(Boolean).join(" ");
+    const rotas = [...new Set(v.membros.map((p) => p.rota))];
+    let liveHtml = "";
+    if (isL) {
+      const c = curItem(v, "sep"), pc = pct(v, "sep");
+      liveHtml = `<div class="c-live">
+        <div class="cl-row"><span class="cl-tag"><i></i>Separando o lote</span><span class="timer" data-since="${l.sep.inicio}">00:00</span></div>
+        <div class="cl-bar"><i style="width:${pc}%"></i></div>
+        <div class="cl-row small"><b>${pc}%</b><span>${itensOk(v, "sep")}/${v.itens.length} itens · ${doneU(v, "sep")}/${units(v)} un.</span></div>
+        ${c ? `<p class="cl-cur"><span class="gaddr">${c.end}</span>${esc(c.desc)}</p>` : ""}
+      </div>`;
+    } else if (waiting) liveHtml = `<div class="c-live"><div class="cl-row"><span class="cl-tag"><i></i>Aguardando início</span><span class="timer" data-since="${l.sep.atrib || now()}">00:00</span></div></div>`;
+    return `<article class="${cls}" draggable="${!isL}" data-id="${l.id}" style="--rc:${v.rota ? rotaOf(v.rota).cor : "var(--ink)"}">
+      <div class="c-top">${v.op ? `<span class="rt op">MONTAGEM</span>` : rotas.map(rotaTag).join("")}<span class="c-lote">LOTE</span>${v.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-main"><p class="c-id">${l.id} · ${l.pedidos.length} pedidos</p>${v.op ? "" : embTag(v.membros.slice().sort((a, b) => String(a.embarque).localeCompare(String(b.embarque)))[0])}</div>
+      <div class="c-peds">${v.membros.map((p) => `<span><b class="lpos">${l.posicoes[p.id]}</b>${p.id}</span>`).join("")}</div>
+      <div class="c-nums"><span><b>${v.itens.length}</b> SKUs</span><span><b>${units(v)}</b> un.</span>${o.col === "inbox" ? `<span class="c-age">${fmtAge(l.criado)}</span>` : ""}</div>
+      <p class="c-from">Montado por ${esc(l.por)} · uma viagem só</p>
       ${liveHtml}
     </article>`;
   }
@@ -728,7 +921,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   // ordenação da caixa de entrada: sem rota (precisa de ação) > prioridade > data de embarque; empate mantém a ordem manual
   const sortInbox = (ids, k) => k === "emb" ? [...ids] : [...ids].sort((a, b) => {
-    const A = P(a), B = P(b);
+    const A = E(a), B = E(b);
     if (k === "sep" && !A.rota !== !B.rota) return !A.rota ? -1 : 1;
     if (A.prio !== B.prio) return A.prio === "alta" ? -1 : 1;
     return String(A.embarque || "9").localeCompare(String(B.embarque || "9"));
@@ -756,11 +949,11 @@ import { CLIENTES } from "./js/demo-clientes.js";
         + rotas.map((r) => chip(r.id, `<i></i>${esc(r.nome)}`, cnt((p) => p.rota === r.id), "", `style="--rc:${r.cor}"`)).join("")
         + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + (pr ? chip("prio", "Prioridade", pr) : "");
     } else if (MONT) {
-      if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
-      chips = chip("todos", "Todos", B.inbox.length) + chip("prio", "Prioridade", B.inbox.filter((id) => FILTROS.prio(P(id))).length);
+      if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](E(id)));
+      chips = chip("todos", "Todos", B.inbox.length) + chip("prio", "Prioridade", B.inbox.filter((id) => FILTROS.prio(E(id))).length);
     } else {
-      if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
-      const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
+      if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](E(id)));
+      const cnt = (fn) => B.inbox.filter((id) => fn(E(id))).length;
       const fo = cnt(foraPend);
       chips = chip("todos", "Todos", B.inbox.length) + (k === "sep" ? chip("semrota", "Sem rota", cnt(FILTROS.semrota), "red") : "")
         + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje)) + chip("prio", "Prioridade", cnt(FILTROS.prio));
@@ -768,8 +961,13 @@ import { CLIENTES } from "./js/demo-clientes.js";
     const title = { sep: "Caixa de entrada", conf: "Separados", lib: "Conferidos", emb: "Cargas do ERP" }[k];
     const sub = MONT ? { sep: "Pedidos de montagem aguardando separador", conf: "Aguardando conferente ou conferência dispensada" }[k]
       : { sep: "Pedidos recebidos aguardando separador", conf: "Aguardando conferente", lib: "Aguardando liberação para faturamento", emb: "Montadas no Sankhya · aguardando motorista" }[k];
-    const cards = ids.map((id) => (k === "emb" ? cargaCard(C(id), { col: "inbox" }) : k === "lib" ? libCard(P(id), { col: "inbox" }) : pedidoCard(P(id), k, { col: "inbox" }))).join("");
+    const cards = ids.map((id) => (k === "emb" ? cargaCard(C(id), { col: "inbox" }) : k === "lib" ? libCard(P(id), { col: "inbox" }) : isLote(id) ? loteCard(LT(id), { col: "inbox" }) : pedidoCard(P(id), k, { col: "inbox" }))).join("");
     let extra = "";
+    // separação: pedidos marcados viram um lote (uma viagem, uma caixa por pedido)
+    if (k === "sep" && selSep.size) {
+      const un = [...selSep].reduce((t, id) => t + units(P(id)), 0);
+      extra += `<div class="lib-bar"><p><span>${selSep.size} marcado(s) · ${un} un.</span><button class="x" data-selsepclear="1">Limpar</button></p><div><button data-agrupar="1">Agrupar em lote</button></div></div>`;
+    }
     if (MONT && k === "conf") {
       libVisible = ids;
       if (ids.length) {
@@ -812,10 +1010,10 @@ import { CLIENTES } from "./js/demo-clientes.js";
     let m;
     if (k === "emb") m = [[l.length, "cargas"], [l.reduce((t, id) => t + cargaVol(C(id)) - cargaLidos(C(id)), 0), "vol. a carregar"], [db.stats[person.id], "embarcadas"]];
     else if (k === "lib") m = [[l.length, "na fila"], [l.reduce((t, id) => t + P(id).volumes, 0), "volumes"], [db.stats[person.id], "faturados"]];
-    else m = [[l.length, "pedidos"], [l.reduce((t, id) => t + units(P(id)) - doneU(P(id), k), 0), "un. pendentes"], [db.stats[person.id], "hoje"]];
+    else m = [[l.reduce((t, id) => t + (isLote(id) ? LT(id).pedidos.length : 1), 0), "pedidos"], [l.reduce((t, id) => t + units(E(id)) - doneU(E(id), k), 0), "un. pendentes"], [db.stats[person.id], "hoje"]];
     const cards = l.map((id, i) => {
       const o = { col: person.id, first: i === 0, pos: busy && i === 0 ? "" : `${busy ? i : i + 1}${k === "emb" ? "ª" : "º"}` };
-      return k === "emb" ? cargaCard(C(id), o) : k === "lib" ? libCard(P(id), o) : pedidoCard(P(id), k, o);
+      return k === "emb" ? cargaCard(C(id), o) : k === "lib" ? libCard(P(id), o) : isLote(id) ? loteCard(LT(id), o) : pedidoCard(P(id), k, o);
     }).join("");
     const empty = { sep: "Arraste pedidos para cá", conf: "Arraste pedidos para cá", lib: "Arraste para liberar no Sankhya", emb: "Arraste cargas para este motorista" }[k];
     return `<section class="col ${away ? "away" : ""}">
@@ -854,7 +1052,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   // ---------- acompanhamento por rota ----------
   function renderRota() {
-    const td = hoje(), all = Object.values(db.pedidos);
+    const td = hoje(), all = reais();
     const inRota = (p, r) => r === "todas" || (r === "semrota" ? !p.rota : p.rota === r);
     const semN = all.filter((p) => !p.rota).length;
     const tabs = [{ id: "todas", nome: "Todas" }, ...R.ROTAS, ...(semN ? [{ id: "semrota", nome: "Sem rota", cor: "var(--red-brand)" }] : [])];
@@ -885,7 +1083,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
         <td class="ac-loc">${esc(p.cli.cidade)}<small>${esc(p.cli.bairro)}</small></td>
         <td>${embTag(p, true)}<small>${e ? `${e.sub} · ` : ""}chegou ${fmtTime(p.chegada)}</small></td>
         <td><span class="spill ${s.cls}"><i></i>${s.txt}</span>${s.sub ? `<small>${esc(s.sub)}</small>` : ""}</td>
-        <td class="ac-ppl"><span><em>Sep.</em>${p.sep.resp ? esc(nameOf(p.sep.resp)) : "—"}</span><span><em>Conf.</em>${p.conf.resp ? esc(nameOf(p.conf.resp)) : "—"}</span></td>
+        <td class="ac-ppl"><span><em>Sep.</em>${p.partesSep ? esc([...new Set(p.partesSep.map((x) => nameOf(x.resp)))].join(" + ")) : p.sep.resp ? esc(nameOf(p.sep.resp)) : "—"}</span><span><em>Conf.</em>${p.conf.resp ? esc(nameOf(p.conf.resp)) : "—"}</span>${p.doca || p.partesSep ? `<span><em>Doca</em>${docasHtml(p)}</span>` : ""}</td>
         <td class="mono">${p.nota || "—"}</td>
         <td>${cargaMot(p)}</td>
       </tr>`;
@@ -908,7 +1106,8 @@ import { CLIENTES } from "./js/demo-clientes.js";
     const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
     $$(".card").forEach((el) => {
       const id = el.dataset.id, c = board === "emb" && C(id);
-      const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}` : hayP(P(id));
+      const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}`
+        : isLote(id) ? `${id} lote ${LT(id).pedidos.map((x) => hayP(P(x))).join(" ")}` : hayP(P(id));
       el.classList.toggle("q-miss", !!q && !hay.toLowerCase().includes(q));
     });
     $$(".ac-row").forEach((el) => el.classList.toggle("q-miss", !!q && !hayP(P(el.dataset.id)).toLowerCase().includes(q)));
@@ -987,6 +1186,14 @@ import { CLIENTES } from "./js/demo-clientes.js";
       libVisible.forEach((id) => (all ? sel.delete(id) : sel.add(id))); render(); return;
     }
     if (e.target.closest("[data-selclear]")) { sel.clear(); render(); return; }
+    const cs = e.target.closest("[data-selsep]");
+    if (cs) {
+      e.stopPropagation(); const id = cs.dataset.selsep;
+      if (!selSep.has(id) && selSep.size >= MAX_PEDIDOS_LOTE) return toast(`O lote aceita no máximo ${MAX_PEDIDOS_LOTE} pedidos.`);
+      selSep.has(id) ? selSep.delete(id) : selSep.add(id); render(); return;
+    }
+    if (e.target.closest("[data-selsepclear]")) { selSep.clear(); render(); return; }
+    if (e.target.closest("[data-agrupar]")) return agrupar(sortInbox(db.sep.inbox, "sep").filter((id) => selSep.has(id)));
     const sk = e.target.closest("[data-skip]");
     if (sk) { e.stopPropagation(); return pularConf(sk.dataset.skip === "sel" ? sortInbox(db.conf.inbox, "conf").filter((id) => sel.has(id)) : [sk.dataset.skip]); }
     const lt = e.target.closest("[data-libto]");
@@ -1002,7 +1209,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     const row = e.target.closest(".ac-row");
     if (row) return openDrawer({ t: "p", id: row.dataset.id });
     const c = e.target.closest(".card");
-    if (c) openDrawer({ t: board === "emb" ? "c" : "p", id: c.dataset.id });
+    if (c) openDrawer({ t: board === "emb" ? "c" : isLote(c.dataset.id) ? "l" : "p", id: c.dataset.id });
   });
   $("#actions").addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a) action(a.dataset.act); });
 
@@ -1018,15 +1225,88 @@ import { CLIENTES } from "./js/demo-clientes.js";
       toast(`${p.id} recebido${p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}`);
     }
     if (act === "autoDist") autoDistribute(board);
+    if (act === "sugerirLotes") sugerirLotes();
+  }
+
+  function agrupar(ids) {
+    const erro = criarLote(ids);
+    if (erro) return toast(erro);
+    selSep.clear(); const l = LT(db.sep.inbox.find((id) => isLote(id) && LT(id).pedidos.includes(ids[0])));
+    flashId = l.id; save(); render();
+    toast(`Lote ${l.id} criado · ${ids.length} pedidos · ${l.pedidos.map((id) => `${l.posicoes[id]} ${id}`).join(" · ")}`);
+  }
+
+  // sugestão de lotes: pedidos da caixa com a MESMA rota e a MESMA data de embarque (até 6 por lote)
+  function sugerirLotes() {
+    const g = new Map();
+    sortInbox(db.sep.inbox, "sep").map(P).filter((p) => p && inteiro(p) && p.rota && p.embarque).forEach((p) => {
+      const k = `${p.rota}|${p.embarque}`; if (!g.has(k)) g.set(k, []); g.get(k).push(p.id);
+    });
+    const grupos = [];
+    g.forEach((ids) => { for (let i = 0; i < ids.length; i += MAX_PEDIDOS_LOTE) { const c = ids.slice(i, i + MAX_PEDIDOS_LOTE); if (c.length >= 2) grupos.push(c); } });
+    if (!grupos.length) return toast("Nenhuma sugestão: não há 2 pedidos da mesma rota e mesma data de embarque na caixa");
+    const linha = (ids, n) => { const p0 = P(ids[0]), un = ids.reduce((t, id) => t + units(P(id)), 0);
+      return `<div class="sg-row"><div>${rotaTag(p0.rota)} ${embTag(p0)}<p><b>${ids.length} pedidos</b> · ${un} un. · ${ids.join(", ")}</p></div><button class="btn ghost" data-sg="${n}">Criar</button></div>`; };
+    openModal(`<h2>Sugestão de lotes</h2>
+      <p>Pedidos da caixa de entrada com a mesma rota e a mesma data de embarque. Cada lote vira uma viagem só, com uma caixa por pedido no carrinho.</p>
+      <div class="sg-list">${grupos.map(linha).join("")}</div>
+      <div class="m-act"><button class="btn ghost" data-close>Fechar</button><button class="btn primary" id="sgAll">Criar todos (${grupos.length})</button></div>`);
+    const criar = (ids) => criarLote(ids);
+    $$("#modal [data-sg]").forEach((b) => (b.onclick = () => {
+      const erro = criar(grupos[+b.dataset.sg]); if (erro) return toast(erro);
+      b.disabled = true; b.textContent = "Criado ✓"; save(); render();
+    }));
+    $("#sgAll").onclick = () => {
+      let n = 0; grupos.forEach((ids) => { if (!criarLote(ids)) n++; });
+      save(); closeModal(); render(); toast(`${n} lote(s) criado(s) na caixa de entrada · arraste para os separadores`);
+    };
+  }
+
+  // dividir a separação de um pedido grande (2 a 4 partes); a sugestão vem em blocos de ruas seguidas
+  function abrirDivisao(id) {
+    const p = P(id);
+    let n = MIN_PARTES, grupos = sugerirDivisao(p.itens, n);
+    const parteDe = () => { const m = {}; grupos.forEach((g, k) => g.forEach((i) => (m[i] = k))); return m; };
+    const desenhar = () => {
+      const m = parteDe();
+      const resumo = grupos.map((g, k) => `<div><b>Parte ${k + 1}</b><span>${g.length} itens · ${g.reduce((t, i) => t + p.itens[i].qtd, 0)} un.</span><small>${g.length ? ruasDaParte(p.itens, g) : "sem itens"}</small></div>`).join("");
+      const ordem = p.itens.map((it, i) => i).sort((a, b) => p.itens[a].end.localeCompare(p.itens[b].end, "pt-BR", { numeric: true }));
+      $("#dvResumo").innerHTML = resumo;
+      $("#dvItens").innerHTML = ordem.map((i) => { const it = p.itens[i];
+        return `<tr class="dv-p${m[i] + 1}"><td><span class="gaddr">${it.end}</span></td><td>${esc(it.desc)}<small>${it.sku}</small></td><td class="r">${it.qtd}</td>
+          <td><select data-dv="${i}">${grupos.map((g, k) => `<option value="${k}" ${m[i] === k ? "selected" : ""}>Parte ${k + 1}</option>`).join("")}</select></td></tr>`; }).join("");
+      $("#dvErro").textContent = validarPartes(p.itens, grupos) || "";
+    };
+    openModal(`<h2>Dividir a separação de ${p.id}</h2>
+      <p>${p.itens.length} itens · ${units(p)} un. Cada parte vai para um separador e lê a própria doca. A conferência recebe o pedido inteiro quando todas as partes terminarem.</p>
+      <label class="field dv-n"><span>Partes</span><select id="dvN">${[2, 3, 4].filter((x) => x <= p.itens.length).map((x) => `<option value="${x}">${x} partes</option>`).join("")}</select></label>
+      <div id="dvResumo" class="dv-resumo"></div>
+      <div class="dv-tab"><table class="dr-items"><thead><tr><th>Endereço</th><th>Produto</th><th class="r">Qtd</th><th>Parte</th></tr></thead><tbody id="dvItens"></tbody></table></div>
+      <p id="dvErro" class="dv-erro"></p>
+      <div class="m-act"><button class="btn ghost" data-close>Cancelar</button><button class="btn primary" id="dvOk">Dividir</button></div>`);
+    $("#modal").classList.add("wide");
+    desenhar();
+    $("#dvN").onchange = (e) => { n = +e.target.value; grupos = sugerirDivisao(p.itens, n); desenhar(); };
+    $("#dvItens").onchange = (e) => {
+      const sl = e.target.closest("[data-dv]"); if (!sl) return;
+      const i = +sl.dataset.dv; grupos = grupos.map((g) => g.filter((x) => x !== i)); grupos[+sl.value].push(i); desenhar();
+    };
+    $("#dvOk").onclick = () => {
+      const erro = validarDivisao({ ...p, iniciado: !!p.sep.inicio }, grupos.length) || validarPartes(p.itens, grupos);
+      if (erro) return toast(erro);
+      const ps = dividir(p, grupos);
+      flashId = ps.map((q) => q.id); save(); closeModal(); closeDrawer(); render();
+      toast(`${p.id} dividido em ${ps.length} partes · arraste cada parte para um separador`);
+    };
   }
 
   // distribui pelo menor volume de trabalho pendente (balanceamento)
   function autoDistribute(k) {
     const B = db[k];
-    const cand = sortInbox(B.inbox, k).filter((id) => MONT || k !== "sep" || P(id).rota);
+    const cand = sortInbox(B.inbox, k).filter((id) => MONT || k !== "sep" || E(id).rota);
     const skipped = B.inbox.length - cand.length;
     if (!cand.length) return toast(skipped ? "Defina a rota dos pedidos antes de distribuir" : "Caixa de entrada vazia");
-    const loadOf = (pid) => B.cols[pid].reduce((t, id) => t + (k === "emb" ? cargaVol(C(id)) - cargaLidos(C(id)) : k === "lib" ? 1 : units(P(id)) - doneU(P(id), k)), 0);
+    const loadOf = (pid) => B.cols[pid].reduce((t, id) => t + (k === "emb" ? cargaVol(C(id)) - cargaLidos(C(id)) : k === "lib" ? 1 : units(E(id)) - doneU(E(id), k)), 0);
     // só para quem está atuando neste setor agora
     const ids = Object.keys(B.cols).filter((pid) => !temSetor(k) || aqui(pid));
     if (!ids.length) return toast(`Ninguém da ${BOARDS[k].nome.toLowerCase()} está atuando na ${SETORES[SETOR]} agora`);
@@ -1067,7 +1347,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   // ---------- modais ----------
   function openModal(html) { $("#modal").innerHTML = html; $("#modal").hidden = false; $("#mScrim").hidden = false; }
-  function closeModal() { $("#modal").hidden = true; $("#mScrim").hidden = true; }
+  function closeModal() { $("#modal").hidden = true; $("#mScrim").hidden = true; $("#modal").classList.remove("wide"); }
   $("#mScrim").addEventListener("click", closeModal);
   $("#modal").addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeModal(); });
 
@@ -1114,6 +1394,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     if (!openRef) return;
     if ($("#drawer").contains(document.activeElement) && document.activeElement.tagName === "SELECT") return; // não atrapalha quem está escolhendo
     if (openRef.t === "c") return renderCargaDrawer();
+    if (openRef.t === "l") return renderLoteDrawer();
     const p = P(openRef.id);
     if (!p) return closeDrawer();
     const k = ["sep", "conf", "lib"].includes(p.etapa) ? p.etapa : null;
@@ -1143,7 +1424,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     }).join("");
 
     let actions = "";
-    if (k && !isL) {
+    if (k && !isL && loc) {
       const others = BOARDS[k].people.filter((x) => x.id !== loc.col);
       const label = k === "lib" ? "(liberar · fim da fila)" : "(fim da fila)";
       const canTop = loc.col !== "inbox" && loc.list.indexOf(p.id) > (isLive(k, loc.list[0]) ? 1 : 0);
@@ -1155,12 +1436,28 @@ import { CLIENTES } from "./js/demo-clientes.js";
       </div></section>`;
     }
     if (p.op && k === "conf" && !isL) actions = actions.replace("</div></section>", `<button class="btn ghost" id="drSkip">Pular conferência</button></div></section>`);
-    const rotaLocked = ["mont", "emb", "fim"].includes(p.etapa);
+    // separação: dividir um pedido grande entre separadores (só antes de começar) ou desfazer a divisão
+    const podeDividir = k === "sep" && loc && !isL && inteiro(p) && !p.sep.inicio && p.itens.length >= MIN_PARTES && (p.rota || p.op);
+    const pai = p.parte ? P(p.parte.pai) : p.dividido ? p : null;
+    const podeDesfazer = pai && pai.etapa === "sep" && !partesDe(pai).some((q) => q.sep.inicio);
+    if (podeDividir || podeDesfazer) {
+      const b = podeDividir ? `<button class="btn ghost" id="drDiv">Dividir separação entre separadores</button>` : `<button class="btn ghost" id="drDesDiv">Desfazer divisão de ${pai.id}</button>`;
+      actions = actions ? actions.replace("</div></section>", `${b}</div></section>`) : `<section><h4 class="dr-h">Ações</h4><div class="dr-act">${b}</div></section>`;
+    }
+    // separação em lote, partes e doca de expedição
+    const lote = p.lote && LT(p.lote);
+    const sepInfo = [
+      lote ? `<div class="dr-f"><small>Lote</small><b><a href="#" id="drLote">${lote.id}</a> · caixa ${lote.posicoes[p.id]}</b><span>${lote.pedidos.length} pedidos numa viagem · montado por ${esc(lote.por)}</span></div>` : "",
+      p.parte ? `<div class="dr-f"><small>Pedido dividido</small><b>Parte ${p.parte.n} de ${p.parte.de} · <a href="#" data-goto="${p.parte.pai}">${p.parte.pai}</a></b><span>${esc(p.parte.ruas)}</span></div>` : "",
+      p.dividido ? `<div class="dr-f"><small>Pedido dividido</small><b>${p.dividido.partes.length} partes</b><span>${partesDe(p).map((q) => `<a href="#" data-goto="${q.id}">${q.parte.n}/${q.parte.de}</a> ${esc(q.parte.ruas)} · ${q.sep.fim ? "pronta" : q.sep.inicio ? "separando" : q.sep.resp ? esc(nameOf(q.sep.resp)) : "na caixa"}`).join("<br>")}</span></div>` : "",
+      p.doca || p.partesSep ? `<div class="dr-f"><small>Doca de expedição</small><b class="dr-docas">${docasHtml(p)}</b><span>${p.partesSep ? "uma doca por parte · lida pelo separador" : "lida pelo separador ao terminar"}</span></div>` : "",
+    ].join("");
+    const rotaLocked = ["mont", "emb", "fim"].includes(p.etapa) || !!p.parte || !!p.lote || !!p.dividido;
     const carga = p.carga && C(p.carga);
 
     $("#drawer").innerHTML = `
       <header class="dr-head">
-        <div><p class="dr-k">${p.op ? "Pedido de montagem" : "Pedido"}</p><h2>${p.id}</h2></div>
+        <div><p class="dr-k">${p.parte ? "Parte de pedido dividido" : p.op ? "Pedido de montagem" : "Pedido"}</p><h2>${nomeP(p)}</h2></div>
         <span class="stage ${st.cls}">${esc(st.txt)}</span>
         <button class="dr-x" id="drClose" aria-label="Fechar">×</button>
       </header>
@@ -1173,6 +1470,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
           <div class="dr-f"><small>Prioridade</small><button class="tgl ${p.prio === "alta" ? "on" : ""}" id="drPrio">${p.prio === "alta" ? "▲ Alta" : "Normal"}</button></div>
           <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>`}
         </div>
+        ${sepInfo ? `<div class="dr-grid">${sepInfo}</div>` : ""}
         <div class="dr-nums">
           <div><b>${p.itens.length}</b><small>SKUs</small></div>
           <div><b>${units(p)}</b><small>unidades</small></div>
@@ -1204,6 +1502,71 @@ import { CLIENTES } from "./js/demo-clientes.js";
     if ($("#drMoveGo")) $("#drMoveGo").onclick = () => { const v = $("#drMove").value; if (v) move(k, p.id, v, null); };
     if ($("#drTop")) $("#drTop").onclick = () => move(k, p.id, loc.col, 0);
     if ($("#drSkip")) $("#drSkip").onclick = () => pularConf([p.id]);
+    if ($("#drDiv")) $("#drDiv").onclick = () => abrirDivisao(p.id);
+    if ($("#drDesDiv")) $("#drDesDiv").onclick = () => {
+      const erro = desfazerDivisao(pai.id); if (erro) return toast(erro);
+      flashId = pai.id; save(); openDrawer({ t: "p", id: pai.id }); render(); toast(`Divisão de ${pai.id} desfeita · pedido inteiro na caixa de entrada`);
+    };
+    if ($("#drLote")) $("#drLote").onclick = (ev) => { ev.preventDefault(); openDrawer({ t: "l", id: lote.id }); };
+    $$("#drawer [data-goto]").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); openDrawer({ t: "p", id: a.dataset.goto }); }));
+  }
+
+  // gaveta do lote: pedidos (caixa do carrinho), paradas da viagem e ações
+  function renderLoteDrawer() {
+    const l = LT(openRef.id);
+    if (!l) return closeDrawer();
+    const v = vista(l), isL = live(v, "sep"), loc = locate("sep", l.id), pc = pct(v, "sep");
+    const st = l.status === "concluido" ? { txt: `Separado · doca ${docaCod(l.doca)}`, cls: "" } : isL ? { txt: `Separando · ${nameOf(l.sep.resp)}`, cls: "live" }
+      : loc && loc.col !== "inbox" ? { txt: `Na fila de ${nameOf(loc.col)} · ${loc.list.indexOf(l.id) + 1}º`, cls: "wait" } : { txt: "Aguardando separador", cls: "wait" };
+    const peds = v.membros.map((p) => `<tr class="click" data-pid="${p.id}"><td><b class="lpos">${l.posicoes[p.id]}</b></td><td><b>${p.id}</b>${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}<small>${p.op ? "Montagem" : esc(p.cli.nome)}</small></td>
+      <td>${p.op ? "—" : rotaTag(p.rota)}</td><td class="r">${p.itens.length}</td><td class="r">${doneU(p, "sep")}/${units(p)}</td></tr>`).join("");
+    // paradas: o mesmo produto no mesmo endereço é uma parada só, com a quantidade de cada caixa
+    const paradas = montarParadas(v.membros.map((p) => ({ ...p, itens: p.itens.map((i) => ({ ...i, status: i.sep >= i.qtd ? "ok" : "pendente" })) })), l.posicoes);
+    const pr = paradas.map((x) => `<tr class="${x.lido >= x.total ? "ok" : ""}"><td><span class="gaddr">${x.end}</span></td><td>${esc(x.desc)}<small>${x.sku}</small></td>
+      <td>${x.linhas.map((y) => `<span class="lq"><b class="lpos">${y.pos}</b>${y.qtd}</span>`).join("")}</td><td class="r">${x.lido}/${x.total}</td></tr>`).join("");
+    let actions = "";
+    if (!isL && loc) {
+      const others = SEPS.filter((x) => x.id !== loc.col);
+      actions = `<section><h4 class="dr-h">Ações</h4><div class="dr-act">
+        <select id="drMove"><option value="">Mover para…</option>${loc.col !== "inbox" ? `<option value="inbox">Caixa de entrada</option>` : ""}${others.map((x) => `<option value="${x.id}">${esc(x.nome)} (fim da fila)</option>`).join("")}</select>
+        <button class="btn primary" id="drMoveGo">Mover</button>
+        ${!l.sep.inicio ? `<button class="btn ghost" id="drDesLote">Desfazer lote</button>` : ""}
+      </div></section>`;
+    }
+    $("#drawer").innerHTML = `
+      <header class="dr-head">
+        <div><p class="dr-k">Lote · uma viagem só</p><h2>${l.id}</h2></div>
+        <span class="stage ${st.cls}">${esc(st.txt)}</span>
+        <button class="dr-x" id="drClose" aria-label="Fechar">×</button>
+      </header>
+      <div class="dr-body">
+        <div class="dr-grid">
+          <div class="dr-f"><small>Montado por</small><b>${esc(l.por)}</b><span>${fmtTime(l.criado)} · ${fmtAge(l.criado)}</span></div>
+          <div class="dr-f"><small>Separador</small><b>${l.sep.resp ? esc(nameOf(l.sep.resp)) : "—"}</b><span>${l.sep.fim ? `separado às ${fmtTime(l.sep.fim)}` : l.sep.inicio ? `desde ${fmtTime(l.sep.inicio)}` : "não iniciado"}</span></div>
+          <div class="dr-f"><small>Doca de expedição</small><b>${l.doca ? `<span class="dchip">${l.doca.codigo}</span>` : "—"}</b><span>uma doca para o lote inteiro</span></div>
+          <div class="dr-f"><small>Depois da separação</small><b>Cada pedido sozinho</b><span>vai para a conferência separado</span></div>
+        </div>
+        <div class="dr-nums">
+          <div><b>${l.pedidos.length}</b><small>pedidos</small></div>
+          <div><b>${paradas.length}</b><small>paradas</small></div>
+          <div><b>${units(v)}</b><small>unidades</small></div>
+          <div><b>${pc}%</b><small>separado</small></div>
+        </div>
+        ${isL ? `<div class="dr-live"><div class="cl-row"><span class="cl-tag"><i></i>Separando agora · ${esc(nameOf(l.sep.resp))}</span><span class="timer" data-since="${l.sep.inicio}">00:00</span></div><div class="cl-bar"><i style="width:${pc}%"></i></div></div>` : ""}
+        <section><h4 class="dr-h">Pedidos · caixa no carrinho</h4>
+          <table class="dr-items"><thead><tr><th>Caixa</th><th>Pedido</th><th>Rota</th><th class="r">Itens</th><th class="r">Separado</th></tr></thead><tbody>${peds}</tbody></table></section>
+        <section><h4 class="dr-h">Paradas · ordem da viagem</h4>
+          <table class="dr-items"><thead><tr><th>Endereço</th><th>Produto</th><th>Por caixa</th><th class="r">Total</th></tr></thead><tbody>${pr}</tbody></table></section>
+        ${actions}
+      </div>`;
+    tickTimers();
+    $("#drClose").onclick = closeDrawer;
+    $$("#drawer tr[data-pid]").forEach((tr) => (tr.onclick = () => openDrawer({ t: "p", id: tr.dataset.pid })));
+    if ($("#drMoveGo")) $("#drMoveGo").onclick = () => { const x = $("#drMove").value; if (x) move("sep", l.id, x, null); };
+    if ($("#drDesLote")) $("#drDesLote").onclick = () => {
+      const ids = [...l.pedidos], erro = desfazerLote(l.id); if (erro) return toast(erro);
+      flashId = ids; save(); closeDrawer(); render(); toast(`Lote ${l.id} desfeito · os pedidos voltaram para onde o lote estava`);
+    };
   }
 
   // dados do pedido de montagem na gaveta (sem cliente, rota, embarque e nota)
@@ -1288,12 +1651,14 @@ import { CLIENTES } from "./js/demo-clientes.js";
     ["sep", "conf"].forEach((k) => {
       Object.entries(db[k].cols).forEach(([pid, l]) => {
         if (!l.length || !aqui(pid)) return; // quem está em outro setor não pega pedido daqui
-        const p = P(l[0]);
+        const p = E(l[0]); // pedido, parte de pedido ou lote
         if (!live(p, k)) {
           // o operador começa o pedido um pouco depois de recebê-lo (anda até o primeiro endereço, pega o carrinho…)
           if (!p[k].pegar) p[k].pegar = entre(RITMO.pegarSeg);
           if (now() - (p[k].atrib || 0) < p[k].pegar) return;
-          p[k].inicio = now(); p[k].resp = pid; iniciarTempos(p, k); log(p, `${BOARDS[k].nome} iniciada por ${nameOf(pid)}`);
+          p[k].inicio = now(); p[k].resp = pid; iniciarTempos(p, k);
+          if (p.lt) p.lt.status = "andamento";
+          logE(p, p.lt ? `Separação do lote ${p.id} iniciada por ${nameOf(pid)}` : `${BOARDS[k].nome} iniciada por ${nameOf(pid)}`);
           changed = true; return;
         }
         // andamento pelo relógio: cerca de 1 minuto por item
@@ -1301,11 +1666,21 @@ import { CLIENTES } from "./js/demo-clientes.js";
         if (doneU(p, k) !== antes) changed = true;
         if (!terminou) return;
         changed = true;
+        if (k === "sep" && p.lt) {
+          l.shift(); concluirLote(p.lt, pid);
+          if (board === "sep") toast(`Lote ${p.id} separado por ${nameOf(pid)} → ${p.lt.pedidos.length} pedidos na conferência · doca ${p.lt.doca.codigo}`);
+          if (l[0]) { E(l[0])[k].atrib = now(); E(l[0])[k].pegar = null; }
+          return;
+        }
         p[k].fim = now(); l.shift(); db.stats[pid]++;
-        if (k === "sep") {
+        if (k === "sep" && p.parte) {
+          const junto = concluirParte(p, pid);
+          if (board === "sep") toast(junto ? `${p.parte.pai}: todas as partes separadas → conferência` : `${nomeP(p)} separada por ${nameOf(pid)} · aguardando as outras partes`);
+        } else if (k === "sep") {
           if (!MONT) p.volumes = vols(p);
+          p.doca = docaDeExpedicao(rint(1, 6)); // o separador lê o QR da doca onde deixou a mercadoria
           p.etapa = "conf"; db.conf.inbox.push(p.id);
-          log(p, MONT ? `Separação finalizada por ${nameOf(pid)}` : `Separação finalizada por ${nameOf(pid)} · ${p.volumes} volume(s)`);
+          log(p, MONT ? `Separação finalizada por ${nameOf(pid)} · doca ${p.doca.codigo}` : `Separação finalizada por ${nameOf(pid)} · ${p.volumes} volume(s) · doca ${p.doca.codigo}`);
           if (board === "sep") toast(`${p.id} separado por ${nameOf(pid)} → caixa da conferência`);
         } else if (MONT) {
           p.etapa = "fim"; p.entregue = now(); db.entregues.unshift(p.id);
@@ -1316,7 +1691,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
           log(p, `Conferência finalizada por ${nameOf(pid)} · aguardando liberação p/ faturamento`);
           if (board === "conf" || board === "lib") toast(`${p.id} conferido → aguardando liberação p/ faturamento`);
         }
-        if (l[0]) { P(l[0])[k].atrib = now(); P(l[0])[k].pegar = null; }
+        if (l[0]) { E(l[0])[k].atrib = now(); E(l[0])[k].pegar = null; }
       });
     });
 
@@ -1414,6 +1789,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     Object.values(db.pedidos).forEach((p) => ["sep", "conf", "lib"].forEach((k) => {
       if (live(p, k)) p[k].inicio += parado; else if (p[k] && p[k].atrib && !p[k].fim) p[k].atrib += parado;
     }));
+    Object.values(db.lotes || {}).forEach((l) => { if (live(l, "sep")) l.sep.inicio += parado; else if (l.sep.atrib && !l.sep.fim) l.sep.atrib += parado; });
     Object.values(db.cargas).forEach((c) => { if (c.atrib) c.atrib += parado; if (c.proxBip) c.proxBip += parado; });
     ["proxChegada", "proxCarga", "proxOP"].forEach((x) => { if (db[x]) db[x] += parado; });
   }

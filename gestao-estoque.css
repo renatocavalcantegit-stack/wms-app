@@ -41,6 +41,7 @@ body.ge { background: #F1F1F4; min-height: 100vh; }
 .ge-tipo.picking { background: var(--red-soft); color: var(--red); }
 .ge-tipo.aereo { background: var(--ink); color: #fff; }
 .ge-tipo.doca { background: var(--warn-soft); color: var(--warn); }
+.ge-tipo.expedicao { background: #E8F0FE; color: #1A56DB; }
 .ge-sit { font-size: 12px; font-weight: 700; }
 .ge-sit.ok { color: var(--ok); }
 .ge-sit.off { color: var(--ink-3); text-transform: uppercase; letter-spacing: .5px; font-size: 11px; }

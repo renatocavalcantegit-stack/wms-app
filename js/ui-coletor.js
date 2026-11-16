@@ -31,7 +31,7 @@ export function beep(ok = true) {
 
 // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)
 const ACCESS = {
-  sep: ["viewSetor", "viewHome", "viewPick", "viewDone"],
+  sep: ["viewSetor", "viewHome", "viewPick", "viewDoca", "viewDone"],
   emb: ["viewEmbHome", "viewLoad", "viewLoadDone"],
   estq: ["viewEstHome", "viewConsulta", "viewEmbalagem", "viewEnderecar", "viewRecConf", "viewRecArm", "viewRecCons", "viewAbast", "viewTransf", "viewInv"],
 };

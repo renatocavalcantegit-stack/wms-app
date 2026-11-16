@@ -3,7 +3,8 @@
 // (Rua 3001, Prédio 7, Andar 100, Apartamento 101).
 // Quem cadastra digita os números exatamente como estão na prateleira; o sistema só junta as partes.
 
-export const TIPOS_ENDERECO = { picking: "Picking", aereo: "Aéreo", doca: "Doca" };
+// doca = doca de RECEBIMENTO (entrada de notas); expedicao = doca de EXPEDIÇÃO (o separador deixa o pedido para o conferente)
+export const TIPOS_ENDERECO = { picking: "Picking", aereo: "Aéreo", doca: "Doca recebimento", expedicao: "Doca expedição" };
 
 export const MSG_ENDERECO_COM_ESTOQUE = "ENDEREÇO POSSUI ESTOQUE. REALIZE A RETIRADA TOTAL ANTES DE DESATIVAR.";
 export const MSG_ENDERECO_COM_TAREFA = "ENDEREÇO POSSUI TAREFAS PENDENTES. CONCLUA OU CANCELE ANTES DE DESATIVAR.";
@@ -145,6 +146,7 @@ export const MSG_ENDERECO_NAO_ENCONTRADO = "ENDEREÇO NÃO ENCONTRADO.";
 export function podeAssociar(associacoes, produto, endereco) {
   if (!endereco) return { ok: false, msg: MSG_ENDERECO_NAO_ENCONTRADO };
   if (!endereco.ativo) return { ok: false, msg: MSG_ENDERECO_INATIVO };
+  if (endereco.tipo === "expedicao") return { ok: false, msg: "DOCA DE EXPEDIÇÃO NÃO É ENDEREÇO PADRÃO DE PRODUTO." };
   if (associacoes.some((a) => a.produto === produto && a.enderecoId === endereco.id)) return { ok: false, msg: MSG_JA_ASSOCIADO };
   return { ok: true };
 }

@@ -4,10 +4,11 @@
 // Na Fase 1: banco local (IndexedDB) + fila de sincronização; os pedidos separados chegam pelo servidor.
 import { seedConferencia, seedConferenciaMont } from "../demo-dados.js";
 import { lerPedidosSalvos as lerPedidosDaSeparacao } from "./separacao.js";
+import { partesCompletas, juntarPartes } from "../../compartilhado/regras/separacao.js";
 
-// v3: produtos e clientes reais na demonstração (a versão nova da chave descarta os pedidos antigos)
+// v4: doca de expedição e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v3" : "wms-bb-conf-v3");
+const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v4" : "wms-bb-conf-v4");
 // posto de conferência escolhido neste aparelho
 const CHAVE_POSTO = "wms-bb-posto";
 
@@ -40,9 +41,17 @@ export function lerPedidosDaConferencia(setor) {
 }
 
 // traz pedidos concluídos na Separação (mesmo navegador).
+// Pedido dividido entre separadores só chega quando TODAS as partes terminaram, já juntado num pedido só.
 // Pedido que já está na fila só é substituído se foi separado de novo (horário de fim diferente).
 function importarConcluidosDaSeparacao(d, setor) {
-  lerPedidosDaSeparacao(setor).filter((o) => o.status === "concluido").forEach((o) => {
+  const separados = lerPedidosDaSeparacao(setor);
+  const partesPorPai = {};
+  separados.filter((o) => o.parte).forEach((o) => (partesPorPai[o.parte.pai] ||= []).push(o));
+  const prontos = [
+    ...separados.filter((o) => !o.parte && o.status === "concluido"),
+    ...Object.values(partesPorPai).filter(partesCompletas).map(juntarPartes),
+  ];
+  prontos.forEach((o) => {
     const ex = d.orders.find((x) => x.id === o.id);
     if (ex && ex.fim === o.fim) return;
     const copy = prepararParaConferencia(JSON.parse(JSON.stringify(o)));
