@@ -9,7 +9,7 @@ import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
-  statusDaNota, resumoDaNota, validarDoca, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca,
+  statusDaNota, resumoDaNota, validarDoca, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
   STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA,
 } from "./compartilhado/regras/recebimento.js";
 
@@ -58,7 +58,7 @@ $$("[data-rcvoltar]").forEach((b) => b.addEventListener("click", () => {
   closeSheets();
   const tela = b.closest(".view").id;
   if (tela === "viewRecConf" && conf.notaId) return iniciarConferencia();
-  if (tela === "viewRecArm" && arm.produto) return iniciarArmazenamento();
+  if (tela === "viewRecArm" && arm.docaId) return iniciarArmazenamento();
   if (tela === "viewRecCons" && consulta.notaId) { consulta.notaId = null; return desenharConsulta(); }
   document.dispatchEvent(new Event("voltar-menu"));
 }));
@@ -111,24 +111,24 @@ function desenharNotas() {
   }).join("") || `<p class="empty">Nenhuma nota para conferir.</p>`}</div>`;
 }
 
-// passo 2: a doca onde a mercadoria está (o saldo conferido entra nela)
+// passo 2: a doca onde a mercadoria está (o saldo conferido entra nela).
+// Só por leitura: bipar o QR ou digitar o ID. Não dá para escolher tocando (garante que o estoquista está na doca certa).
 function desenharEscolhaDaDoca() {
   $("#rcPasso").textContent = "2 · Leia o QR da doca";
-  $("#rcInput").placeholder = "QR da doca (ou o código R9001-…)";
-  const docas = db.enderecos.filter((e) => e.tipo === "doca" && e.ativo).sort((a, b) => compararEnderecos(a.codigo, b.codigo));
-  $("#rcRes").innerHTML = `<p class="es-h">Docas ativas · toque para usar (demonstração)</p><div class="es-lista">${docas.map((d) =>
-    `<button class="line" data-doca="${d.id}">${tipoTag("doca")}<span class="line-addr">${d.codigo}</span><span class="line-desc"></span><span class="line-q">ID ${d.id}</span></button>`).join("")}</div>`;
+  $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
+  $("#rcRes").innerHTML = `<p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta.</p>`;
 }
 
-// passo 3: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota)
+// passo 3: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota).
+// A lista é só para acompanhar: o produto entra bipando a embalagem ou digitando o código, nunca tocando.
 function desenharItens(nota) {
   $("#rcPasso").textContent = "3 · Bipe o produto";
-  $("#rcInput").placeholder = "Bipe o produto (ou digite o código interno)";
-  $("#rcRes").innerHTML = `<p class="es-h">Produtos da nota · toque para conferir sem bipar</p><div class="es-lista">${resumoDaNota(nota, db.conferencias).map((i) => {
+  $("#rcInput").placeholder = "Bipe o produto ou digite o código";
+  $("#rcRes").innerHTML = `<p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, db.conferencias).map((i) => {
     const p = produtoPorCodigo(db, i.produto);
     const completo = i.conferido >= i.qtdNota;
-    return `<button class="line rc-item ${completo ? "ok" : ""}" data-produto="${esc(i.produto)}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span>
-      <span class="line-q">${num(i.conferido)}<small>/${num(i.qtdNota)}</small></span></button>`;
+    return `<div class="line rc-item ${completo ? "ok" : ""}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span>
+      <span class="line-q">${num(i.conferido)}<small>/${num(i.qtdNota)}</small></span></div>`;
   }).join("")}</div>`;
 }
 
@@ -202,8 +202,6 @@ $("#rcRes").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   db = lerEstoque();
   if (b.dataset.nota) return escolherNota(notaPorId(db, +b.dataset.nota));
-  if (b.dataset.doca) return escolherDoca(enderecoPorId(db, +b.dataset.doca));
-  if (b.dataset.produto) return escolherProduto(b.dataset.produto, null);
   if (b.dataset.rccancelar !== undefined) { conf.produto = null; conf.embalagem = null; msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
 });
 $("#rcRes").addEventListener("input", (e) => { if (e.target.form?.id === "rcQtdForm") atualizarTotal(); });
@@ -238,70 +236,79 @@ $("#rcFinalizar").addEventListener("click", () => {
 });
 
 // =====================================================================
-// ARMAZENAMENTO: produto pendente → QR da doca → bipa o produto → quantidade → QR do destino (efetiva na hora)
+// ARMAZENAMENTO: QR da doca → bipa o produto → quantidade → QR do destino (efetiva na hora)
+// Doca, produto e destino entram só por leitura (bipe ou digitação), nunca tocando na lista:
+// assim o sistema confirma que o estoquista está com o produto certo, no lugar certo.
 // =====================================================================
-const arm = { produto: null, docaId: null, produtoLido: false };
+const arm = { docaId: null, produto: null };
 
 function iniciarArmazenamento() {
-  Object.assign(arm, { produto: null, docaId: null, produtoLido: false });
+  Object.assign(arm, { docaId: null, produto: null });
   msg($("#raMsg"), ""); $("#raInput").value = "";
   desenharArmazenamento();
 }
 
 function desenharArmazenamento() {
-  $("#raForm").hidden = !arm.produto;
-  if (!arm.produto) return desenharPendentes();
-  const p = produtoPorCodigo(db, arm.produto);
   const doca = arm.docaId ? enderecoPorId(db, arm.docaId) : null;
-  const naDoca = doca ? pendenteNaDoca(db.conferencias, arm.produto, doca.id) : 0;
-  $("#raTopo").innerHTML = cartaoProduto(p) + (doca ? `<div class="rc-nota">${linhaDoca(doca)}<span class="rc-pend">Pendente nesta doca: <b>${num(naDoca)}</b></span></div>` : "");
-  if (!doca) {
-    $("#raPasso").textContent = "1 · Leia o QR da doca de origem";
-    $("#raInput").placeholder = "QR da doca de origem";
-    // onde esse produto espera armazenamento (ajuda a achar a doca)
-    const docas = [...new Set(db.conferencias.filter((c) => c.produto === arm.produto).map((c) => c.docaId))]
-      .map((id) => ({ d: enderecoPorId(db, id), q: pendenteNaDoca(db.conferencias, arm.produto, id) })).filter((x) => x.q > 0);
-    $("#raRes").innerHTML = `<p class="es-h">Está nas docas · toque para usar (demonstração)</p><div class="es-lista">${docas.map(({ d, q }) =>
-      `<button class="line" data-radoca="${d.id}">${tipoTag("doca")}<span class="line-addr">${d.codigo}</span><span class="line-desc"></span><span class="line-q">${num(q)}</span></button>`).join("")}</div>`;
-    return;
-  }
-  if (!arm.produtoLido) {
+  if (!doca) return desenharPendentes();
+  const naDoca = arm.produto ? pendenteNaDoca(db.conferencias, arm.produto, doca.id) : 0;
+  $("#raTopo").innerHTML = `<div class="rc-nota">${linhaDoca(doca)}${arm.produto ? `<span class="rc-pend">Pendente nesta doca: <b>${num(naDoca)}</b></span>` : ""}</div>`
+    + (arm.produto ? cartaoProduto(produtoPorCodigo(db, arm.produto)) : "");
+  if (!arm.produto) {
     $("#raPasso").textContent = "2 · Bipe o produto";
-    $("#raInput").placeholder = "Bipe o produto (ou digite o código interno)";
-    $("#raRes").innerHTML = "";
+    $("#raInput").placeholder = "Bipe o produto ou digite o código";
+    // o que espera armazenamento nesta doca (só para conferir; o produto entra bipando)
+    const daDoca = pendentesPorData(db.conferencias.filter((c) => c.docaId === doca.id)).flatMap((d) => d.produtos);
+    const somados = [...daDoca.reduce((m, x) => m.set(x.produto, (m.get(x.produto) || 0) + x.pendente), new Map())];
+    $("#raRes").innerHTML = `<p class="es-h">Pendente nesta doca</p><div class="es-lista">${somados.map(([produto, q]) => {
+      const p = produtoPorCodigo(db, produto);
+      return `<div class="line"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span><span class="line-q">${num(q)}</span></div>`;
+    }).join("")}</div>`;
     return;
   }
   // passo 3: quantidade e destino. O sistema sugere o endereço padrão, mas qualquer endereço ativo serve.
   $("#raPasso").textContent = "3 · Quantidade e QR do destino";
-  $("#raInput").placeholder = "QR do endereço de destino";
+  $("#raInput").placeholder = "Bipe o QR do destino ou digite o ID";
   const sugeridos = enderecosPadraoDoProduto(db, arm.produto).filter((e) => e && e.ativo).sort((a, b) => compararEnderecos(a.codigo, b.codigo));
   const padrao = Math.min(naDoca, saldoNoEndereco(db, doca.id, arm.produto));
   $("#raRes").innerHTML = `<label class="field"><span>Quantidade a armazenar</span><input id="raQtd" type="number" inputmode="decimal" min="0" step="any" value="${padrao}"></label>
-    <p class="es-h">Sugerido (endereço padrão) · toque para usar (demonstração)</p>
-    <div class="es-lista">${sugeridos.map((e) => `<button class="line" data-radestino="${e.id}">${tipoTag(e.tipo)}<span class="line-addr">${e.codigo}</span><span class="line-desc"></span><span class="line-q">${num(saldoNoEndereco(db, e.id, arm.produto))}</span></button>`).join("")
+    <p class="es-h">Sugerido (endereço padrão)</p>
+    <div class="es-lista">${sugeridos.map((e) => `<div class="line">${tipoTag(e.tipo)}<span class="line-addr">${e.codigo}</span><span class="line-desc"></span><span class="line-q">${num(saldoNoEndereco(db, e.id, arm.produto))}</span></div>`).join("")
       || `<p class="empty">Sem endereço padrão. Leia o QR de qualquer endereço ativo.</p>`}</div>
     <p class="muted">Ao ler o destino, o armazenamento é feito na hora.</p>`;
 }
 
-// lista inicial: por data de armazenagem, produtos pendentes (somando notas diferentes)
+// passo 1: ler a doca. Embaixo, o que está pendente por data de armazenagem (somando notas diferentes) e em qual doca está.
 function desenharPendentes() {
-  $("#raPasso").textContent = "Escolha o produto";
+  $("#raPasso").textContent = "1 · Leia o QR da doca de origem";
+  $("#raInput").placeholder = "Bipe o QR da doca ou digite o ID";
   $("#raTopo").innerHTML = "";
   const datas = pendentesPorData(db.conferencias);
+  const docasDo = (produto) => [...new Set(db.conferencias.filter((c) => c.produto === produto && pendenteDaConferencia(c) > 0)
+    .map((c) => enderecoPorId(db, c.docaId)?.codigo))].join(", ");
   $("#raRes").innerHTML = datas.map(({ dia, produtos }) => `<p class="es-h">${diaCurto(dia)}${dia === hoje() ? " · hoje" : ""}</p>
     <div class="es-lista">${produtos.map(({ produto, pendente }) => {
       const p = produtoPorCodigo(db, produto);
-      return `<button class="line" data-raprod="${esc(produto)}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span><span class="line-q">${num(pendente)}</span></button>`;
+      return `<div class="line"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)} · ${docasDo(produto)}</small></span><span class="line-q">${num(pendente)}</span></div>`;
     }).join("")}</div>`).join("") || `<p class="empty">Nada pendente na doca. Tudo armazenado.</p>`;
 }
 
 function usarDoca(endereco) {
   const erro = validarDoca(endereco);
   if (erro) return msg($("#raMsg"), erro, "err");
-  if (pendenteNaDoca(db.conferencias, arm.produto, endereco.id) <= 0) return msg($("#raMsg"), "ESTE PRODUTO NÃO TEM PENDÊNCIA NESTA DOCA.", "err");
+  if (!db.conferencias.some((c) => c.docaId === endereco.id && pendenteDaConferencia(c) > 0)) return msg($("#raMsg"), "NADA PENDENTE DE ARMAZENAR NESTA DOCA.", "err");
   arm.docaId = endereco.id;
   msg($("#raMsg"), "Doca validada", "ok");
   desenharArmazenamento();
+}
+
+function usarProduto(achado) {
+  if (!achado) return msg($("#raMsg"), "Produto não encontrado.", "err");
+  if (pendenteNaDoca(db.conferencias, achado.produto.codigo, arm.docaId) <= 0) return msg($("#raMsg"), "ESTE PRODUTO NÃO TEM PENDÊNCIA NESTA DOCA.", "err");
+  arm.produto = achado.produto.codigo;
+  msg($("#raMsg"), "Produto validado", "ok");
+  desenharArmazenamento();
+  setTimeout(() => $("#raQtd")?.select(), 50);
 }
 
 function usarDestino(destino) {
@@ -310,10 +317,12 @@ function usarDestino(destino) {
   if (!r.ok) return msg($("#raMsg"), r.msg, "err");
   db = lerEstoque();
   msg($("#raMsg"), `${num(qtd)} armazenado(s) em ${destino.codigo}`, "ok");
-  // sobrou nesta doca: continua no mesmo produto; senão, volta para a lista
+  // sobrou deste produto nesta doca: continua nele; senão, volta a pedir o próximo produto da mesma doca
   if (pendenteNaDoca(db.conferencias, arm.produto, arm.docaId) > 0) return desenharArmazenamento();
   toast(`${arm.produto} armazenado`);
-  Object.assign(arm, { produto: null, docaId: null, produtoLido: false });
+  arm.produto = null;
+  // doca vazia de pendências: volta ao início
+  if (!db.conferencias.some((c) => c.docaId === arm.docaId && pendenteDaConferencia(c) > 0)) arm.docaId = null;
   desenharArmazenamento();
 }
 
@@ -323,23 +332,8 @@ $("#raForm").addEventListener("submit", (e) => {
   const lido = $("#raInput").value.trim(); if (!lido) return;
   $("#raInput").value = "";
   if (!arm.docaId) return usarDoca(acharEndereco(db.enderecos, lido));
-  if (!arm.produtoLido) {
-    const achado = acharPorCodigoLido(db.produtos, db.embalagens, lido);
-    if (!achado) return msg($("#raMsg"), "Produto não encontrado.", "err");
-    if (achado.produto.codigo !== arm.produto) return msg($("#raMsg"), "PRODUTO DIFERENTE DO SELECIONADO.", "err");
-    arm.produtoLido = true;
-    msg($("#raMsg"), "Produto validado", "ok");
-    return desenharArmazenamento();
-  }
+  if (!arm.produto) return usarProduto(acharPorCodigoLido(db.produtos, db.embalagens, lido));
   usarDestino(acharEndereco(db.enderecos, lido));
-});
-
-$("#raRes").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  db = lerEstoque();
-  if (b.dataset.raprod) { arm.produto = b.dataset.raprod; msg($("#raMsg"), ""); desenharArmazenamento(); return $("#raInput").focus(); }
-  if (b.dataset.radoca) return usarDoca(enderecoPorId(db, +b.dataset.radoca));
-  if (b.dataset.radestino) return usarDestino(enderecoPorId(db, +b.dataset.radestino));
 });
 
 // =====================================================================

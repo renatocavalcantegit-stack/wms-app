@@ -17,9 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=24">
-  <link rel="stylesheet" href="estoque.css?v=24">
-  <link rel="stylesheet" href="etiqueta-recebimento.css?v=24">
+  <link rel="stylesheet" href="styles.css?v=25">
+  <link rel="stylesheet" href="estoque.css?v=25">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=25">
 </head>
 <body class="es">
 
@@ -161,18 +161,18 @@
     </footer>
   </section>
 
-  <!-- ===== RECEPÇÃO · ARMAZENAMENTO: produto pendente → doca → produto → quantidade e QR do destino ===== -->
+  <!-- ===== RECEPÇÃO · ARMAZENAMENTO: QR da doca → produto → quantidade e QR do destino (tudo por leitura) ===== -->
   <section id="viewRecArm" class="view pick" hidden>
     <header class="pick-bar">
       <button class="icon-btn" data-rcvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
-      <div class="pick-head"><p class="pick-order">Armazenamento</p><p class="pick-client" id="raPasso">Escolha o produto</p></div>
+      <div class="pick-head"><p class="pick-order">Armazenamento</p><p class="pick-client" id="raPasso">1 · Leia o QR da doca de origem</p></div>
       <span class="icon-btn"></span>
     </header>
     <main class="pick-main">
       <div id="raTopo"></div>
-      <form id="raForm" class="scan" hidden>
+      <form id="raForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input id="raInput" type="text" autocomplete="off" placeholder="QR da doca de origem">
+        <input id="raInput" type="text" autocomplete="off" placeholder="Bipe o QR da doca ou digite o ID">
         <button type="button" class="scan-cam cam-btn" data-cam="raInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
       <p id="raMsg" class="scan-msg"></p>
@@ -250,7 +250,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=24"></script>
-  <script type="module" src="estoque.js?v=24"></script>
+  <script src="vendor/qrcode.js?v=25"></script>
+  <script type="module" src="estoque.js?v=25"></script>
 </body>
 </html>

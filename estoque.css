@@ -62,6 +62,7 @@
 .rc-nums b.neg { color: var(--red); }
 .rc-total { margin: -4px 2px 0; font-weight: 800; color: var(--ink); min-height: 1em; }
 .rc-total:empty { display: none; }
+.rc-dica { font-size: 13.5px; line-height: 1.45; padding: 4px 2px; }
 .rc-cons { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
 .rc-cons .product-desc { margin: 0; }
 .rc-cons .product-meta { margin: 2px 0 0; }
