@@ -395,3 +395,14 @@ a.btn { text-decoration: none; }
 .doca-list .line-desc { color: var(--ink-3); font-size: 12px; }
 .done-doca { margin: 8px auto 0; display: inline-block; background: #E8F0FE; color: #1A56DB; padding: 8px 12px; border-radius: 10px; font-size: 14px; }
 #startUndo { margin-bottom: 8px; color: var(--red); }
+
+/* ===== Separação: confirmar o endereço antes do produto ===== */
+.addr-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; position: relative; z-index: 1; }
+.addr-status { font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 99px; background: #2A2A30; color: #fff; }
+.addr.wait { box-shadow: 0 0 0 3px var(--red-brand); animation: addrPulse 1.6s ease-in-out infinite; }
+.addr.wait .addr-status { background: var(--red-brand); }
+.addr.ok .addr-status { background: var(--ok); }
+@keyframes addrPulse { 50% { box-shadow: 0 0 0 6px rgba(225, 6, 0, .25); } }
+.qty.locked { opacity: .45; }
+.qty.locked .qty-btn:disabled, #btnShort:disabled { cursor: not-allowed; }
+#btnShort:disabled { opacity: .5; }

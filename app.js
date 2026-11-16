@@ -3,6 +3,8 @@
 //   · um pedido (ou uma PARTE de um pedido grande que o coordenador dividiu entre separadores);
 //   · um LOTE: vários pedidos numa viagem só, com uma caixa por pedido no carrinho (A, B, C…);
 //   · e, no fim de qualquer um deles, o separador lê o QR da DOCA DE EXPEDIÇÃO onde deixou a mercadoria.
+// Em cada item (ou parada do lote) o separador CONFIRMA O ENDEREÇO primeiro (QR ou ID digitado) e só então bipa o produto:
+// assim o sistema sabe que ele está na prateleira certa, e a falta "endereço vazio" é confiável.
 // As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao } from "./js/dados/separacao.js";
@@ -266,7 +268,7 @@ import {
     const o = pedido(go.dataset.id);
     if (o.status === "concluido") {
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: "pendente", motivo: "" }));
-      Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null });
+      Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null });
     }
     if (o.status === "pendente") { o.status = "andamento"; o.inicio = Date.now(); o.operador = user; }
     current = o; lote = null; save(); closeSheets();
@@ -302,6 +304,11 @@ import {
   // ---------- separação ----------
   // pedido: um item de cada vez. Lote: uma PARADA de cada vez (mesmo produto no mesmo endereço para todos os pedidos).
   function item() { return current.itens[current.atual]; }
+  // endereço confirmado fica guardado no pedido/lote: voltar e continuar depois não pede de novo,
+  // e o próximo item no MESMO endereço já vem liberado
+  const alvo = () => (lote ? parada().end : item().end);
+  const dono = () => lote || current;
+  const enderecoOk = () => dono().endOk === alvo();
   const paradas = () => montarParadas(pedidosDoLote(lote), lote.posicoes);
   const parada = () => paradas()[lote.atual];
   const itemDaLinha = (l) => pedido(l.pedido).itens[l.idx];
@@ -319,6 +326,7 @@ import {
     $("#prodSku").textContent = i.sku;
     $("#prodEan").textContent = "EAN " + i.ean;
     $("#loteBox").hidden = true;
+    renderEndereco();
     renderQty();
     setMsg("");
     $("#scanInput").value = "";
@@ -345,6 +353,7 @@ import {
     $("#prodSku").textContent = p.sku;
     $("#prodEan").textContent = "EAN " + p.ean;
     desenharCaixas(p);
+    renderEndereco();
     renderQty();
     setMsg("");
     $("#scanInput").value = "";
@@ -362,6 +371,18 @@ import {
     }).join("");
   }
 
+  // o cartão do endereço mostra se falta ler o QR; quantidade, confirmar e falta ficam travados até a leitura
+  function renderEndereco() {
+    const ok = enderecoOk();
+    $("#addrCard").classList.toggle("ok", ok);
+    $("#addrCard").classList.toggle("wait", !ok);
+    $("#addrStatus").textContent = ok ? "Endereço confirmado ✓" : "Leia o QR do endereço";
+    $("#scanInput").placeholder = ok ? "Bipe ou digite o EAN / SKU" : "Bipe o QR ou digite o ID do endereço";
+    $("#scanInput").inputMode = "text";
+    $(".qty").classList.toggle("locked", !ok);
+    $("#qtyMinus").disabled = $("#qtyPlus").disabled = $("#btnShort").disabled = !ok;
+  }
+
   function renderQty(bump) {
     const lido = lote ? parada().lido : item().sep, total = lote ? parada().total : item().qtd;
     $("#qtySep").textContent = lido;
@@ -370,7 +391,7 @@ import {
     q.classList.toggle("full", lido === total);
     q.classList.toggle("over", lido > total);
     if (bump) { const v = $(".qty-val"); v.classList.remove("bump"); void v.offsetWidth; v.classList.add("bump"); }
-    $("#btnConfirm").disabled = lido === 0 || lido > total;
+    $("#btnConfirm").disabled = !enderecoOk() || lido === 0 || lido > total;
     $("#btnConfirm").textContent = lido < total && lido > 0 ? `Confirmar ${lido} de ${total}` : lote ? "Confirmar parada" : "Confirmar item";
   }
 
@@ -379,6 +400,7 @@ import {
   }
 
   function changeQty(d) {
+    if (!enderecoOk()) return;
     if (lote) {
       const p = parada();
       // + vai para a caixa da vez; − tira da última caixa que recebeu
@@ -406,6 +428,7 @@ import {
     const code = raw.trim().toUpperCase();
     if (!code) return;
     $("#scanInput").value = "";
+    if (!enderecoOk()) return lerEndereco(code);
     if (lote) return lerNoLote(code);
     const i = item();
     if (code === i.ean || code === i.sku.toUpperCase()) {
@@ -420,6 +443,23 @@ import {
       erroLeitura(other ? `Produto de outro endereço (${other.end}).` : "Código não pertence a este item.");
     }
   }
+  // confirmação do endereço: QR (código R3001-P7-A100-AP101) ou ID digitado do cadastro de endereços
+  function lerEndereco(code) {
+    const esperado = alvo();
+    const achado = acharEndereco(lerEstoque().enderecos, code);
+    const lidoCodigo = achado ? achado.codigo : code;
+    if (lidoCodigo !== esperado) {
+      // bipou o produto antes do endereço: explica o passo que falta
+      const ehProduto = lote ? (code === parada().ean || code === parada().sku.toUpperCase()) : (code === item().ean || code === item().sku.toUpperCase());
+      return erroLeitura(ehProduto ? "PRIMEIRO LEIA O QR DO ENDEREÇO." : `ENDEREÇO ERRADO. VÁ PARA ${esperado}.`);
+    }
+    if (achado && !achado.ativo) return erroLeitura("ENDEREÇO INATIVO. AVISE O GESTOR DE ESTOQUE.");
+    dono().endOk = esperado; save();
+    beep(true); vibrate(30);
+    renderEndereco(); renderQty();
+    setMsg("Endereço confirmado · agora bipe o produto", "ok");
+  }
+
   // lote: cada peça bipada vai para a caixa da vez (A primeiro, que tem a prioridade)
   function lerNoLote(code) {
     const p = parada();
@@ -487,7 +527,7 @@ import {
     $("#shortQty").max = total - 1;
     openSheet("sheetShort");
   }
-  $("#btnShort").addEventListener("click", () => openShort());
+  $("#btnShort").addEventListener("click", () => enderecoOk() && openShort());
   $("#shortReasons").addEventListener("click", (e) => {
     const c = e.target.closest(".chip"); if (!c) return;
     reason = c.dataset.r;

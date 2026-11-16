@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=29">
+  <link rel="stylesheet" href="styles.css?v=30">
 </head>
 <body>
 
@@ -138,8 +138,8 @@
     <p id="pickStep" class="pick-step"></p>
 
     <main id="pickCard" class="pick-main">
-      <div class="addr">
-        <span class="addr-label">Endereço</span>
+      <div id="addrCard" class="addr">
+        <div class="addr-top"><span class="addr-label">Endereço</span><span id="addrStatus" class="addr-status"></span></div>
         <div id="addrParts" class="addr-parts"></div>
       </div>
 
@@ -448,6 +448,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=29"></script>
+  <script type="module" src="app.js?v=30"></script>
 </body>
 </html>
