@@ -1,29 +1,21 @@
-// WMS Beach Bike — etiqueta de produto 90 × 20 mm (horizontal), impressa a partir da Consulta de produto.
-// Contém só: código interno, descrição e código de barras (regra do documento do estoquista).
+// WMS Beach Bike — desenho da etiqueta de produto (~29 × 20 mm), 3 por linha no rolo de 90 × 20 mm.
+// Contém: código interno, QR Code, descrição e embalagem. As regras ficam em compartilhado/regras/etiqueta-produto.js.
 import { esc } from "./util.js";
-import { barrasDoCodigo, formatoDoCodigo } from "../compartilhado/regras/codigo-barras.js";
+import { qrSvg } from "./qr.js";
+import { conteudoDoQr, etiquetasPorLinha } from "../compartilhado/regras/etiqueta-produto.js";
 
-// barras em SVG: cada "1" vira um retângulo preto; barras vizinhas são juntadas num retângulo só
-export function barrasSvg(codigo) {
-  const b = barrasDoCodigo(codigo);
-  let d = "";
-  for (let i = 0; i < b.length; i++) {
-    if (b[i] !== "1") continue;
-    let w = 1;
-    while (b[i + w] === "1") w++;
-    d += `M${i} 0h${w}v1h-${w}z`;
-    i += w - 1;
-  }
-  // 10 módulos de margem branca de cada lado (zona de silêncio que o leitor precisa)
-  return `<svg class="et-barras" viewBox="-10 0 ${b.length + 20} 1" preserveAspectRatio="none" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
+// uma etiqueta; a embalagem escolhida decide o que vai no QR (e aparece embaixo da descrição)
+export function etiquetaHtml(produto, embalagem) {
+  return `<div class="et">
+    <b class="et-cod">${esc(produto.codigo)}</b>
+    <div class="et-meio">${qrSvg(conteudoDoQr(produto, embalagem), "et-qr")}
+      <div class="et-txt"><span class="et-desc">${esc(produto.descricao)}</span>${embalagem ? `<b class="et-emb">${esc(embalagem.descricao)}</b>` : ""}</div>
+    </div>
+  </div>`;
 }
 
-// uma etiqueta: o código de barras usado é o da embalagem escolhida; sem código, vai o código interno
-export function etiquetaHtml(produto, codigoBarras) {
-  const codigo = codigoBarras || produto.codigo;
-  return `<div class="et">
-    <div class="et-top"><b>${esc(produto.codigo)}</b><span>${esc(produto.descricao)}</span></div>
-    ${barrasSvg(codigo)}
-    <small class="et-num">${esc(codigo)} · ${formatoDoCodigo(codigo) === "EAN13" ? "EAN-13" : "Code 128"}</small>
-  </div>`;
+// N etiquetas montadas em linhas de 3 (cada linha é uma "página" de 90 × 20 mm na impressora)
+export function rolosHtml(produto, embalagem, quantidade) {
+  const uma = etiquetaHtml(produto, embalagem);
+  return etiquetasPorLinha(quantidade).map((n) => `<div class="et-linha">${uma.repeat(n)}</div>`).join("");
 }

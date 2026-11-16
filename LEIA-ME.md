@@ -13,7 +13,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   produtos.js            busca por EAN/SKU e ordem de separação pelo endereço
   enderecos.js           endereço numérico da prateleira (R3001-P7-A100-AP101), cadastro um a um e em lote, desativar/reativar, endereço padrão
   embalagens.js          embalagens e código de barras único, busca de produto, importação do ERP
-  codigo-barras.js       EAN-13 / Code 128 da etiqueta de produto 90 × 20 mm
+  etiqueta-produto.js    etiqueta de produto com QR: rolo 90 × 20 mm, 3 por linha
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -22,7 +22,7 @@ js/
   dados/conferencia.js   camada de dados da Conferência (e os pedidos que chegam da Separação)
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos
   qr.js                  desenho do QR Code em SVG
-  etiqueta-produto.js    etiqueta de produto 90 × 20 mm (código de barras em SVG)
+  etiqueta-produto.js    desenho da etiqueta de produto (QR em SVG, linhas de 3)
   util.js                atalhos de tela: $, $$ e esc
   ui-coletor.js          aviso, bipe, troca de tela, sheets e câmera do app do coletor
 

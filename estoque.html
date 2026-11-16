@@ -17,8 +17,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=21">
-  <link rel="stylesheet" href="estoque.css?v=21">
+  <link rel="stylesheet" href="styles.css?v=22">
+  <link rel="stylesheet" href="estoque.css?v=22">
 </head>
 <body class="es">
 
@@ -134,10 +134,11 @@
   <div id="sheetEtiqueta" class="sheet" hidden>
     <div class="sheet-grip"></div>
     <p class="sheet-title">Etiqueta do produto</p>
-    <p class="muted">90 × 20 mm · o formato do código de barras é escolhido sozinho</p>
+    <p class="muted">QR Code · rolo de 90 × 20 mm com 3 etiquetas por linha</p>
     <div id="etEmbs" class="chips"></div>
     <div id="etPrevia" class="et-previa"></div>
-    <label class="field"><span>Quantidade de etiquetas</span><input id="etQtd" type="number" inputmode="numeric" min="1" max="500" value="1"></label>
+    <label class="field"><span>Quantidade de etiquetas</span><input id="etQtd" type="number" inputmode="numeric" min="1" max="500" value="3"></label>
+    <p id="etLinhas" class="muted"></p>
     <button id="etGo" class="btn primary block">Imprimir</button>
   </div>
 
@@ -176,11 +177,12 @@
     <button id="camClose" class="btn ghost cam-close">Fechar</button>
   </div>
 
-  <!-- etiquetas 90 × 20 mm (só aparecem na impressão) -->
+  <!-- etiquetas do rolo 90 × 20 mm, 3 por linha (só aparecem na impressão) -->
   <div id="printArea" class="et-print"></div>
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="estoque.js?v=21"></script>
+  <script src="vendor/qrcode.js?v=22"></script>
+  <script type="module" src="estoque.js?v=22"></script>
 </body>
 </html>

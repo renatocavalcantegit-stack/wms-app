@@ -4,7 +4,8 @@
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam } from "./js/ui-coletor.js";
-import { etiquetaHtml } from "./js/etiqueta-produto.js";
+import { etiquetaHtml, rolosHtml } from "./js/etiqueta-produto.js";
+import { linhasDoRolo } from "./compartilhado/regras/etiqueta-produto.js";
 import {
   lerEstoque, aoMudarEstoque, reiniciarDemonstracao, saldosDoProduto, embalagensDoProduto, produtosDoEndereco,
   salvarEmbalagem, excluirEmbalagem, associarProduto, removerAssociacao,
@@ -110,28 +111,31 @@ function mostrarConsulta(codigo) {
     <button id="cEtiqueta" class="btn ghost block">Gerar etiqueta</button>`;
 }
 
-// ---------- etiqueta 90 × 20 ----------
-let codigoEtiqueta = null;
+// ---------- etiqueta com QR (rolo 90 × 20 mm, 3 por linha) ----------
+let embsEtiqueta = [], embalagemEtiqueta = null; // embalagem escolhida: decide o que vai no QR
 function abrirEtiqueta() {
-  const embs = embalagensDoProduto(db, produtoConsulta.codigo);
-  // cada embalagem vira uma opção; sem código de barras (ou sem embalagem), a etiqueta usa o código interno
-  const opcoes = embs.length ? embs.map((e) => ({ rotulo: `${e.descricao} · ${num(e.qtd)}`, codigo: e.codigo || null }))
-    : [{ rotulo: "Código interno", codigo: null }];
-  codigoEtiqueta = opcoes[0].codigo;
-  $("#etEmbs").innerHTML = opcoes.length > 1 ? opcoes.map((o, i) =>
-    `<button class="chip ${i ? "" : "active"}" data-cod="${esc(o.codigo || "")}">${esc(o.rotulo)}</button>`).join("") : "";
-  $("#etQtd").value = 1;
+  embsEtiqueta = embalagensDoProduto(db, produtoConsulta.codigo);
+  // cada embalagem vira uma opção; sem embalagem, a etiqueta leva o código interno no QR
+  embalagemEtiqueta = embsEtiqueta[0] || null;
+  $("#etEmbs").innerHTML = embsEtiqueta.length > 1 ? embsEtiqueta.map((e, i) =>
+    `<button class="chip ${i ? "" : "active"}" data-i="${i}">${esc(e.descricao)} · ${num(e.qtd)}</button>`).join("") : "";
+  $("#etQtd").value = 3;
   previaEtiqueta(); openSheet("sheetEtiqueta");
 }
-const previaEtiqueta = () => ($("#etPrevia").innerHTML = etiquetaHtml(produtoConsulta, codigoEtiqueta));
+const quantidadeEtiquetas = () => Math.max(1, Math.min(500, Math.floor(+$("#etQtd").value || 1)));
+function previaEtiqueta() {
+  $("#etPrevia").innerHTML = etiquetaHtml(produtoConsulta, embalagemEtiqueta);
+  const linhas = linhasDoRolo(quantidadeEtiquetas());
+  $("#etLinhas").textContent = `Usa ${linhas} linha${linhas > 1 ? "s" : ""} do rolo (3 etiquetas por linha).`;
+}
 $("#etEmbs").addEventListener("click", (e) => {
   const b = e.target.closest(".chip"); if (!b) return;
   $$("#etEmbs .chip").forEach((c) => c.classList.toggle("active", c === b));
-  codigoEtiqueta = b.dataset.cod || null; previaEtiqueta();
+  embalagemEtiqueta = embsEtiqueta[+b.dataset.i]; previaEtiqueta();
 });
+$("#etQtd").addEventListener("input", previaEtiqueta);
 $("#etGo").addEventListener("click", () => {
-  const n = Math.max(1, Math.min(500, Math.floor(+$("#etQtd").value || 1)));
-  $("#printArea").innerHTML = etiquetaHtml(produtoConsulta, codigoEtiqueta).repeat(n);
+  $("#printArea").innerHTML = rolosHtml(produtoConsulta, embalagemEtiqueta, quantidadeEtiquetas());
   closeSheets(); window.print();
 });
 
