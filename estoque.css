@@ -62,6 +62,9 @@
 .rc-nums b.neg { color: var(--red); }
 .rc-total { margin: -4px 2px 0; font-weight: 800; color: var(--ink); min-height: 1em; }
 .rc-total:empty { display: none; }
+.rc-conferindo { gap: 2px !important; }
+.rc-conferindo span { font-size: 11px !important; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-3) !important; }
+.rc-conferindo b { font-size: 26px !important; }
 .rc-dica { font-size: 13.5px; line-height: 1.45; padding: 4px 2px; }
 .rc-cons { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
 .rc-cons .product-desc { margin: 0; }

@@ -9,7 +9,7 @@ import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
-  statusDaNota, resumoDaNota, validarDoca, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
+  statusDaNota, resumoDaNota, validarDoca, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
   STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA,
 } from "./compartilhado/regras/recebimento.js";
 
@@ -57,7 +57,7 @@ export function atualizarRecepcao() {
 $$("[data-rcvoltar]").forEach((b) => b.addEventListener("click", () => {
   closeSheets();
   const tela = b.closest(".view").id;
-  if (tela === "viewRecConf" && conf.notaId) return iniciarConferencia();
+  if (tela === "viewRecConf" && conf.notaId) return voltarConferencia();
   if (tela === "viewRecArm" && arm.docaId) return iniciarArmazenamento();
   if (tela === "viewRecCons" && consulta.notaId) { consulta.notaId = null; return desenharConsulta(); }
   document.dispatchEvent(new Event("voltar-menu"));
@@ -70,28 +70,39 @@ function imprimirVolumes(volumes, nota, produto) {
 }
 
 // =====================================================================
-// CONFERÊNCIA: 1) nota  2) QR da doca  3) bipa o produto, informa a quantidade e os volumes
+// CONFERÊNCIA: 1) nota  2) bipa o produto  3) quantidade e volumes  4) QR da doca (confirma na hora)
+// Primeiro se confere o produto; depois ele é associado à doca onde foi descarregado.
+// Produto e doca entram só por leitura (bipe ou digitação), nunca tocando na lista.
 // =====================================================================
-const conf = { notaId: null, docaId: null, produto: null, embalagem: null };
+const conf = { notaId: null, produto: null, embalagem: null, qtd: null, volumes: null };
+const limparProduto = () => Object.assign(conf, { produto: null, embalagem: null, qtd: null, volumes: null });
 
 function iniciarConferencia() {
-  Object.assign(conf, { notaId: null, docaId: null, produto: null, embalagem: null });
+  conf.notaId = null; limparProduto();
   msg($("#rcMsg"), ""); $("#rcInput").value = "";
   desenharConferencia();
+}
+
+// voltar um passo: doca → quantidade → produto → lista de notas
+function voltarConferencia() {
+  msg($("#rcMsg"), "");
+  if (conf.qtd) { conf.qtd = null; conf.volumes = null; return desenharConferencia(); }
+  if (conf.produto) { limparProduto(); return desenharConferencia(); }
+  iniciarConferencia();
 }
 
 function desenharConferencia() {
   const nota = conf.notaId ? notaPorId(db, conf.notaId) : null;
   // a nota foi finalizada em outro coletor enquanto esta tela estava aberta
   if (nota && nota.finalizada) { iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err"); }
-  $("#rcFoot").hidden = !(nota && conf.docaId);
-  $("#rcForm").hidden = !!conf.produto;
+  $("#rcFoot").hidden = !nota;
+  // no passo da quantidade o campo de leitura some (o leitor não pode digitar dentro da quantidade)
+  $("#rcForm").hidden = !!(conf.produto && !conf.qtd);
   if (!nota) return desenharNotas();
-  const doca = conf.docaId ? enderecoPorId(db, conf.docaId) : null;
-  $("#rcTopo").innerHTML = cartaoNota(nota, doca ? linhaDoca(doca) : "");
-  if (!doca) return desenharEscolhaDaDoca();
-  if (conf.produto) return desenharQuantidade(nota);
-  desenharItens(nota);
+  $("#rcTopo").innerHTML = cartaoNota(nota);
+  if (!conf.produto) return desenharItens(nota);
+  if (!conf.qtd) return desenharQuantidade(nota);
+  desenharEscolhaDaDoca(nota);
 }
 
 // passo 1: notas que ainda podem ser conferidas (em aberto primeiro)
@@ -111,18 +122,10 @@ function desenharNotas() {
   }).join("") || `<p class="empty">Nenhuma nota para conferir.</p>`}</div>`;
 }
 
-// passo 2: a doca onde a mercadoria está (o saldo conferido entra nela).
-// Só por leitura: bipar o QR ou digitar o ID. Não dá para escolher tocando (garante que o estoquista está na doca certa).
-function desenharEscolhaDaDoca() {
-  $("#rcPasso").textContent = "2 · Leia o QR da doca";
-  $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
-  $("#rcRes").innerHTML = `<p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta.</p>`;
-}
-
-// passo 3: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota).
-// A lista é só para acompanhar: o produto entra bipando a embalagem ou digitando o código, nunca tocando.
+// passo 2: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota).
+// A lista é só para acompanhar: o produto entra bipando a embalagem ou digitando o código.
 function desenharItens(nota) {
-  $("#rcPasso").textContent = "3 · Bipe o produto";
+  $("#rcPasso").textContent = "2 · Bipe o produto";
   $("#rcInput").placeholder = "Bipe o produto ou digite o código";
   $("#rcRes").innerHTML = `<p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, db.conferencias).map((i) => {
     const p = produtoPorCodigo(db, i.produto);
@@ -132,33 +135,51 @@ function desenharItens(nota) {
   }).join("")}</div>`;
 }
 
-// produto escolhido: quantidade (em caixas, se bipou uma caixa) e em quantos volumes está
-function desenharQuantidade(nota) {
-  const p = produtoPorCodigo(db, conf.produto);
+const caixaBipada = () => (conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null);
+const numerosDoItem = (nota) => {
   const item = nota.itens.find((i) => i.produto === conf.produto);
   const pendente = pendenteDeConferir(nota, conf.produto, db.conferencias);
-  const caixa = conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null;
+  return `<div class="rc-nums"><div><small>Na nota</small><b>${num(item.qtd)}</b></div><div><small>Conferido</small><b>${num(item.qtd - pendente)}</b></div><div><small>Pendente</small><b>${num(pendente)}</b></div></div>`;
+};
+
+// passo 3: quantidade (em caixas, se bipou uma caixa) e em quantos volumes está
+function desenharQuantidade(nota) {
+  const p = produtoPorCodigo(db, conf.produto);
+  const caixa = caixaBipada();
   $("#rcPasso").textContent = "3 · Quantidade e volumes";
   $("#rcRes").innerHTML = `${cartaoProduto(p, conf.embalagem ? `<p class="es-pronto">Bipou: ${esc(conf.embalagem.descricao)}</p>` : "")}
-    <div class="rc-nums"><div><small>Na nota</small><b>${num(item.qtd)}</b></div><div><small>Conferido</small><b>${num(item.qtd - pendente)}</b></div><div><small>Pendente</small><b>${num(pendente)}</b></div></div>
+    ${numerosDoItem(nota)}
     <form id="rcQtdForm" class="es-form">
       <label class="field"><span>${caixa ? `${esc(caixa.descricao)} · quantas?` : "Quantidade conferida (un)"}</span>
         <input name="qtd" type="number" inputmode="decimal" min="0" step="any" value="${caixa ? 1 : ""}" required></label>
       <p class="rc-total" id="rcTotal"></p>
       <label class="field"><span>Em quantos volumes?</span><input name="volumes" type="number" inputmode="numeric" min="1" value="1" required></label>
-      <div class="es-duo"><button type="button" class="btn ghost" data-rccancelar>Cancelar</button><button class="btn primary" id="rcConfirmar">Confirmar</button></div>
+      <div class="es-duo"><button type="button" class="btn ghost" data-rccancelar>Cancelar</button><button class="btn primary" id="rcConfirmar">Continuar</button></div>
     </form>`;
   atualizarTotal();
-  setTimeout(() => $("#rcQtdForm").qtd.select(), 50);
+  setTimeout(() => $("#rcQtdForm")?.qtd.select(), 50);
 }
 
 // "2 caixas × 12 = 24 un": mostra o total em unidades enquanto digita
 function atualizarTotal() {
   const f = $("#rcQtdForm"); if (!f) return;
-  const caixa = conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null;
+  const caixa = caixaBipada();
   const total = quantidadeEmUnidades(caixa, f.qtd.value || 0);
   $("#rcTotal").textContent = caixa ? `${num(f.qtd.value || 0)} × ${num(caixa.qtd)} = ${num(total)} un` : "";
-  $("#rcConfirmar").textContent = total > 0 ? `Confirmar +${num(total)}` : "Confirmar";
+  $("#rcConfirmar").textContent = total > 0 ? `Continuar · ${num(total)} un` : "Continuar";
+}
+
+// passo 4: a doca onde a mercadoria foi descarregada. Ao ler a doca, a conferência é confirmada na hora
+// (o saldo entra nela e as etiquetas dos volumes saem).
+function desenharEscolhaDaDoca(nota) {
+  const p = produtoPorCodigo(db, conf.produto);
+  $("#rcPasso").textContent = "4 · Leia o QR da doca";
+  $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
+  $("#rcRes").innerHTML = `${cartaoProduto(p)}
+    <div class="rc-nota rc-conferindo"><span>Conferindo</span><b>+${num(conf.qtd)} un</b><small>${num(conf.volumes)} volume(s) · etiquetas saem ao ler a doca</small></div>
+    <div class="es-duo"><button type="button" class="btn ghost" data-rcalterar>Alterar quantidade</button><button type="button" class="btn ghost" data-rccancelar>Cancelar</button></div>
+    <p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta.</p>`;
+  setTimeout(() => $("#rcInput").focus(), 50);
 }
 
 $("#rcForm").addEventListener("submit", (e) => {
@@ -167,7 +188,7 @@ $("#rcForm").addEventListener("submit", (e) => {
   const lido = $("#rcInput").value.trim(); if (!lido) return;
   $("#rcInput").value = "";
   if (!conf.notaId) return escolherNota(notaPorNumero(db, lido));
-  if (!conf.docaId) return escolherDoca(acharEndereco(db.enderecos, lido));
+  if (conf.qtd) return lerDoca(acharEndereco(db.enderecos, lido));
   const achado = acharPorCodigoLido(db.produtos, db.embalagens, lido);
   if (!achado) return msg($("#rcMsg"), "Produto não encontrado.", "err");
   escolherProduto(achado.produto.codigo, achado.embalagem);
@@ -181,14 +202,6 @@ function escolherNota(nota) {
   desenharConferencia();
 }
 
-function escolherDoca(endereco) {
-  const erro = validarDoca(endereco);
-  if (erro) return msg($("#rcMsg"), erro, "err");
-  conf.docaId = endereco.id;
-  msg($("#rcMsg"), "Doca validada", "ok");
-  desenharConferencia();
-}
-
 function escolherProduto(codigo, embalagem) {
   const nota = notaPorId(db, conf.notaId);
   if (!nota.itens.some((i) => i.produto === codigo)) return msg($("#rcMsg"), MSG_PRODUTO_FORA_DA_NOTA, "err");
@@ -198,27 +211,40 @@ function escolherProduto(codigo, embalagem) {
   desenharConferencia();
 }
 
+// lê a doca e confirma a conferência (o saldo entra na doca e os volumes são impressos)
+function lerDoca(endereco) {
+  const erro = validarDoca(endereco);
+  if (erro) return msg($("#rcMsg"), erro, "err");
+  const r = conferir({ notaId: conf.notaId, produto: conf.produto, qtd: conf.qtd, volumes: conf.volumes, docaId: endereco.id });
+  if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
+  db = lerEstoque();
+  const nota = notaPorId(db, conf.notaId), produto = produtoPorCodigo(db, conf.produto);
+  msg($("#rcMsg"), `+${num(conf.qtd)} ${produto.codigo} na ${endereco.codigo} · ${r.volumes.length} etiqueta(s)`, "ok");
+  limparProduto();
+  desenharConferencia();
+  imprimirVolumes(r.volumes, nota, produto);
+  $("#rcInput").focus();
+}
+
 $("#rcRes").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   db = lerEstoque();
   if (b.dataset.nota) return escolherNota(notaPorId(db, +b.dataset.nota));
-  if (b.dataset.rccancelar !== undefined) { conf.produto = null; conf.embalagem = null; msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
+  if (b.dataset.rcalterar !== undefined) { conf.qtd = null; conf.volumes = null; msg($("#rcMsg"), ""); return desenharConferencia(); }
+  if (b.dataset.rccancelar !== undefined) { limparProduto(); msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
 });
 $("#rcRes").addEventListener("input", (e) => { if (e.target.form?.id === "rcQtdForm") atualizarTotal(); });
+// "Continuar": valida a quantidade (sem passar do pendente da nota) e vai para a leitura da doca
 $("#rcRes").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target;
-  const caixa = conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null;
-  const qtd = quantidadeEmUnidades(caixa, f.qtd.value || 0);
-  const r = conferir({ notaId: conf.notaId, produto: conf.produto, qtd, volumes: f.volumes.value, docaId: conf.docaId });
-  if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
   db = lerEstoque();
-  const nota = notaPorId(db, conf.notaId), produto = produtoPorCodigo(db, conf.produto);
-  msg($("#rcMsg"), `+${num(qtd)} ${produto.codigo} conferidos · ${r.volumes.length} etiqueta(s)`, "ok");
-  conf.produto = null; conf.embalagem = null;
+  const qtd = quantidadeEmUnidades(caixaBipada(), f.qtd.value || 0);
+  const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: f.volumes.value }, db.conferencias);
+  if (erro) return msg($("#rcMsg"), erro, "err");
+  conf.qtd = qtd; conf.volumes = Number(f.volumes.value);
+  msg($("#rcMsg"), "");
   desenharConferencia();
-  imprimirVolumes(r.volumes, nota, produto);
-  $("#rcInput").focus();
 });
 
 $("#rcTrocar").addEventListener("click", () => { iniciarConferencia(); $("#rcInput").focus(); });
