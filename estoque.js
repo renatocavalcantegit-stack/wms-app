@@ -1,9 +1,12 @@
 // WMS Beach Bike — app do coletor do Estoquista: Cadastro (consulta de produto, embalagem e endereçar produto).
-// Recepção, Movimentação e Auditoria entram nas próximas etapas.
-// As regras ficam em compartilhado/regras/ e os dados passam por js/dados/estoque.js.
+// A Recepção (conferência, armazenamento e consulta de recebimentos) fica em estoque-recepcao.js.
+// Movimentação e Auditoria entram nas próximas etapas.
+// As regras ficam em compartilhado/regras/ e os dados passam por js/dados/.
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
-import { show, openSheet, closeSheets, toast, beep, vibrate, openCam } from "./js/ui-coletor.js";
+import { show, openSheet, closeSheets, toast, openCam } from "./js/ui-coletor.js";
+import { num, tipoTag, msg, confirmar, cartaoProduto, escolherProduto } from "./js/ui-estoque.js";
+import { abrirRecepcao, atualizarRecepcao, resumoDoMenu } from "./estoque-recepcao.js";
 import { etiquetaHtml, rolosHtml } from "./js/etiqueta-produto.js";
 import { linhasDoRolo } from "./compartilhado/regras/etiqueta-produto.js";
 import {
@@ -18,32 +21,6 @@ import {
 
 const sess = session();
 let db = lerEstoque();
-const num = (n) => Number(n).toLocaleString("pt-BR");
-const tipoTag = (t) => `<span class="es-tipo ${t}">${TIPOS_ENDERECO[t]}</span>`;
-
-// mensagem embaixo do campo de leitura (verde = deu certo, vermelho = bloqueado)
-function msg(el, texto, tipo = "") {
-  el.textContent = texto; el.className = "scan-msg " + tipo;
-  if (tipo === "err") { beep(false); vibrate([80, 50, 80]); el.previousElementSibling?.classList.add("err"); setTimeout(() => el.previousElementSibling?.classList.remove("err"), 400); }
-  if (tipo === "ok") beep(true);
-}
-
-// confirmação com a mensagem do documento ("DESEJA REALMENTE…?")
-let aoConfirmar = null;
-function confirmar(titulo, mensagem, sub, fn) {
-  $("#scfTitulo").textContent = titulo; $("#scfMsg").textContent = mensagem; $("#scfSub").innerHTML = sub;
-  aoConfirmar = fn; openSheet("sheetConfirma");
-}
-$("#scfSim").addEventListener("click", () => { closeSheets(); aoConfirmar?.(); });
-document.addEventListener("click", (e) => { if (e.target.closest("[data-fecharsheet]")) closeSheets(); });
-
-// cartão do produto (usado nas três telas)
-const cartaoProduto = (p, extra = "") => `<div class="product es-prod">
-  <div class="product-info"><p class="product-desc">${esc(p.descricao)}</p><p class="product-meta">${esc(p.codigo)} · ${esc(p.un)}</p>${extra}</div></div>`;
-
-// lista para escolher quando a descrição digitada casa com vários produtos
-const escolherProduto = (lista, attr) => `<p class="es-h">${lista.length} produtos encontrados</p><div class="es-lista">${lista.slice(0, 30).map((p) =>
-  `<button class="line" ${attr}="${esc(p.codigo)}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span></button>`).join("")}</div>`;
 
 // =====================================================================
 // MENU
@@ -52,6 +29,7 @@ function home() {
   $("#helloName").textContent = sess.nome;
   const dt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   $("#helloDate").textContent = dt.charAt(0).toUpperCase() + dt.slice(1);
+  resumoDoMenu();
   show("viewEstHome");
 }
 $$(".es-op").forEach((b) => b.addEventListener("click", () => {
@@ -59,12 +37,15 @@ $$(".es-op").forEach((b) => b.addEventListener("click", () => {
   abrir(b.dataset.ir);
 }));
 $$("[data-voltar]").forEach((b) => b.addEventListener("click", () => { closeSheets(); home(); }));
+// a Recepção avisa quando quer voltar ao menu (ex.: depois de finalizar a nota)
+document.addEventListener("voltar-menu", home);
 
 function abrir(tela) {
   db = lerEstoque();
   if (tela === "viewConsulta") { $("#cInput").value = ""; $("#cRes").innerHTML = ""; msg($("#cMsg"), ""); }
   if (tela === "viewEmbalagem") { produtoEmb = null; $("#eInput").value = ""; $("#eRes").innerHTML = ""; msg($("#eMsg"), ""); }
   if (tela === "viewEnderecar") iniciarEnderecar();
+  if (["viewRecConf", "viewRecArm", "viewRecCons"].includes(tela)) abrirRecepcao(tela);
   show(tela);
   setTimeout(() => $(`#${tela} input`)?.focus(), 50);
 }
@@ -292,6 +273,7 @@ aoMudarEstoque(() => {
   db = lerEstoque();
   if (!$("#viewEmbalagem").hidden && produtoEmb) mostrarEmbalagens(produtoEmb);
   if (!$("#viewEnderecar").hidden && endSel) desenharEndereco();
+  atualizarRecepcao();
 });
 
 home();

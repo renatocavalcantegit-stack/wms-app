@@ -36,6 +36,36 @@
 .es-alerta { margin: 0; font-weight: 800; color: var(--red); background: var(--red-soft); border-radius: 12px; padding: 12px 14px; }
 .es-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+/* ===== Recepção: conferência, armazenamento e consulta ===== */
+.rc-res { display: flex; flex-direction: column; gap: 10px; }
+#rcTopo:not(:empty), #raTopo:not(:empty) { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rc-nota { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.rc-nota > div:first-child { display: flex; flex-direction: column; gap: 1px; }
+.rc-nota b { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 17px; }
+.rc-nota span { font-size: 13.5px; color: var(--ink-2); }
+.rc-nota small { font-size: 12px; color: var(--ink-3); }
+.rc-doca { display: flex; align-items: center; gap: 8px; }
+.rc-pend { font-size: 13px; color: var(--ink-2); }
+.rc-st { font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
+.rc-st.g { background: #EDEDF0; color: var(--ink-2); }
+.rc-st.y { background: var(--warn-soft); color: var(--warn); }
+.rc-st.v { background: var(--ok-soft); color: var(--ok); }
+.rc-st.b { background: #E8F0FE; color: #1A56DB; }
+.rc-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.rc-item.ok .line-q { color: var(--ok); }
+.rc-item .line-q small { color: var(--ink-3); font-weight: 600; }
+.rc-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rc-nums.seis { grid-template-columns: repeat(3, 1fr); margin-top: 8px; }
+.rc-nums div { background: var(--bg); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; }
+.rc-nums small { font-size: 11px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.rc-nums b { font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 17px; }
+.rc-nums b.neg { color: var(--red); }
+.rc-total { margin: -4px 2px 0; font-weight: 800; color: var(--ink); min-height: 1em; }
+.rc-total:empty { display: none; }
+.rc-cons { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
+.rc-cons .product-desc { margin: 0; }
+.rc-cons .product-meta { margin: 2px 0 0; }
+
 /* etiqueta de produto ~29 × 20 mm, 3 por linha no rolo de 90 × 20 mm: mesma peça na prévia e na impressão */
 .et { width: 29mm; height: 20mm; box-sizing: border-box; padding: 1mm 1.2mm; display: flex; flex-direction: column; gap: .5mm; background: #fff; color: #000; font-family: Inter, sans-serif; overflow: hidden; }
 .et-cod { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 6.5pt; line-height: 1.15; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

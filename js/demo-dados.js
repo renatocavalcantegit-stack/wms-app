@@ -200,16 +200,85 @@ function estoqueInicial(enderecos) {
   return { associacoes, saldos };
 }
 
+// ---------- recebimento ----------
+// fornecedores de exemplo (nomes fictícios)
+const FORNECEDORES = {
+  8558: "Pedal Sul Distribuidora", 8561: "Aro Forte Indústria", 8603: "Ciclo Peças SP", 8710: "Mundo Bike Importadora",
+};
+const fornecedor = (codigo) => ({ codigo, nome: FORNECEDORES[codigo] });
+// dia relativo a hoje, no formato AAAA-MM-DD (-1 = ontem)
+function dia(deslocamento) {
+  const d = new Date();
+  d.setDate(d.getDate() + deslocamento);
+  return d.toLocaleDateString("sv");
+}
+const notaDoErp = (numero, codFornecedor, diasAtras, itens) =>
+  ({ numero, fornecedor: fornecedor(codFornecedor), data: dia(-diasAtras), tipo: "Compra", finalizada: false,
+    itens: itens.map(([produto, qtd]) => ({ produto, qtd })) });
+
+// notas em todos os estados: aguardando, em aberto, conferida com e sem divergência, armazenamento parcial e completo.
+// O que está "na doca esperando armazenar" também entra no saldo da doca.
+function recebimentoInicial(enderecos, saldos) {
+  const doca = (n) => enderecos.find((e) => e.codigo === `R9001-P1-A100-AP${100 + n}`).id;
+  const notas = [], conferencias = [], volumes = [];
+  let idNota = 1, idConf = 1, idVol = 1;
+  const nota = (dados, finalizada) => { const n = { ...dados, id: idNota++, finalizada }; notas.push(n); return n; };
+  // uma confirmação já feita no coletor (qtd conferida, quanto já foi armazenado, em quantos volumes)
+  const conferiu = (n, produto, qtd, armazenado, nVolumes, docaN, diasAtras) => {
+    const c = { id: idConf++, notaId: n.id, produto, qtd, docaId: doca(docaN), dia: dia(-diasAtras), armazenado, cancelado: 0, volumes: [] };
+    for (let seq = 1; seq <= nVolumes; seq++) {
+      const codigo = "V" + String(idVol++).padStart(6, "0");
+      volumes.push({ codigo, notaId: n.id, produto, conferenciaId: c.id, seq, total: nVolumes });
+      c.volumes.push(codigo);
+    }
+    conferencias.push(c);
+    // o que ainda não foi armazenado está na doca
+    if (qtd > armazenado) {
+      const s = saldos.find((x) => x.enderecoId === c.docaId && x.produto === produto);
+      if (s) s.qtd += qtd - armazenado; else saldos.push({ enderecoId: c.docaId, produto, qtd: qtd - armazenado });
+    }
+  };
+
+  // conferida, sem divergência, tudo armazenado
+  const a = nota(notaDoErp("48120", 8710, 3, [["BK-29-ALU-18", 10], ["CP-MTB-M-PT", 20]]), true);
+  conferiu(a, "BK-29-ALU-18", 10, 10, 10, 1, 3); conferiu(a, "CP-MTB-M-PT", 20, 20, 2, 1, 3);
+  // conferida com divergência (faltaram 4 aros), tudo o que chegou já armazenado
+  const b = nota(notaDoErp("48190", 8561, 1, [["AR-29-PD-36", 50], ["QD-29-ALU-M", 10]]), true);
+  conferiu(b, "AR-29-PD-36", 46, 46, 4, 2, 1); conferiu(b, "QD-29-ALU-M", 10, 10, 2, 2, 1);
+  // conferida, sem divergência, armazenamento parcial (metade das câmaras ainda na doca)
+  const c = nota(notaDoErp("48155", 8603, 1, [["CM-29-PRESTA", 100], ["GF-SQ-750", 48]]), true);
+  conferiu(c, "CM-29-PRESTA", 100, 50, 2, 2, 1); conferiu(c, "GF-SQ-750", 48, 48, 2, 2, 1);
+  // em aberto: parte conferida hoje, nada armazenado ainda
+  const d = nota(notaDoErp("48213", 8558, 0, [["PN-29-225", 40], ["CM-26-SCHRAD", 50], ["SL-GEL-CONF", 30]]), false);
+  conferiu(d, "PN-29-225", 24, 0, 2, 1, 0); conferiu(d, "SL-GEL-CONF", 30, 0, 1, 1, 0);
+  // aguardando conferência
+  nota(notaDoErp("48177", 8603, 0, [["LV-GEL-G", 24], ["SN-LED-USB", 36], ["BM-PISO-AL", 6]]), false);
+  nota(notaDoErp("48201", 8558, 0, [["PN-29-225", 20], ["CM-29-PRESTA", 100], ["CR-KMC-9V", 15]]), false);
+
+  return { notas, conferencias, volumes, proximos: { nota: idNota, conferencia: idConf, volume: idVol } };
+}
+
 export function estoqueDeDemonstracao() {
   const enderecos = enderecosDeDemonstracao();
+  const inicial = estoqueInicial(enderecos);
+  const rec = recebimentoInicial(enderecos, inicial.saldos);
   return {
     enderecos,
     produtos: CATALOGO.map(doErp),
     embalagens: embalagensDeDemonstracao(),
-    ...estoqueInicial(enderecos),
-    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100 },
+    ...inicial,
+    notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,
+    movimentos: [],
+    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos },
   };
 }
+
+// o que o "ERP" manda na próxima busca de notas: duas novas e uma que já existe (para mostrar o bloqueio)
+export const importacaoDeNotas = () => [
+  notaDoErp("48230", 8561, 0, [["AR-29-PD-36", 60], ["CU-36-QR", 20]]),
+  notaDoErp("48231", 8710, 0, [["BK-26-ACO-RD", 8], ["BK-20-INF-AZ", 6], ["GF-SQ-750", 48]]),
+  notaDoErp("48177", 8603, 0, [["LV-GEL-G", 24], ["SN-LED-USB", 36], ["BM-PISO-AL", 6]]),
+];
 
 // o que o "ERP" manda na próxima importação simulada: produtos novos e um que já existe (para mostrar o bloqueio)
 export const importacaoDoErp = () => [

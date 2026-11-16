@@ -1,0 +1,17 @@
+/* ===== Etiqueta do volume do recebimento: 80 × 60 mm, uma por página (coletor e WEB) ===== */
+/* "page: volume" usa o tamanho de página próprio, sem atrapalhar as outras etiquetas da mesma tela */
+@page volume { size: 80mm 60mm; margin: 0; }
+.vr { page: volume; width: 80mm; height: 60mm; box-sizing: border-box; padding: 3mm 4mm; display: flex; flex-direction: column; justify-content: space-between;
+  background: #fff; color: #000; font-family: Inter, sans-serif; overflow: hidden; break-after: page; }
+.vr:last-child { break-after: auto; }
+.vr-topo { display: flex; justify-content: space-between; align-items: baseline; }
+.vr-cod { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 16pt; letter-spacing: -.3pt; }
+.vr-seq { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 15pt; }
+.vr-meio { display: flex; align-items: center; gap: 3mm; }
+.vr-qr { width: 32mm; height: 32mm; flex-shrink: 0; }
+.vr-txt { display: flex; flex-direction: column; min-width: 0; }
+.vr-txt small { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: .3pt; margin-top: 1mm; }
+.vr-txt span { font-size: 8pt; line-height: 1.2; }
+.vr-nf { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 16pt; line-height: 1; }
+.vr-prod { font-size: 8pt; line-height: 1.25; max-height: 2.5em; overflow: hidden; }
+.vr-prod b { font-weight: 800; }

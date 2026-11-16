@@ -17,8 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=22">
-  <link rel="stylesheet" href="estoque.css?v=22">
+  <link rel="stylesheet" href="styles.css?v=23">
+  <link rel="stylesheet" href="estoque.css?v=23">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=23">
 </head>
 <body class="es">
 
@@ -52,11 +53,20 @@
         </button>
       </div>
 
-      <p class="es-grupo">Recepção <em>Em breve</em></p>
-      <div class="es-menu soon">
-        <button class="es-op" data-soon="Conferência do recebimento"><span class="es-t"><b>Conferência</b></span></button>
-        <button class="es-op" data-soon="Armazenamento"><span class="es-t"><b>Armazenamento</b></span></button>
-        <button class="es-op" data-soon="Consulta de recebimentos"><span class="es-t"><b>Consulta de recebimentos</b></span></button>
+      <p class="es-grupo">Recepção</p>
+      <div class="es-menu">
+        <button class="es-op" data-ir="viewRecConf">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 12l2 2 4-4"/></svg></span>
+          <span class="es-t"><b>Conferência</b><small id="mnConf">Notas fiscais que chegaram</small></span>
+        </button>
+        <button class="es-op" data-ir="viewRecArm">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M12 9v4M10 11l2 2 2-2"/></svg></span>
+          <span class="es-t"><b>Armazenamento</b><small id="mnArm">Da doca para o endereço</small></span>
+        </button>
+        <button class="es-op" data-ir="viewRecCons">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><circle cx="11.5" cy="13.5" r="2.5"/><path d="M13.5 15.5L16 18"/></svg></span>
+          <span class="es-t"><b>Consulta de recebimentos</b><small>Notas, conferido e pendente</small></span>
+        </button>
       </div>
       <p class="es-grupo">Movimentação <em>Em breve</em></p>
       <div class="es-menu soon">
@@ -128,6 +138,64 @@
     </footer>
   </section>
 
+  <!-- ===== RECEPÇÃO · CONFERÊNCIA: 1) nota  2) QR da doca  3) produtos ===== -->
+  <section id="viewRecConf" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-rcvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order" id="rcTitulo">Conferência</p><p class="pick-client" id="rcPasso">1 · Escolha a nota</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <div id="rcTopo"></div>
+      <form id="rcForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+        <input id="rcInput" type="text" autocomplete="off" placeholder="Número da nota">
+        <button type="button" class="scan-cam cam-btn" data-cam="rcInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      </form>
+      <p id="rcMsg" class="scan-msg"></p>
+      <div id="rcRes" class="rc-res"></div>
+    </main>
+    <footer class="pick-foot" id="rcFoot" hidden>
+      <button id="rcTrocar" class="btn ghost">Trocar nota</button>
+      <button id="rcFinalizar" class="btn primary grow">Finalizar nota</button>
+    </footer>
+  </section>
+
+  <!-- ===== RECEPÇÃO · ARMAZENAMENTO: produto pendente → doca → produto → quantidade e QR do destino ===== -->
+  <section id="viewRecArm" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-rcvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Armazenamento</p><p class="pick-client" id="raPasso">Escolha o produto</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <div id="raTopo"></div>
+      <form id="raForm" class="scan" hidden>
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
+        <input id="raInput" type="text" autocomplete="off" placeholder="QR da doca de origem">
+        <button type="button" class="scan-cam cam-btn" data-cam="raInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      </form>
+      <p id="raMsg" class="scan-msg"></p>
+      <div id="raRes" class="rc-res"></div>
+    </main>
+  </section>
+
+  <!-- ===== RECEPÇÃO · CONSULTA DE RECEBIMENTOS (só leitura; o coletor não reimprime etiquetas) ===== -->
+  <section id="viewRecCons" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-rcvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Consulta de recebimentos</p><p class="pick-client" id="rqPasso">Recepção</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <form id="rqForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="rqInput" type="text" autocomplete="off" placeholder="Número da nota ou fornecedor">
+      </form>
+      <div id="rqRes" class="rc-res"></div>
+    </main>
+  </section>
+
   <!-- ===== SHEETS ===== -->
   <div id="scrim" class="scrim" hidden></div>
 
@@ -177,12 +245,12 @@
     <button id="camClose" class="btn ghost cam-close">Fechar</button>
   </div>
 
-  <!-- etiquetas do rolo 90 × 20 mm, 3 por linha (só aparecem na impressão) -->
+  <!-- etiquetas (só aparecem na impressão): produto no rolo 90 × 20 mm, volume do recebimento em 80 × 60 mm -->
   <div id="printArea" class="et-print"></div>
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=22"></script>
-  <script type="module" src="estoque.js?v=22"></script>
+  <script src="vendor/qrcode.js?v=23"></script>
+  <script type="module" src="estoque.js?v=23"></script>
 </body>
 </html>

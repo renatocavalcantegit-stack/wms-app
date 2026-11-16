@@ -1,4 +1,5 @@
 // WMS Beach Bike — Gestão de Estoque (WEB): cadastro de endereços, produtos/embalagens e endereçamento.
+// A aba Entrada (notas do recebimento) fica em gestao-entrada.js.
 // As regras ficam em compartilhado/regras/ e os dados passam por js/dados/estoque.js.
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
@@ -13,6 +14,7 @@ import {
   gerarLote, contarLote, andaresDoLote, aptosDoAndar,
 } from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos, validarEmbalagem, MSG_EXCLUIR_EMBALAGEM } from "./compartilhado/regras/embalagens.js";
+import { FILTROS_ENTRADA, iniciarEntrada, telaEntrada, cliqueEntrada, cliqueModalEntrada, sairDaEntrada } from "./gestao-entrada.js";
 
 const sess = session();
 let db = lerEstoque();
@@ -24,9 +26,10 @@ const FILTROS_PADRAO = {
   enderecos: { busca: "", rua: "", predio: "", tipo: "", situacao: "todos" },
   produtos: { busca: "" },
   enderecamento: { busca: "", tipo: "" },
+  entrada: FILTROS_ENTRADA,
 };
 const filtros = structuredClone(FILTROS_PADRAO);
-const pagina = { enderecos: 1, produtos: 1, enderecamento: 1 };
+const pagina = { enderecos: 1, produtos: 1, enderecamento: 1, entrada: 1 };
 let porPagina = 20;
 const selecionados = new Set(); // IDs de endereços marcados para imprimir o QR
 
@@ -377,7 +380,8 @@ function telaEnderecamento() {
 // =====================================================================
 // desenho da tela e eventos
 // =====================================================================
-const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento };
+const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento, entrada: () => telaEntrada(db, filtros.entrada) };
+iniciarEntrada({ paginar, render, abrirModal, fecharModal, toast });
 
 function render() {
   db = lerEstoque();
@@ -395,7 +399,7 @@ $("#tabs").addEventListener("click", (ev) => {
   const b = ev.target.closest(".gx-tab"); if (!b) return;
   if (b.dataset.soon) return toast(`Em breve: ${b.dataset.soon}`);
   aba = b.dataset.aba; sessionStorage.setItem("ge-aba", aba);
-  fecharProduto(); render();
+  fecharProduto(); sairDaEntrada(); render();
 });
 
 // filtros: aplicados na hora, enquanto digita ou ao escolher
@@ -417,10 +421,11 @@ $("#tela").addEventListener("change", (ev) => {
 });
 
 $("#tela").addEventListener("click", (ev) => {
-  const t = ev.target.closest("button, tr[data-produto]"); if (!t) return;
-  if (t.dataset.kpi) { Object.assign(filtros.enderecos, JSON.parse(t.dataset.kpi)); pagina.enderecos = 1; return render(); }
+  const t = ev.target.closest("button, tr[data-produto], tr[data-nota]"); if (!t) return;
+  if (t.dataset.kpi) { Object.assign(filtros[aba], JSON.parse(t.dataset.kpi)); pagina[aba] = 1; return render(); }
   if (t.dataset.limpar !== undefined) { filtros[aba] = structuredClone(FILTROS_PADRAO[aba]); selecionados.clear(); pagina[aba] = 1; return render(); }
   if (t.dataset.pag) { pagina[aba] += +t.dataset.pag; return render(); }
+  if (aba === "entrada" && cliqueEntrada(t, db)) return;
   if (t.id === "btNovo") return abrirNovoEndereco();
   if (t.id === "btLote") return abrirLote();
   if (t.id === "btQr") return imprimirQr();
@@ -457,6 +462,7 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { if (!$
 $("#modal").addEventListener("click", (ev) => {
   const t = ev.target.closest("button"); if (!t) return;
   if (t.dataset.fechar !== undefined) return fecharModal();
+  if (cliqueModalEntrada(t, db)) return;
   if (t.dataset.confdesativar) {
     const r = desativarEndereco(+t.dataset.confdesativar);
     fecharModal(); render(); return toast(r.ok ? "Endereço desativado" : r.msg);

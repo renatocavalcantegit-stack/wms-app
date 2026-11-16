@@ -14,6 +14,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   enderecos.js           endereço numérico da prateleira (R3001-P7-A100-AP101), cadastro um a um e em lote, desativar/reativar, endereço padrão
   embalagens.js          embalagens e código de barras único, busca de produto, importação do ERP
   etiqueta-produto.js    etiqueta de produto com QR: rolo 90 × 20 mm, 3 por linha
+  recebimento.js         recebimento: status da nota, conferência (soma, bloqueia acima da nota), volumes, armazenamento da doca
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -21,8 +22,11 @@ js/
   dados/separacao.js     camada de dados da Separação (único lugar que sabe onde os pedidos ficam)
   dados/conferencia.js   camada de dados da Conferência (e os pedidos que chegam da Separação)
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos
+  dados/recebimento.js   camada de dados do Recebimento: notas, conferências, volumes, armazenamento, notas do ERP
   qr.js                  desenho do QR Code em SVG
   etiqueta-produto.js    desenho da etiqueta de produto (QR em SVG, linhas de 3)
+  etiqueta-recebimento.js   etiqueta do volume do recebimento (80 × 60 mm, QR com o código do volume)
+  ui-estoque.js          pedaços de tela do coletor do Estoquista (mensagem, confirmação, cartão do produto)
   util.js                atalhos de tela: $, $$ e esc
   ui-coletor.js          aviso, bipe, troca de tela, sheets e câmera do app do coletor
 
@@ -32,7 +36,9 @@ conferencia.html + .js   Conferência (notebook com leitor)
 etiqueta.js              desenho e impressão da etiqueta de volume
 gestao.html, montagem.html + gestao.js   painéis de Gestão (ainda com simulador próprio)
 estoque.html + .js       coletor do Estoquista: consulta de produto, embalagem, endereçar produto
+estoque-recepcao.js      coletor do Estoquista, Recepção: conferência, armazenamento e consulta de recebimentos
 gestao-estoque.html + .js   Gestão de Estoque (WEB): endereços, produtos/embalagens, endereçamento
+gestao-entrada.js        Gestão de Estoque (WEB), aba Entrada: notas, detalhe, volumes, cancelar pendente
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
 testes/                  testes automatizados (rodam no Node, sem instalar nada)
@@ -65,4 +71,4 @@ e abrir http://localhost:5174.
 
 ## Publicar uma versão nova
 
-Subir o número da versão (`?v=N`) em `index.html`, `conferencia.html`, `gestao.html` e `montagem.html`, e `CACHE` / `V` no `sw.js`. Arquivo novo entra na lista `ASSETS` do `sw.js`.
+Subir o número da versão (`?v=N`) em todos os `.html`, e `CACHE` / `V` no `sw.js`. Arquivo novo entra na lista `ASSETS` do `sw.js`.

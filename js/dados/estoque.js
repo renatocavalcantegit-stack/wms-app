@@ -9,13 +9,14 @@ import {
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 
-const CHAVE = "wms-bb-estoque-v1";
+// v2: entrou o Recebimento (notas, conferências e volumes); a demonstração antiga é trocada pela nova
+const CHAVE = "wms-bb-estoque-v2";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
   try {
     const d = JSON.parse(localStorage.getItem(CHAVE));
-    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos)) return d;
+    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas)) return d;
   } catch {}
   return estoqueDeDemonstracao();
 }
@@ -23,6 +24,8 @@ export function lerEstoque() {
 function gravar(db) {
   localStorage.setItem(CHAVE, JSON.stringify(db));
 }
+// as outras camadas de dados do Estoque (ex.: recebimento) gravam pelo mesmo caminho
+export const gravarEstoque = gravar;
 
 export function reiniciarDemonstracao() {
   localStorage.removeItem(CHAVE);
@@ -47,6 +50,24 @@ export function saldosDoProduto(db, codigo) {
   return db.saldos
     .filter((s) => s.produto === codigo && s.qtd > 0)
     .map((s) => ({ endereco: enderecoPorId(db, s.enderecoId), qtd: s.qtd }));
+}
+
+// saldo de um produto num endereço
+export const saldoNoEndereco = (db, enderecoId, produto) =>
+  db.saldos.filter((s) => s.enderecoId === enderecoId && s.produto === produto).reduce((t, s) => t + s.qtd, 0);
+
+// soma (ou tira, com delta negativo) saldo de um produto num endereço. Quem chama já conferiu que não fica negativo.
+export function somarSaldo(db, enderecoId, produto, delta) {
+  let s = db.saldos.find((x) => x.enderecoId === enderecoId && x.produto === produto);
+  if (!s) { s = { enderecoId, produto, qtd: 0 }; db.saldos.push(s); }
+  s.qtd += delta;
+  // saldo zerado sai da lista (a consulta só mostra endereços com saldo)
+  if (s.qtd === 0) db.saldos = db.saldos.filter((x) => x !== s);
+}
+
+// registro de cada movimento de estoque (base do Extrato, quando os relatórios entrarem)
+export function registrarMovimento(db, movimento) {
+  db.movimentos.push({ quando: new Date().toISOString(), ...movimento });
 }
 
 // endereços padrão do produto e produtos padrão do endereço (ENDEREÇAR PRODUTO)
