@@ -1,12 +1,42 @@
-// Cadastro de endereços: formato numérico da prateleira, cadastro um a um, desativação e endereço padrão.
+// Cadastro de endereços: formato numérico da prateleira, cadastro um a um e em lote, desativação e endereço padrão.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   codigoDoEndereco, lerCodigoDoEndereco, acharEndereco, podeDesativar,
-  partesDoEndereco, validarPartes,
+  partesDoEndereco, validarPartes, gerarLote, contarLote, andaresDoLote, aptosDoAndar, MAXIMO_POR_LOTE,
   codigoEmUso, compararEnderecos, podeAssociar,
   MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_COM_TAREFA, MSG_JA_ASSOCIADO, MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO,
 } from "../compartilhado/regras/enderecos.js";
+
+// lote com os números da placa: rua 3001, prédio 1–2, andar 100–300 (de 100 em 100), apto 101–106 no 1º andar
+const LOTE = { ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 2, andarIni: 100, andarFim: 300, andarPasso: 100,
+  aptoIni: 101, aptoFim: 106, tipo: "picking" };
+
+test("lote: números da placa; os aptos do 1º andar se repetem na mesma posição nos outros andares", () => {
+  assert.deepEqual(andaresDoLote(LOTE), [100, 200, 300]);
+  assert.deepEqual(aptosDoAndar(LOTE, 300), [301, 302, 303, 304, 305, 306]);
+  assert.equal(contarLote(LOTE), 1 * 2 * 3 * 6);
+  const { enderecos } = gerarLote(LOTE);
+  assert.equal(enderecos.length, 36);
+  assert.equal(enderecos[0].codigo, "R3001-P1-A100-AP101");
+  assert.equal(enderecos[6].codigo, "R3001-P1-A200-AP201");
+  assert.deepEqual(enderecos[35], { rua: 3001, predio: 2, andar: 300, apto: 306, codigo: "R3001-P2-A300-AP306", tipo: "picking" });
+  assert.equal(new Set(enderecos.map((e) => e.codigo)).size, 36); // nenhum repetido
+  // um andar só: o apto vai exatamente como digitado
+  const umAndar = gerarLote({ ...LOTE, predioFim: 1, andarIni: 500, andarFim: 500, aptoIni: 501, aptoFim: 503, tipo: "aereo" }).enderecos;
+  assert.deepEqual(umAndar.map((e) => e.codigo), ["R3001-P1-A500-AP501", "R3001-P1-A500-AP502", "R3001-P1-A500-AP503"]);
+});
+
+test("lote: intervalos inválidos e lote grande demais são recusados com o motivo", () => {
+  assert.match(gerarLote({ ...LOTE, ruaIni: 3005, ruaFim: 3001 }).erro, /^Rua: o inicial/);
+  assert.match(gerarLote({ ...LOTE, predioIni: "" }).erro, /^Prédio/);
+  assert.match(gerarLote({ ...LOTE, aptoIni: 1.5 }).erro, /^Apartamento/);
+  assert.match(gerarLote({ ...LOTE, andarPasso: "" }).erro, /^Andar: informe de quanto/);
+  assert.match(gerarLote({ ...LOTE, andarFim: 350 }).erro, /não chega em 350/);
+  assert.match(gerarLote({ ...LOTE, aptoIni: 1, aptoFim: 6 }).erro, /^Apartamento: informe os do andar 100/);
+  assert.match(gerarLote({ ...LOTE, tipo: "" }).erro, /tipo/);
+  assert.match(gerarLote({ ...LOTE, ruaFim: 3001 + MAXIMO_POR_LOTE }).erro, /máximo/);
+});
 
 test("código do endereço: só números, no formato das prateleiras (R3001-P7-A100-AP101)", () => {
   assert.equal(codigoDoEndereco({ rua: 3001, predio: 7, andar: 100, apto: 101 }), "R3001-P7-A100-AP101");

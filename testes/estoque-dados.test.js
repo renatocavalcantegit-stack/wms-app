@@ -3,10 +3,10 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
 import {
-  lerEstoque, criarEndereco, desativarEndereco, reativarEndereco, importarProdutosDoErp,
+  lerEstoque, criarEndereco, criarEnderecos, desativarEndereco, reativarEndereco, importarProdutosDoErp,
   salvarEmbalagem, excluirEmbalagem, associarProduto, removerAssociacao, saldosDoProduto, saldoDoEndereco,
 } from "../js/dados/estoque.js";
-import { MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_EM_USO, MSG_JA_ASSOCIADO } from "../compartilhado/regras/enderecos.js";
+import { gerarLote, MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_EM_USO, MSG_JA_ASSOCIADO } from "../compartilhado/regras/enderecos.js";
 import { MSG_CODIGO_DUPLICADO, MSG_PRODUTO_JA_IMPORTADO } from "../compartilhado/regras/embalagens.js";
 
 beforeEach(limparArmazenamento);
@@ -31,6 +31,16 @@ test("novo endereço: os números da prateleira viram o código, com ID novo; re
   assert.deepEqual(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: 110, tipo: "picking" }), { ok: false, msg: MSG_ENDERECO_EM_USO });
   assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: "", tipo: "picking" }).msg, /^Apartamento/);
   assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: 111, tipo: "" }).msg, /tipo/);
+});
+
+test("lote: grava com IDs novos e pula o que já existe ativo", () => {
+  const { enderecos } = gerarLote({ ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 1, andarIni: 100, andarFim: 300,
+    andarPasso: 100, aptoIni: 101, aptoFim: 110, tipo: "picking" });
+  const r = criarEnderecos(enderecos, " ");
+  assert.deepEqual(r, { criados: 12, ignorados: 18 }); // x01 a x06 dos 3 andares já existiam
+  assert.equal(porCodigo("R3001-P1-A300-AP310").deposito, "Principal");
+  const ids = lerEstoque().enderecos.map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length); // nenhum ID repetido
 });
 
 test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {

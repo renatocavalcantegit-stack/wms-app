@@ -72,6 +72,20 @@ export function criarEndereco({ rua, predio, andar, apto, tipo, deposito }) {
   return { ok: true, endereco: novo };
 }
 
+// grava os endereços gerados em lote; os que já existem ativos com o mesmo código são pulados (não duplica)
+export function criarEnderecos(novos, deposito) {
+  const db = lerEstoque();
+  const ativos = new Set(db.enderecos.filter((e) => e.ativo).map((e) => e.codigo));
+  let criados = 0, ignorados = 0;
+  for (const e of novos) {
+    if (ativos.has(e.codigo)) { ignorados++; continue; }
+    db.enderecos.push({ ...e, id: db.proximoId.endereco++, deposito: String(deposito || "").trim() || "Principal", ativo: true, substituidoPor: null });
+    ativos.add(e.codigo); criados++;
+  }
+  gravar(db);
+  return { criados, ignorados };
+}
+
 export function desativarEndereco(id) {
   const db = lerEstoque();
   const e = enderecoPorId(db, id);

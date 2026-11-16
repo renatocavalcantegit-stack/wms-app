@@ -21,6 +21,77 @@ export function validarPartes({ rua, predio, andar, apto }) {
 // as partes como números (o formulário entrega texto: "3001" → 3001)
 export const partesDoEndereco = ({ rua, predio, andar, apto }) => ({ rua: +rua, predio: +predio, andar: +andar, apto: +apto });
 
+// ---------- criação em lote ----------
+// Também com os números da placa. Ex.: rua 3001 a 3001, prédio 1 a 6, andar 100 a 300 de 100 em 100,
+// apto 101 a 106 (os do 1º andar). Nos outros andares o apartamento repete a posição: 201–206, 301–306.
+
+// limite de endereços criados de uma vez (evita travar a tela com um intervalo digitado errado)
+export const MAXIMO_POR_LOTE = 5000;
+
+// valida um intervalo "inicial / final" (números inteiros a partir de 1, inicial ≤ final)
+function intervalo(nome, ini, fim) {
+  const a = Number(ini), b = Number(fim);
+  if (ini === "" || fim === "" || !Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1)
+    return `${nome}: informe números inteiros a partir de 1.`;
+  if (a > b) return `${nome}: o inicial não pode ser maior que o final.`;
+  return null;
+}
+
+// confere o formulário do lote; devolve o motivo do erro ou null
+export function validarLote(f) {
+  const erro = intervalo("Rua", f.ruaIni, f.ruaFim) || intervalo("Prédio", f.predioIni, f.predioFim)
+    || intervalo("Andar", f.andarIni, f.andarFim) || intervalo("Apartamento", f.aptoIni, f.aptoFim);
+  if (erro) return erro;
+  const passo = Number(f.andarPasso);
+  if (!Number.isInteger(passo) || passo < 1) return "Andar: informe de quanto em quanto sobe (ex.: 100).";
+  if ((f.andarFim - f.andarIni) % passo !== 0)
+    return `Andar: de ${f.andarIni} subindo de ${passo} em ${passo} não chega em ${f.andarFim}.`;
+  // com mais de um andar, o apto do 1º andar começa pelo número do andar (andar 100 → apto 101), senão não dá para repetir
+  if (+f.andarFim > +f.andarIni && +f.aptoIni < +f.andarIni)
+    return `Apartamento: informe os do andar ${f.andarIni} como estão na placa (ex.: ${+f.andarIni + 1} a ${+f.andarIni + 6}).`;
+  if (!TIPOS_ENDERECO[f.tipo]) return "Escolha o tipo do endereço.";
+  const total = contarLote(f);
+  if (total > MAXIMO_POR_LOTE) return `O lote geraria ${total} endereços. O máximo de uma vez é ${MAXIMO_POR_LOTE}.`;
+  return null;
+}
+
+// os andares do lote: 100, 200, 300 (do inicial ao final, de "passo" em "passo")
+export function andaresDoLote(f) {
+  const lista = [];
+  for (let andar = +f.andarIni; andar <= +f.andarFim; andar += +f.andarPasso) lista.push(andar);
+  return lista;
+}
+
+// os apartamentos de um andar: a mesma posição dos do 1º andar (101–106 no andar 100 → 201–206 no andar 200)
+export function aptosDoAndar(f, andar) {
+  const lista = [];
+  for (let apto = +f.aptoIni; apto <= +f.aptoFim; apto++) lista.push(apto - +f.andarIni + andar);
+  return lista;
+}
+
+// quantos endereços o lote vai gerar (para mostrar antes de criar)
+export function contarLote(f) {
+  const n = (ini, fim) => Math.max(0, Number(fim) - Number(ini) + 1);
+  const andares = Math.max(0, Math.floor((f.andarFim - f.andarIni) / f.andarPasso) + 1);
+  return n(f.ruaIni, f.ruaFim) * n(f.predioIni, f.predioFim) * andares * n(f.aptoIni, f.aptoFim);
+}
+
+// gera todos os endereços do lote (rua × prédio × andar × apartamento), na ordem de caminhada.
+// Devolve { erro } ou { enderecos: [{ rua, predio, andar, apto, codigo, tipo }] } — sem ID; quem grava dá o ID.
+export function gerarLote(f) {
+  const erro = validarLote(f);
+  if (erro) return { erro };
+  const enderecos = [];
+  for (let rua = +f.ruaIni; rua <= +f.ruaFim; rua++)
+    for (let predio = +f.predioIni; predio <= +f.predioFim; predio++)
+      for (const andar of andaresDoLote(f))
+        for (const apto of aptosDoAndar(f, andar)) {
+          const partes = { rua, predio, andar, apto };
+          enderecos.push({ ...partes, codigo: codigoDoEndereco(partes), tipo: f.tipo });
+        }
+  return { enderecos };
+}
+
 // monta o código impresso na prateleira a partir das partes
 export const codigoDoEndereco = ({ rua, predio, andar, apto }) => `R${rua}-P${predio}-A${andar}-AP${apto}`;
 
