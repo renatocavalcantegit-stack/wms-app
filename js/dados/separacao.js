@@ -4,8 +4,9 @@
 // sem precisar mudar as telas.
 import { seedSeparacao, seedSeparacaoMont } from "../demo-dados.js";
 
+// v2: endereços no formato numérico das prateleiras (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v1" : "wms-bb-sep-v1");
+const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v2" : "wms-bb-sep-v2");
 
 // pedidos de demonstração do setor (usados no primeiro acesso e em "reiniciar demonstração")
 export const pedidosDeDemonstracao = (setor) => (setor === "mont" ? seedSeparacaoMont() : seedSeparacao());

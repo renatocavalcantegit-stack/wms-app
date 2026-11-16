@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0E0E10">
+  <title>WMS Beach Bike · Gestão de Estoque</title>
+  <script>
+    try { var s = JSON.parse(localStorage.getItem("wms-bb-session")); if (!s || s.perfil !== "gest") location.replace("./"); }
+    catch (e) { location.replace("./"); }
+  </script>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="gestao.css?v=17">
+  <link rel="stylesheet" href="gestao-estoque.css?v=17">
+</head>
+<body class="ge">
+
+  <header class="gx-top">
+    <img src="assets/logo.png" alt="Beach Bike Atacado" class="gx-logo">
+    <span class="gx-mod">Gestão de Estoque</span>
+
+    <!-- menu do documento: CADASTRO agora; ENTRADA, MOVIMENTAÇÃO e AUDITORIA nas próximas etapas -->
+    <nav class="gx-tabs" id="tabs">
+      <button class="gx-tab" data-aba="enderecos">
+        <svg viewBox="0 0 24 24"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg>
+        Endereços
+      </button>
+      <button class="gx-tab" data-aba="produtos">
+        <svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
+        Produtos
+      </button>
+      <button class="gx-tab" data-aba="enderecamento">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        Endereçamento
+      </button>
+      <button class="gx-tab soon" data-soon="Entrada (recebimento)">Entrada <em>Em breve</em></button>
+      <button class="gx-tab soon" data-soon="Movimentação (abastecimento e transferência)">Movimentação <em>Em breve</em></button>
+      <button class="gx-tab soon" data-soon="Inventário">Inventário <em>Em breve</em></button>
+      <button class="gx-tab soon" data-soon="Relatórios">Relatórios <em>Em breve</em></button>
+    </nav>
+
+    <div class="gx-tools">
+      <button id="userBtn" class="gx-user">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+        <span id="userName"></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="tela" class="ge-main"></main>
+
+  <!-- detalhe do produto -->
+  <div id="drScrim" class="gx-scrim" hidden></div>
+  <aside id="drawer" class="gx-drawer" hidden></aside>
+
+  <!-- modais -->
+  <div id="mScrim" class="gx-scrim top" hidden></div>
+  <div id="modal" class="gx-modal" hidden></div>
+
+  <!-- etiquetas de QR dos endereços (só aparece na impressão) -->
+  <div id="printArea" class="ge-print"></div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="vendor/qrcode.js?v=17"></script>
+  <script type="module" src="gestao-estoque.js?v=17"></script>
+</body>
+</html>

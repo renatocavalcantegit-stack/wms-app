@@ -1,4 +1,4 @@
-// WMS Beach Bike — utilitários de tela do app do coletor (index.html): Separação e Embarque.
+// WMS Beach Bike — utilitários de tela do app do coletor: Separação e Embarque (index.html) e Estoque (estoque.html).
 import { $, $$ } from "./util.js";
 import { session } from "./sessao.js";
 
@@ -30,7 +30,11 @@ export function beep(ok = true) {
 }
 
 // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)
-const ACCESS = { sep: ["viewSetor", "viewHome", "viewPick", "viewDone"], emb: ["viewEmbHome", "viewLoad", "viewLoadDone"] };
+const ACCESS = {
+  sep: ["viewSetor", "viewHome", "viewPick", "viewDone"],
+  emb: ["viewEmbHome", "viewLoad", "viewLoadDone"],
+  estq: ["viewEstHome", "viewConsulta", "viewEmbalagem", "viewEnderecar"],
+};
 export function show(id) {
   const sess = session();
   if (id !== "viewLogin" && !(sess && (ACCESS[sess.perfil] || []).includes(id))) id = "viewLogin";

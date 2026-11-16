@@ -8,8 +8,10 @@ export const USERS = [
   { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
   { login: "coordenador", nome: "Usuário Coordenador", perfil: "coord", pin: "4444" },
   { login: "montagem", nome: "Coordenador de Montagem", perfil: "coordmont", pin: "5555" },
+  { login: "estoquista", nome: "Usuário Estoquista", perfil: "estq", pin: "6666" },
+  { login: "gestorestoque", nome: "Gestor de Estoque", perfil: "gest", pin: "7777" },
 ];
-export const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque", coord: "Gestão de Expedição", coordmont: "Gestão de Montagem" };
+export const PERFIS = { sep: "Separação", conf: "Conferência", emb: "Embarque", coord: "Gestão de Expedição", coordmont: "Gestão de Montagem", estq: "Estoque", gest: "Gestão de Estoque" };
 // setor onde o separador / conferente está atuando (escolhido no login, trocado pelo perfil)
 export const SETORES = { exp: "Expedição", mont: "Montagem" };
 export const temSetor = (perfil) => perfil === "sep" || perfil === "conf";
@@ -38,4 +40,5 @@ export const setSetor = (setor) => {
   return s;
 };
 // página de cada perfil
-export const homeUrl = (perfil) => ({ conf: "conferencia.html", coord: "gestao.html", coordmont: "montagem.html" }[perfil] || "./");
+export const homeUrl = (perfil) =>
+  ({ conf: "conferencia.html", coord: "gestao.html", coordmont: "montagem.html", estq: "estoque.html", gest: "gestao-estoque.html" }[perfil] || "./");

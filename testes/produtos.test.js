@@ -14,9 +14,9 @@ test("find: código desconhecido devolve null", () => {
   assert.equal(find("999"), null);
 });
 
-test("routeSort: ordena os itens pelo endereço (rua > prédio > nível > posição), comparando números", () => {
-  const pedido = { itens: [{ end: "B-01-1-01" }, { end: "A-10-1-01" }, { end: "A-9-1-01" }, { end: "A-01-1-05" }, { end: "A-01-1-02" }] };
+test("routeSort: ordena os itens pelo endereço (rua > prédio > andar > apartamento), comparando números", () => {
+  const pedido = { itens: [{ end: "R3002-P1-A100-AP101" }, { end: "R3001-P10-A100-AP101" }, { end: "R3001-P9-A100-AP101" }, { end: "R3001-P1-A100-AP105" }, { end: "R3001-P1-A100-AP102" }] };
   const ordenado = routeSort(pedido);
   assert.equal(ordenado, pedido); // ordena o próprio pedido
-  assert.deepEqual(pedido.itens.map((i) => i.end), ["A-01-1-02", "A-01-1-05", "A-9-1-01", "A-10-1-01", "B-01-1-01"]);
+  assert.deepEqual(pedido.itens.map((i) => i.end), ["R3001-P1-A100-AP102", "R3001-P1-A100-AP105", "R3001-P9-A100-AP101", "R3001-P10-A100-AP101", "R3002-P1-A100-AP101"]);
 });

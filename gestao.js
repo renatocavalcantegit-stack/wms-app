@@ -12,7 +12,7 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const MONT = document.body.dataset.setor === "mont", SETOR = MONT ? "mont" : "exp";
   if (!sess || sess.perfil !== (MONT ? "coordmont" : "coord")) { location.replace("./"); return; }
 
-  const STORE = MONT ? "wms-bb-gestao-mont-v1" : "wms-bb-gestao-v2";
+  const STORE = MONT ? "wms-bb-gestao-mont-v2" : "wms-bb-gestao-v3";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));

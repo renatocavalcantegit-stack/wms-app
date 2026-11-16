@@ -1,10 +1,13 @@
 // Service worker: mantém o app funcionando offline.
-const CACHE = "wms-bb-v16";
-const V = "?v=16";
+const CACHE = "wms-bb-v17";
+const V = "?v=17";
 const ASSETS = ["./", "index.html", "conferencia.html", "gestao.html", "montagem.html", "gestao.css" + V, "gestao.js" + V, "styles.css" + V, "app.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V,
+  "estoque.html", "gestao-estoque.html", "estoque.css" + V, "estoque.js" + V, "gestao-estoque.css" + V, "gestao-estoque.js" + V,
   // módulos importados pelas telas (o import não leva ?v; o service worker busca sempre a versão nova na rede)
   "etiqueta.js", "embarque.js", "js/util.js", "js/ui-coletor.js", "js/sessao.js", "js/demo-dados.js", "js/dados/separacao.js", "js/dados/conferencia.js",
   "compartilhado/regras/rotas.js", "compartilhado/regras/volumes.js", "compartilhado/regras/etiqueta-volume.js", "compartilhado/regras/produtos.js",
+  "js/qr.js", "js/etiqueta-produto.js", "js/dados/estoque.js",
+  "compartilhado/regras/enderecos.js", "compartilhado/regras/embalagens.js", "compartilhado/regras/codigo-barras.js",
   "manifest.json", "assets/logo.png", "assets/icon.svg", "assets/icon-180.png", "assets/icon-192.png", "assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {

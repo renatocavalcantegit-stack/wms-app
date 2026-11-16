@@ -142,6 +142,7 @@ input { font: inherit; color: inherit; }
 .addr-parts { display: flex; gap: 8px; margin-top: 10px; position: relative; z-index: 1; }
 .addr-part { flex: 1; background: #1E1E22; border-radius: 12px; padding: 8px 4px 6px; text-align: center; }
 .addr-part b { display: block; font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 30px; line-height: 1.05; }
+.addr-part.long b { font-size: 24px; padding-top: 4px; }
 .addr-part small { font-size: 10px; color: #9D9DA8; text-transform: uppercase; letter-spacing: .8px; }
 
 .product { background: var(--card); border-radius: var(--radius); padding: 14px; display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow); }

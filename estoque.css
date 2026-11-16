@@ -1,0 +1,56 @@
+/* ===== Coletor do Estoquista — mesmo visual do app de separação ===== */
+.es-grupo { margin: 18px 2px 8px; font-size: 12px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
+.es-grupo em { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; background: #E6E6EA; color: var(--ink-3); padding: 2px 6px; border-radius: 5px; }
+.es-menu { display: flex; flex-direction: column; gap: 10px; }
+.es-op { display: flex; align-items: center; gap: 14px; text-align: left; padding: 14px; border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); transition: transform .1s; }
+.es-op:active { transform: scale(.98); }
+.es-ico { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0; background: var(--red-soft); }
+.es-ico svg { width: 26px; height: 26px; fill: none; stroke: var(--red); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.es-t { display: flex; flex-direction: column; gap: 2px; }
+.es-t b { font-size: 15.5px; }
+.es-t small { font-size: 12.5px; color: var(--ink-3); }
+.es-menu.soon { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.es-menu.soon .es-op { padding: 12px 14px; box-shadow: none; border: 1.5px dashed #D4D4DA; background: transparent; color: var(--ink-3); }
+.es-menu.soon .es-t b { font-size: 13.5px; font-weight: 600; }
+
+.es-h { margin: 6px 2px 0; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-3); }
+.es-lista { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2px 12px; display: flex; flex-direction: column; }
+.es-lista .line { padding: 11px 0; }
+.es-lista .line-addr { font-size: 11.5px; }
+.es-lista .empty { padding: 18px 0; margin: 0; font-size: 13.5px; }
+#cRes, #eRes, #aRes { display: flex; flex-direction: column; gap: 10px; }
+.es-prod .product-info { flex: 1; }
+.es-total { display: flex; justify-content: space-between; align-items: center; background: var(--ink); color: #fff; border-radius: var(--radius); padding: 14px 16px; }
+.es-total span { font-size: 13px; color: #B9B9C2; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+.es-total b { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 28px; }
+.es-tipo { font-size: 10px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
+.es-tipo.picking { background: var(--red-soft); color: var(--red); }
+.es-tipo.aereo { background: var(--ink); color: #fff; }
+.es-tipo.doca { background: var(--warn-soft); color: var(--warn); }
+.es-qtd { font-weight: 700; color: var(--ink-2); margin-left: 4px; }
+.es-mini { height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 12.5px; font-weight: 600; color: var(--ink-2); background: var(--card); flex-shrink: 0; }
+.es-mini.red { color: var(--red); }
+.es-pronto { margin: 6px 0 0; font-size: 12.5px; font-weight: 700; color: var(--ok); }
+.es-addr::after { display: none; }
+.es-form { display: flex; flex-direction: column; gap: 12px; }
+.es-alerta { margin: 0; font-weight: 800; color: var(--red); background: var(--red-soft); border-radius: 12px; padding: 12px 14px; }
+.es-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* etiqueta 90 × 20 mm: mesma peça na prévia e na impressão */
+.et { width: 90mm; height: 20mm; box-sizing: border-box; padding: 1.2mm 3mm; display: flex; flex-direction: column; justify-content: space-between; background: #fff; color: #000; font-family: Inter, sans-serif; overflow: hidden; }
+.et-top { display: flex; gap: 2mm; align-items: baseline; white-space: nowrap; overflow: hidden; }
+.et-top b { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 8.5pt; }
+.et-top span { font-size: 7pt; overflow: hidden; text-overflow: ellipsis; }
+.et-barras { width: 100%; height: 9mm; display: block; }
+.et-num { font-size: 6.5pt; text-align: center; letter-spacing: .3px; }
+.et-previa { display: grid; place-items: center; background: var(--bg); border-radius: 14px; padding: 14px 6px; overflow: hidden; }
+.et-previa .et { border: 1px dashed #C9C9D1; transform-origin: center; }
+@media (max-width: 380px) { .et-previa .et { transform: scale(.85); } }
+.et-print { display: none; }
+@media print {
+  @page { size: 90mm 20mm; margin: 0; }
+  body.es > *:not(.et-print) { display: none !important; }
+  body.es { background: #fff; }
+  .et-print { display: block; }
+  .et-print .et { break-after: page; }
+}

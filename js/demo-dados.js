@@ -29,14 +29,15 @@ export const COMPONENTES = [
   { sku: "PE-3X-170", ean: "7891000400074", desc: "Pedivela Triplo 170 mm", tipo: "peca", preco: 119.9 },
   { sku: "CU-36-QR", ean: "7891000400081", desc: "Par de Cubos 36 Furos Blocagem", tipo: "peca", preco: 99.9 },
 ];
+// endereço de picking de cada produto, no formato das prateleiras (rua-prédio-andar-apartamento, só números)
 export const ENDERECOS = {
-  "BK-29-ALU-18": "A-01-1-02", "BK-26-ACO-RD": "A-01-1-05", "BK-20-INF-AZ": "A-02-1-01",
-  "CM-29-PRESTA": "B-03-2-04", "CM-26-SCHRAD": "B-03-2-06", "PN-29-225": "B-04-1-02",
-  "CP-MTB-M-PT": "C-01-3-01", "LV-GEL-G": "C-02-2-03", "SN-LED-USB": "C-02-3-05",
-  "CR-KMC-9V": "B-05-2-01", "PD-PLAT-AL": "B-05-3-02", "GF-SQ-750": "C-03-1-04",
-  "BM-PISO-AL": "C-04-1-01", "SL-GEL-CONF": "B-06-2-03",
-  "QD-29-ALU-M": "D-01-1-01", "AR-29-PD-36": "D-01-2-03", "GD-MTB-680": "D-02-1-02", "MS-31-60": "D-02-2-01",
-  "FR-VB-KIT": "D-03-1-04", "CB-TR-7V": "D-03-2-02", "PE-3X-170": "D-04-1-01", "CU-36-QR": "D-04-2-03",
+  "BK-29-ALU-18": "R3001-P1-A100-AP102", "BK-26-ACO-RD": "R3001-P1-A100-AP105", "BK-20-INF-AZ": "R3001-P2-A100-AP101",
+  "CM-29-PRESTA": "R3002-P3-A200-AP204", "CM-26-SCHRAD": "R3002-P3-A200-AP206", "PN-29-225": "R3002-P4-A100-AP102",
+  "CP-MTB-M-PT": "R3003-P1-A300-AP301", "LV-GEL-G": "R3003-P2-A200-AP203", "SN-LED-USB": "R3003-P2-A300-AP305",
+  "CR-KMC-9V": "R3002-P5-A200-AP201", "PD-PLAT-AL": "R3002-P5-A300-AP302", "GF-SQ-750": "R3003-P3-A100-AP104",
+  "BM-PISO-AL": "R3003-P4-A100-AP101", "SL-GEL-CONF": "R3002-P6-A200-AP203",
+  "QD-29-ALU-M": "R3004-P1-A100-AP101", "AR-29-PD-36": "R3004-P1-A200-AP203", "GD-MTB-680": "R3004-P2-A100-AP102", "MS-31-60": "R3004-P2-A200-AP201",
+  "FR-VB-KIT": "R3004-P3-A100-AP104", "CB-TR-7V": "R3004-P3-A200-AP202", "PE-3X-170": "R3004-P4-A100-AP101", "CU-36-QR": "R3004-P4-A200-AP203",
 };
 const CATALOGO = [...PRODUTOS, ...COMPONENTES];
 
@@ -131,3 +132,88 @@ export const seedEmbarque = () => {
 
 // setor atual de cada pessoa nos painéis (demonstração; no sistema real vem do app de cada um)
 export const EQUIPE_SETOR = { s5: "mont", s6: "mont", c4: "mont" };
+
+// =====================================================================
+// ESTOQUE (antes da venda): endereços, produtos do ERP, embalagens, endereço padrão e saldos
+// =====================================================================
+
+// dados que o ERP manda de cada produto (exemplo do documento do estoquista; integração ainda simulada)
+const doErp = (p, i) => ({
+  codigo: p.sku, descricao: p.desc, un: "UN",
+  fornecedor: [8558, 8561, 8603, 8710][i % 4], grupo: { bike: 21, peca: 22, acess: 23 }[p.tipo], subgrupo: null,
+  estoqueMin: null, estoqueMax: p.tipo === "bike" ? 40 : 100,
+  controlaValidade: false, controlaLote: false, controlaSerie: false,
+  pesoBruto: { bike: 14.8, peca: 0.394, acess: 0.21 }[p.tipo], pesoLiquido: null, shelflife: null,
+});
+
+// endereços de demonstração: ruas 3001 a 3004, prédios 1 a 6;
+// andares 100, 200 e 300 são picking (apartamentos x01 a x06) e o andar 500 é aéreo (501 a 503).
+// Docas na rua 9001. O ID é o que vai no QR da prateleira.
+function enderecosDeDemonstracao() {
+  const lista = [];
+  let id = 607500;
+  const add = (rua, predio, andar, apto, tipo) =>
+    lista.push({ id: id++, rua, predio, andar, apto, codigo: `R${rua}-P${predio}-A${andar}-AP${apto}`, tipo, deposito: "Principal", ativo: true, substituidoPor: null });
+  for (let rua = 3001; rua <= 3004; rua++)
+    for (let predio = 1; predio <= 6; predio++) {
+      for (const andar of [100, 200, 300]) for (let a = 1; a <= 6; a++) add(rua, predio, andar, andar + a, "picking");
+      for (let a = 1; a <= 3; a++) add(rua, predio, 500, 500 + a, "aereo");
+    }
+  for (let a = 1; a <= 4; a++) add(9001, 1, 100, 100 + a, "doca");
+  // dois endereços já desativados, para mostrar o filtro de INATIVOS
+  lista.find((e) => e.codigo === "R3004-P6-A500-AP503").ativo = false;
+  lista.find((e) => e.codigo === "R3004-P6-A300-AP306").ativo = false;
+  return lista;
+}
+
+// embalagens: todo produto tem a "Unidade" com o EAN; alguns têm caixa/pacote (com ou sem código)
+function embalagensDeDemonstracao() {
+  let id = 1;
+  const lista = CATALOGO.map((p) => ({ id: id++, produto: p.sku, codigo: p.ean, descricao: "Unidade", qtd: 1 }));
+  const extra = (produto, codigo, descricao, qtd) => lista.push({ id: id++, produto, codigo, descricao, qtd });
+  extra("CM-29-PRESTA", "17891000200015", "Caixa com 50", 50);
+  extra("CM-26-SCHRAD", "17891000200022", "Caixa com 50", 50);
+  extra("GF-SQ-750", "17891000300043", "Caixa com 24", 24);
+  extra("LV-GEL-G", "", "Pacote com 12", 12); // sem código: localizado pelo código interno ou descrição
+  extra("PN-29-225", "17891000200039", "Fardo com 10", 10);
+  return lista;
+}
+
+// saldos iniciais: cada produto no seu picking e, os mais volumosos, também no aéreo
+function estoqueInicial(enderecos) {
+  const porCodigo = (c) => enderecos.find((e) => e.codigo === c);
+  const associacoes = [], saldos = [];
+  const aereo = { "BK-29-ALU-18": "R3001-P1-A500-AP501", "BK-26-ACO-RD": "R3001-P1-A500-AP502", "BK-20-INF-AZ": "R3001-P2-A500-AP501",
+    "PN-29-225": "R3002-P4-A500-AP501", "CM-29-PRESTA": "R3002-P3-A500-AP501", "QD-29-ALU-M": "R3004-P1-A500-AP501" };
+  CATALOGO.forEach((p, i) => {
+    const pick = porCodigo(ENDERECOS[p.sku]);
+    associacoes.push({ produto: p.sku, enderecoId: pick.id });
+    saldos.push({ enderecoId: pick.id, produto: p.sku, qtd: p.tipo === "bike" ? 6 + (i % 5) : 20 + ((i * 7) % 40) });
+    if (aereo[p.sku]) {
+      const a = porCodigo(aereo[p.sku]);
+      associacoes.push({ produto: p.sku, enderecoId: a.id });
+      saldos.push({ enderecoId: a.id, produto: p.sku, qtd: p.tipo === "bike" ? 24 : 120 });
+    }
+  });
+  // um produto guardado fora do endereço padrão (aparece na consulta, mesmo sem associação)
+  saldos.push({ enderecoId: porCodigo("R3003-P5-A500-AP501").id, produto: "GF-SQ-750", qtd: 48 });
+  return { associacoes, saldos };
+}
+
+export function estoqueDeDemonstracao() {
+  const enderecos = enderecosDeDemonstracao();
+  return {
+    enderecos,
+    produtos: CATALOGO.map(doErp),
+    embalagens: embalagensDeDemonstracao(),
+    ...estoqueInicial(enderecos),
+    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100 },
+  };
+}
+
+// o que o "ERP" manda na próxima importação simulada: produtos novos e um que já existe (para mostrar o bloqueio)
+export const importacaoDoErp = () => [
+  { sku: "CM-20-SCHRAD", desc: "Câmara de Ar Aro 20 Schrader", tipo: "peca" },
+  { sku: "FL-DIANT-USB", desc: "Farol Dianteiro LED USB 300 lm", tipo: "acess" },
+  { sku: "BK-29-ALU-18", desc: "Bicicleta Aro 29 Alumínio 21v Preta", tipo: "bike" },
+].map(doErp);

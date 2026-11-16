@@ -60,3 +60,9 @@ test("homeUrl: cada perfil vai para a sua tela", () => {
   assert.equal(homeUrl("sep"), "./");
   assert.equal(homeUrl("emb"), "./");
 });
+
+test("estoque: o estoquista vai para o coletor do estoque e o gestor para o painel WEB", () => {
+  assert.equal(homeUrl("estq"), "estoque.html");
+  assert.equal(homeUrl("gest"), "gestao-estoque.html");
+  assert.equal(temSetor("estq"), false); // estoquista não escolhe Expedição/Montagem
+});

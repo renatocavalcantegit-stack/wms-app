@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F5F5F7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>WMS Beach Bike · Estoque</title>
+  <script>
+    try { var s = JSON.parse(localStorage.getItem("wms-bb-session")); if (!s || s.perfil !== "estq") location.replace("./"); }
+    catch (e) { location.replace("./"); }
+  </script>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="estoque.css?v=17">
+</head>
+<body class="es">
+
+  <!-- ===== MENU (mesma organização do documento do estoquista) ===== -->
+  <section id="viewEstHome" class="view" hidden>
+    <header class="appbar">
+      <img src="assets/logo.png" alt="Beach Bike Atacado" class="appbar-logo">
+      <button id="btnMenu" class="icon-btn menu-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+      </button>
+    </header>
+    <main class="home">
+      <div class="hello">
+        <p class="hello-kicker" id="helloDate"></p>
+        <h1 class="hello-title">Olá, <span id="helloName"></span></h1>
+      </div>
+
+      <p class="es-grupo">Cadastro</p>
+      <div class="es-menu">
+        <button class="es-op" data-ir="viewConsulta">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+          <span class="es-t"><b>Consulta de produto</b><small>Onde está, quanto tem e etiqueta</small></span>
+        </button>
+        <button class="es-op" data-ir="viewEmbalagem">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span>
+          <span class="es-t"><b>Cadastro de embalagem</b><small>Unidade, caixa, fardo e códigos de barras</small></span>
+        </button>
+        <button class="es-op" data-ir="viewEnderecar">
+          <span class="es-ico"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+          <span class="es-t"><b>Endereçar produto</b><small>Define o endereço padrão do produto</small></span>
+        </button>
+      </div>
+
+      <p class="es-grupo">Recepção <em>Em breve</em></p>
+      <div class="es-menu soon">
+        <button class="es-op" data-soon="Conferência do recebimento"><span class="es-t"><b>Conferência</b></span></button>
+        <button class="es-op" data-soon="Armazenamento"><span class="es-t"><b>Armazenamento</b></span></button>
+        <button class="es-op" data-soon="Consulta de recebimentos"><span class="es-t"><b>Consulta de recebimentos</b></span></button>
+      </div>
+      <p class="es-grupo">Movimentação <em>Em breve</em></p>
+      <div class="es-menu soon">
+        <button class="es-op" data-soon="Abastecimento"><span class="es-t"><b>Abastecimento</b></span></button>
+        <button class="es-op" data-soon="Transferência"><span class="es-t"><b>Transferência</b></span></button>
+      </div>
+      <p class="es-grupo">Auditoria <em>Em breve</em></p>
+      <div class="es-menu soon">
+        <button class="es-op" data-soon="Inventário"><span class="es-t"><b>Inventário</b></span></button>
+      </div>
+    </main>
+  </section>
+
+  <!-- ===== CONSULTA DE PRODUTO ===== -->
+  <section id="viewConsulta" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Consulta de produto</p><p class="pick-client">Cadastro</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <form id="cForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+        <input id="cInput" type="text" autocomplete="off" placeholder="Bipe o código de barras ou digite o código">
+        <button type="button" class="scan-cam cam-btn" data-cam="cInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      </form>
+      <p id="cMsg" class="scan-msg"></p>
+      <div id="cRes"></div>
+    </main>
+  </section>
+
+  <!-- ===== CADASTRO DE EMBALAGEM ===== -->
+  <section id="viewEmbalagem" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Cadastro de embalagem</p><p class="pick-client">Cadastro</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <form id="eForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="eInput" type="text" autocomplete="off" placeholder="Código interno ou descrição do produto">
+      </form>
+      <p id="eMsg" class="scan-msg"></p>
+      <div id="eRes"></div>
+    </main>
+  </section>
+
+  <!-- ===== ENDEREÇAR PRODUTO ===== -->
+  <section id="viewEnderecar" class="view pick" hidden>
+    <header class="pick-bar">
+      <button class="icon-btn" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="pick-head"><p class="pick-order">Endereçar produto</p><p class="pick-client" id="aPasso">1 · Leia o QR do endereço</p></div>
+      <span class="icon-btn"></span>
+    </header>
+    <main class="pick-main">
+      <div id="aEnd"></div>
+      <form id="aForm" class="scan">
+        <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
+        <input id="aInput" type="text" autocomplete="off" placeholder="QR do endereço ou código (R3001-P1-A100-AP101)">
+        <button type="button" class="scan-cam cam-btn" data-cam="aInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      </form>
+      <p id="aMsg" class="scan-msg"></p>
+      <div id="aRes"></div>
+    </main>
+    <footer class="pick-foot" id="aFoot" hidden>
+      <button id="aTrocar" class="btn ghost">Trocar endereço</button>
+      <button id="aConfirmar" class="btn primary grow" disabled>Confirmar</button>
+    </footer>
+  </section>
+
+  <!-- ===== SHEETS ===== -->
+  <div id="scrim" class="scrim" hidden></div>
+
+  <div id="sheetEtiqueta" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title">Etiqueta do produto</p>
+    <p class="muted">90 × 20 mm · o formato do código de barras é escolhido sozinho</p>
+    <div id="etEmbs" class="chips"></div>
+    <div id="etPrevia" class="et-previa"></div>
+    <label class="field"><span>Quantidade de etiquetas</span><input id="etQtd" type="number" inputmode="numeric" min="1" max="500" value="1"></label>
+    <button id="etGo" class="btn primary block">Imprimir</button>
+  </div>
+
+  <div id="sheetEmb" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title" id="sbTitulo">Adicionar embalagem</p>
+    <form id="sbForm" class="es-form">
+      <label class="field"><span>Código de barras (opcional)</span><input name="codigo" autocomplete="off" placeholder="Bipe ou digite"></label>
+      <label class="field"><span>Descrição</span><input name="descricao" autocomplete="off" placeholder="Ex.: Caixa com 12" required></label>
+      <label class="field"><span>Quantidade</span><input name="qtd" inputmode="decimal" autocomplete="off" placeholder="Ex.: 12 ou 0,5" required></label>
+      <p id="sbErr" class="scan-msg err"></p>
+      <button class="btn primary block">Salvar</button>
+    </form>
+  </div>
+
+  <div id="sheetConfirma" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title" id="scfTitulo"></p>
+    <p id="scfMsg" class="es-alerta"></p>
+    <p id="scfSub" class="muted"></p>
+    <div class="es-duo"><button class="btn ghost" data-fecharsheet>Não</button><button id="scfSim" class="btn primary">Sim</button></div>
+  </div>
+
+  <div id="sheetMenu" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <div><p class="sheet-title" id="menuName"></p><p class="muted">Perfil: <span id="menuPerfil"></span></p></div>
+    <button id="menuReset" class="btn ghost block">Reiniciar dados de demonstração</button>
+    <button id="menuLogout" class="btn ghost block">Sair</button>
+    <p class="login-foot">WMS Beach Bike · MVP</p>
+  </div>
+
+  <!-- câmera -->
+  <div id="camView" class="cam" hidden>
+    <video id="camVideo" playsinline muted></video>
+    <div class="cam-frame"></div>
+    <button id="camClose" class="btn ghost cam-close">Fechar</button>
+  </div>
+
+  <!-- etiquetas 90 × 20 mm (só aparecem na impressão) -->
+  <div id="printArea" class="et-print"></div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="estoque.js?v=17"></script>
+</body>
+</html>

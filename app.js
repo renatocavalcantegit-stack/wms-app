@@ -4,6 +4,7 @@ import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao } from "./js/dado
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";
+import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
 
 (() => {
   "use strict";
@@ -168,9 +169,10 @@ import { Embarque } from "./embarque.js";
     $("#pickProgress").style.width = (doneCount(o) / o.itens.length) * 100 + "%";
     $("#pickStep").textContent = `Item ${o.atual + 1} de ${o.itens.length}` + (i.status === "ok" ? " · confirmado" : i.status === "falta" ? " · falta registrada" : "");
 
-    const [rua, pred, niv, pos] = i.end.split("-");
-    $("#addrParts").innerHTML = [["Rua", rua], ["Prédio", pred], ["Nível", niv], ["Posição", pos]]
-      .map(([l, v]) => `<div class="addr-part"><b>${v}</b><small>${l}</small></div>`).join("");
+    // endereço da prateleira (R3001-P7-A100-AP101) em 4 blocos grandes; números longos ganham letra menor
+    const e = lerCodigoDoEndereco(i.end) || {};
+    $("#addrParts").innerHTML = [["Rua", e.rua], ["Prédio", e.predio], ["Andar", e.andar], ["Apto", e.apto]]
+      .map(([l, v]) => `<div class="addr-part${String(v).length > 3 ? " long" : ""}"><b>${v ?? "–"}</b><small>${l}</small></div>`).join("");
 
     $("#prodThumb").innerHTML = ICONS[i.tipo] || ICONS.peca;
     $("#prodDesc").textContent = i.desc;

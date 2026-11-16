@@ -1,0 +1,99 @@
+/* ===== Gestão de Estoque (WEB) — telas de cadastro em lista, no visual dos painéis de gestão ===== */
+body.ge { background: #F1F1F4; min-height: 100vh; }
+.ge .gx-top { position: sticky; top: 0; z-index: 10; height: 62px; }
+.ge .gx-tab.soon { gap: 6px; }
+.ge-main { max-width: 1400px; margin: 0 auto; padding: 18px 24px 40px; display: flex; flex-direction: column; gap: 12px; }
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+
+.ge-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.ge-head h1 { margin: 0; font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -.3px; }
+.ge-sub { margin: 2px 0 0; font-size: 13px; color: var(--ink-3); }
+.ge-actions { display: flex; gap: 8px; }
+.ge-actions .btn { height: 40px; font-size: 13.5px; padding: 0 16px; border-radius: 11px; white-space: nowrap; }
+
+.ge-kpis { gap: 8px; }
+.ge-kpi { cursor: pointer; transition: border-color .15s; }
+.ge-kpi:hover { border-color: var(--ink-3); }
+.ge-kpi.on { border-color: var(--ink); background: var(--ink); color: #B9B9C2; }
+.ge-kpi.on b { color: #fff; }
+
+.ge-filtros { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ge-filtros .gx-search { flex: 0 1 340px; background: var(--card); }
+.ge-filtros .ge-busca-larga { flex-basis: 420px; }
+.ge-filtros select { height: 38px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 0 10px; font: inherit; font-size: 13.5px; outline: none; }
+.ge-limpar { height: 38px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--red); border-radius: 10px; }
+.ge-limpar:hover { background: var(--red-soft); }
+
+.ge-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.ge-tab { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ge-tab th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-3); padding: 10px 12px; border-bottom: 1px solid var(--line); background: #FAFAFB; white-space: nowrap; }
+.ge-tab td { padding: 9px 12px; border-bottom: 1px solid #F0F0F3; vertical-align: middle; }
+.ge-tab tr:last-child td { border-bottom: 0; }
+.ge-tab .r { text-align: right; font-variant-numeric: tabular-nums; }
+.ge-tab .ck { width: 34px; }
+.ge-tab tr.off td { color: var(--ink-3); }
+.ge-tab.click tbody tr { cursor: pointer; }
+.ge-tab.click tbody tr:hover td { background: #FAFAFB; }
+.ge-vazio { text-align: center; color: var(--ink-3); padding: 34px 12px !important; }
+.gaddr { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 700; font-size: 12px; background: var(--bg); color: var(--ink); padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
+
+.ge-tipo { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
+.ge-tipo.picking { background: var(--red-soft); color: var(--red); }
+.ge-tipo.aereo { background: var(--ink); color: #fff; }
+.ge-tipo.doca { background: var(--warn-soft); color: var(--warn); }
+.ge-sit { font-size: 12px; font-weight: 700; }
+.ge-sit.ok { color: var(--ok); }
+.ge-sit.off { color: var(--ink-3); text-transform: uppercase; letter-spacing: .5px; font-size: 11px; }
+.ge-subst { display: block; font-size: 11px; color: var(--ink-3); }
+.ge-link { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 4px 6px; border-radius: 7px; }
+.ge-link:hover { background: var(--bg); color: var(--ink); }
+.ge-link.red { color: var(--red); }
+.ge-nd { color: var(--ink-3); font-style: normal; font-weight: 500; }
+
+.ge-pag { display: flex; align-items: center; gap: 16px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+.ge-pag select { height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; font: inherit; margin-left: 6px; background: #fff; }
+.ge-pag-nav { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.ge-pag-nav b { color: var(--ink); }
+.ge-pag .btn { height: 34px; font-size: 13px; padding: 0 12px; border-radius: 9px; }
+.ge-pag .btn:disabled { opacity: .4; }
+
+/* modais */
+.gx-modal.wide { width: min(560px, 94vw); }
+.ge-lote { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px 10px; align-items: center; }
+.ge-lote-l { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.ge-lote input, .ge-lote select, .ge-form input { height: 44px; border: 1.5px solid var(--line); border-radius: 11px; padding: 0 12px; font: inherit; font-size: 15px; outline: none; background: #fff; min-width: 0; }
+.ge-lote input:focus, .ge-lote select:focus { border-color: var(--ink); }
+.ge-lote .m-act, .ge-lote-info { grid-column: 1 / -1; }
+.ge-lote-info { margin: 4px 0 0; font-size: 13px; color: var(--ink-3); background: var(--bg); border-radius: 10px; padding: 10px 12px; line-height: 1.6; }
+.ge-lote-info.ok { color: var(--ink); }
+.ge-lote-info.err { color: var(--red); background: var(--red-soft); font-weight: 600; }
+.ge-form { display: flex; flex-direction: column; gap: 12px; }
+.ge-msg { font-weight: 700; color: var(--red) !important; background: var(--red-soft); border-radius: 10px; padding: 10px 12px; }
+.ge-imp { font-size: 13px !important; padding: 8px 10px; border-radius: 9px; }
+.ge-imp.ok { background: var(--ok-soft); color: var(--ok) !important; }
+.ge-imp.err { background: var(--red-soft); color: var(--red) !important; }
+
+/* gaveta do produto */
+.ge-dr-t { font-size: 20px !important; font-weight: 800 !important; }
+.ge-grid3 { grid-template-columns: repeat(3, 1fr); }
+.ge-sec-h { display: flex; justify-content: space-between; align-items: center; }
+.ge-sec-h .dr-h { margin: 0; }
+.ge-mini { height: 34px; font-size: 12.5px; padding: 0 12px; border-radius: 9px; }
+.ge-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ge-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 5px 6px 5px 8px; }
+.ge-chip button { width: 24px; height: 24px; border-radius: 6px; font-size: 16px; color: var(--ink-3); }
+.ge-chip button:hover { background: var(--red-soft); color: var(--red); }
+
+/* etiquetas de QR dos endereços: só na impressão */
+.ge-print { display: none; }
+@media print {
+  body.ge > *:not(.ge-print) { display: none !important; }
+  body.ge { background: #fff; }
+  .ge-print { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .qe { display: flex; align-items: center; gap: 3mm; border: .3mm solid #000; border-radius: 2mm; padding: 2.5mm; break-inside: avoid; font-family: Inter, sans-serif; }
+  .qe-qr { width: 24mm; height: 24mm; flex-shrink: 0; }
+  .qe-t { display: flex; flex-direction: column; gap: 1mm; min-width: 0; }
+  .qe-t b { font-family: Montserrat, Inter, sans-serif; font-weight: 900; font-size: 10.5pt; }
+  .qe-t span { font-size: 7.5pt; }
+  .qe-t small { font-size: 7pt; color: #444; }
+}
