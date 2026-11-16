@@ -8,7 +8,9 @@ import {
   enderecosPadraoDoProduto, saldoDoEndereco, criarEnderecos, desativarEndereco, reativarEndereco,
   importarProdutosDoErp, salvarEmbalagem, excluirEmbalagem, removerAssociacao,
 } from "./js/dados/estoque.js";
-import { TIPOS_ENDERECO, gerarLote, contarLote, compararEnderecos, podeDesativar } from "./compartilhado/regras/enderecos.js";
+import {
+  TIPOS_ENDERECO, gerarLote, contarLote, compararEnderecos, podeDesativar, comoDigitado, naPrateleira, codigoDoEndereco, validarDigitado,
+} from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos, validarEmbalagem, MSG_EXCLUIR_EMBALAGEM } from "./compartilhado/regras/embalagens.js";
 
 const sess = session();
@@ -135,10 +137,11 @@ function abrirLote() {
   abrirModal(`
     <h2>Criar endereços em lote</h2>
     <p>O sistema gera todos os endereços dentro dos intervalos. Endereços que já existem são ignorados.</p>
+    <p class="ge-dica">Andar e apartamento como se conta no prédio: <b>andar 1, apto 1</b> vira <span class="gaddr">A100-AP101</span>; andar 2, apto 3 vira <span class="gaddr">A200-AP203</span>.</p>
     <form id="fLote" class="ge-lote">
-      ${[["rua", "Rua"], ["predio", "Prédio"], ["andar", "Andar"], ["apto", "Apartamento"]].map(([k, l]) => `
+      ${[["rua", "Rua", "3001"], ["predio", "Prédio", "1"], ["andar", "Andar", "1"], ["apto", "Apartamento", "1"]].map(([k, l, ex]) => `
         <span class="ge-lote-l">${l}</span>
-        <input name="${k}Ini" type="number" min="1" inputmode="numeric" placeholder="Inicial" required>
+        <input name="${k}Ini" type="number" min="1" inputmode="numeric" placeholder="Inicial (ex.: ${ex})" required>
         <input name="${k}Fim" type="number" min="1" inputmode="numeric" placeholder="Final" required>`).join("")}
       <span class="ge-lote-l">Tipo</span>
       <select name="tipo" required><option value="">Escolha…</option>${Object.entries(TIPOS_ENDERECO).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
@@ -178,15 +181,16 @@ function pedirDesativar(id) {
 
 function pedirReativar(id) {
   const e = enderecoPorId(db, id);
+  const d = comoDigitado(e); // o formulário usa andar 1, apto 1 (e não 100, 101)
   abrirModal(`<h2>Reativar endereço</h2>
     <p>Pode reutilizar com os mesmos dados ou mudar o que precisar. Ele volta com <b>ID e QR novos</b>; o QR antigo (ID ${e.id}) continua bloqueado.</p>
     <form id="fReativar" class="ge-lote" data-id="${id}">
       ${[["rua", "Rua"], ["predio", "Prédio"], ["andar", "Andar"], ["apto", "Apartamento"]].map(([k, l]) =>
-        `<span class="ge-lote-l">${l}</span><input name="${k}" type="number" min="1" value="${e[k]}" required><span></span>`).join("")}
+        `<span class="ge-lote-l">${l}</span><input name="${k}" type="number" min="1" value="${d[k]}" required><span></span>`).join("")}
       <span class="ge-lote-l">Tipo</span>
       <select name="tipo">${Object.entries(TIPOS_ENDERECO).map(([k, l]) => `<option value="${k}" ${e.tipo === k ? "selected" : ""}>${l}</option>`).join("")}</select>
       <input name="deposito" value="${esc(e.deposito)}" required>
-      <p id="reatInfo" class="ge-lote-info"></p>
+      <p id="reatInfo" class="ge-lote-info">Vai virar <span class="gaddr">${e.codigo}</span></p>
       <div class="m-act"><button type="button" class="btn ghost" data-fechar>Cancelar</button><button class="btn primary">Reativar</button></div>
     </form>`);
   $("#modal").classList.add("wide");
@@ -407,6 +411,13 @@ $("#modal").addEventListener("click", (ev) => {
 });
 $("#modal").addEventListener("input", (ev) => {
   if (ev.target.form?.id === "fLote") previaLote();
+  // reativação: mostra o código que vai sair do que foi digitado
+  if (ev.target.form?.id === "fReativar") {
+    const d = Object.fromEntries(new FormData(ev.target.form));
+    const erro = validarDigitado(d);
+    $("#reatInfo").className = "ge-lote-info" + (erro ? " err" : "");
+    $("#reatInfo").innerHTML = erro || `Vai virar <span class="gaddr">${codigoDoEndereco(naPrateleira(d))}</span>`;
+  }
   // embalagem: código repetido é avisado enquanto digita (e conferido de novo ao salvar)
   if (ev.target.form?.id === "fEmb") {
     const f = ev.target.form, id = +f.dataset.id || null;

@@ -1,6 +1,8 @@
 // WMS Beach Bike — regras do cadastro de endereços.
 // Formato usado nas prateleiras da Beach Bike: só números, como R3001-P7-A100-AP101
-// (Rua 3001, Prédio 7, Andar 100, Apartamento 101).
+// (Rua 3001, Prédio 7, 1º andar, apartamento 1 desse andar).
+// Andar e apartamento seguem a numeração de prédio: o andar 1 vira A100 e o apartamento 1 dele vira AP101;
+// no andar 2, A200 e AP201… Na tela, quem cadastra digita só "andar 1, apto 1" e o sistema monta o código.
 
 export const TIPOS_ENDERECO = { picking: "Picking", aereo: "Aéreo", doca: "Doca" };
 
@@ -10,6 +12,26 @@ export const MAXIMO_POR_LOTE = 5000;
 export const MSG_ENDERECO_COM_ESTOQUE = "ENDEREÇO POSSUI ESTOQUE. REALIZE A RETIRADA TOTAL ANTES DE DESATIVAR.";
 export const MSG_ENDERECO_COM_TAREFA = "ENDEREÇO POSSUI TAREFAS PENDENTES. CONCLUA OU CANCELE ANTES DE DESATIVAR.";
 export const MSG_ENDERECO_EM_USO = "JÁ EXISTE UM ENDEREÇO ATIVO COM ESTE CÓDIGO.";
+
+// o apartamento usa os 2 últimos dígitos (AP101 a AP199 no andar 1), então cada andar tem no máximo 99
+export const MAXIMO_APTOS_POR_ANDAR = 99;
+
+// do que foi digitado (andar 1, apto 3) para o que vai na prateleira (andar 100, apto 103)
+export const naPrateleira = ({ rua, predio, andar, apto }) =>
+  ({ rua: +rua, predio: +predio, andar: andar * 100, apto: andar * 100 + +apto });
+
+// o caminho inverso, para mostrar um endereço já cadastrado num formulário (andar 100, apto 103 → andar 1, apto 3)
+export const comoDigitado = (e) => ({ rua: e.rua, predio: e.predio, andar: Math.floor(e.andar / 100), apto: e.apto - e.andar });
+
+// confere rua, prédio, andar e apartamento digitados (um endereço só, como na reativação)
+export function validarDigitado({ rua, predio, andar, apto }) {
+  for (const [nome, v] of [["Rua", rua], ["Prédio", predio], ["Andar", andar], ["Apartamento", apto]]) {
+    const n = Number(v);
+    if (v === "" || !Number.isInteger(n) || n < 1) return `${nome}: informe um número inteiro a partir de 1.`;
+  }
+  if (+apto > MAXIMO_APTOS_POR_ANDAR) return `Apartamento: de 1 a ${MAXIMO_APTOS_POR_ANDAR} em cada andar.`;
+  return null;
+}
 
 // monta o código impresso na prateleira a partir das partes
 export const codigoDoEndereco = ({ rua, predio, andar, apto }) => `R${rua}-P${predio}-A${andar}-AP${apto}`;
@@ -47,12 +69,14 @@ export function contarLote(f) {
 }
 
 // gera todos os endereços dentro dos intervalos (rua × prédio × andar × apartamento).
-// Ex.: rua 1–3, prédio 1–2, andar 1–2, apto 1–3 → 3 × 2 × 2 × 3 = 72 endereços.
+// Andar e apartamento chegam como digitados (1, 2, 3…) e saem no formato da prateleira (A100, AP101…).
+// Ex.: rua 1–3, prédio 1–2, andar 1–2, apto 1–3 → 3 × 2 × 2 × 3 = 36 endereços (o documento citava 72; a conta é 36).
 // Devolve { erro } ou { enderecos: [{ rua, predio, andar, apto, codigo, tipo }] } — sem ID; quem grava dá o ID.
 export function gerarLote(f) {
   const erro = intervalo("Rua", f.ruaIni, f.ruaFim) || intervalo("Prédio", f.predioIni, f.predioFim)
     || intervalo("Andar", f.andarIni, f.andarFim) || intervalo("Apartamento", f.aptoIni, f.aptoFim);
   if (erro) return { erro };
+  if (+f.aptoFim > MAXIMO_APTOS_POR_ANDAR) return { erro: `Apartamento: de 1 a ${MAXIMO_APTOS_POR_ANDAR} em cada andar.` };
   if (!TIPOS_ENDERECO[f.tipo]) return { erro: "Escolha o tipo do endereço." };
   const total = contarLote(f);
   if (total > MAXIMO_POR_LOTE) return { erro: `O lote geraria ${total} endereços. O máximo de uma vez é ${MAXIMO_POR_LOTE}.` };
@@ -62,7 +86,7 @@ export function gerarLote(f) {
     for (let predio = +f.predioIni; predio <= +f.predioFim; predio++)
       for (let andar = +f.andarIni; andar <= +f.andarFim; andar++)
         for (let apto = +f.aptoIni; apto <= +f.aptoFim; apto++) {
-          const partes = { rua, predio, andar, apto };
+          const partes = naPrateleira({ rua, predio, andar, apto });
           enderecos.push({ ...partes, codigo: codigoDoEndereco(partes), tipo: f.tipo });
         }
   return { enderecos };

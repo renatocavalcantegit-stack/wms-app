@@ -4,7 +4,9 @@
 // Na Fase 1: o servidor guarda o cadastro e o coletor trabalha com uma cópia local + fila de sincronização,
 // sem precisar mudar as telas.
 import { estoqueDeDemonstracao, importacaoDoErp } from "../demo-dados.js";
-import { podeDesativar, conflitoAoReativar, codigoDoEndereco, podeAssociar, MSG_ENDERECO_EM_USO } from "../../compartilhado/regras/enderecos.js";
+import {
+  podeDesativar, conflitoAoReativar, codigoDoEndereco, podeAssociar, naPrateleira, validarDigitado, MSG_ENDERECO_EM_USO,
+} from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 
 const CHAVE = "wms-bb-estoque-v1";
@@ -81,11 +83,13 @@ export function desativarEndereco(id) {
 
 // reativar com os mesmos ou novos dados: nasce um endereço novo (ID e QR novos).
 // O antigo continua inativo para sempre, guardando o histórico, e o QR antigo segue bloqueado.
+// Andar e apartamento chegam como digitados (andar 1, apto 3) e são gravados como na prateleira (A100, AP103).
 export function reativarEndereco(id, { rua, predio, andar, apto, tipo, deposito }) {
   const db = lerEstoque();
   const antigo = enderecoPorId(db, id);
-  const partes = { rua: +rua, predio: +predio, andar: +andar, apto: +apto };
-  if (Object.values(partes).some((n) => !Number.isInteger(n) || n < 1)) return { ok: false, msg: "Rua, prédio, andar e apartamento: números inteiros a partir de 1." };
+  const erro = validarDigitado({ rua, predio, andar, apto });
+  if (erro) return { ok: false, msg: erro };
+  const partes = naPrateleira({ rua, predio, andar, apto });
   if (conflitoAoReativar(db.enderecos, partes, id)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
   const novo = { id: db.proximoId.endereco++, ...partes, codigo: codigoDoEndereco(partes), tipo, deposito, ativo: true, substituidoPor: null };
   db.enderecos.push(novo);

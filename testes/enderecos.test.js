@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   codigoDoEndereco, lerCodigoDoEndereco, acharEndereco, gerarLote, contarLote, podeDesativar,
+  naPrateleira, comoDigitado, validarDigitado,
   conflitoAoReativar, compararEnderecos, podeAssociar, MAXIMO_POR_LOTE,
   MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_COM_TAREFA, MSG_JA_ASSOCIADO, MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO,
 } from "../compartilhado/regras/enderecos.js";
@@ -20,8 +21,10 @@ test("lote: rua 1–3, prédio 1–2, andar 1–2, apto 1–3 gera 3 × 2 × 2 �
   assert.equal(contarLote(f), 36);
   const { enderecos } = gerarLote(f);
   assert.equal(enderecos.length, 36);
-  assert.equal(enderecos[0].codigo, "R1-P1-A1-AP1");
-  assert.equal(enderecos[35].codigo, "R3-P2-A2-AP3");
+  // andar e apartamento digitados como 1, 2, 3 saem no formato da prateleira
+  assert.equal(enderecos[0].codigo, "R1-P1-A100-AP101");
+  assert.equal(enderecos[35].codigo, "R3-P2-A200-AP203");
+  assert.deepEqual(enderecos[35], { rua: 3, predio: 2, andar: 200, apto: 203, codigo: "R3-P2-A200-AP203", tipo: "picking" });
   assert.equal(new Set(enderecos.map((e) => e.codigo)).size, 36); // nenhum repetido
 });
 
@@ -31,7 +34,8 @@ test("lote: intervalos inválidos e lote grande demais são recusados com o moti
   assert.match(gerarLote({ ...base, predioIni: "" }).erro, /^Prédio/);
   assert.match(gerarLote({ ...base, aptoIni: 1.5 }).erro, /^Apartamento/);
   assert.match(gerarLote({ ...base, tipo: "" }).erro, /tipo/);
-  assert.match(gerarLote({ ...base, aptoFim: MAXIMO_POR_LOTE + 1 }).erro, /máximo/);
+  assert.match(gerarLote({ ...base, aptoFim: 100 }).erro, /de 1 a 99/); // AP199 é o último do andar 1
+  assert.match(gerarLote({ ...base, ruaFim: MAXIMO_POR_LOTE + 1 }).erro, /máximo/);
 });
 
 test("acharEndereco: o QR traz o ID; digitado, vale o código, preferindo o endereço ativo", () => {
@@ -68,4 +72,13 @@ test("endereçar produto: bloqueia repetido, endereço inativo e endereço que n
   assert.deepEqual(podeAssociar(assoc, "PN-29-225", end), { ok: true });
   assert.deepEqual(podeAssociar(assoc, "PN-29-225", { id: 11, ativo: false }), { ok: false, msg: MSG_ENDERECO_INATIVO });
   assert.deepEqual(podeAssociar(assoc, "PN-29-225", null), { ok: false, msg: MSG_ENDERECO_NAO_ENCONTRADO });
+});
+
+test("andar e apartamento: digitados como 1, 2… e gravados como na prateleira (A100, AP101…)", () => {
+  assert.deepEqual(naPrateleira({ rua: 3001, predio: 7, andar: 1, apto: 1 }), { rua: 3001, predio: 7, andar: 100, apto: 101 });
+  assert.equal(codigoDoEndereco(naPrateleira({ rua: 3001, predio: 7, andar: 5, apto: 12 })), "R3001-P7-A500-AP512");
+  assert.deepEqual(comoDigitado({ rua: 3001, predio: 7, andar: 500, apto: 512 }), { rua: 3001, predio: 7, andar: 5, apto: 12 });
+  assert.equal(validarDigitado({ rua: 3001, predio: 7, andar: 1, apto: 99 }), null);
+  assert.match(validarDigitado({ rua: 3001, predio: 7, andar: 1, apto: 100 }), /de 1 a 99/);
+  assert.match(validarDigitado({ rua: "", predio: 7, andar: 1, apto: 1 }), /^Rua/);
 });

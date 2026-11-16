@@ -23,7 +23,7 @@ test("demonstração: endereços no formato numérico, docas, inativos e saldo d
 });
 
 test("lote: grava com IDs novos e ignora o que já existe ativo", () => {
-  const { enderecos } = gerarLote({ ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 1, andarIni: 100, andarFim: 100, aptoIni: 101, aptoFim: 110, tipo: "picking" });
+  const { enderecos } = gerarLote({ ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 1, andarIni: 1, andarFim: 1, aptoIni: 1, aptoFim: 10, tipo: "picking" });
   const r = criarEnderecos(enderecos, "Principal");
   assert.deepEqual(r, { criados: 4, ignorados: 6 }); // 101 a 106 já existiam
   assert.ok(porCodigo("R3001-P1-A100-AP110"));
@@ -40,10 +40,11 @@ test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
 
 test("reativar: nasce endereço com ID novo; o antigo fica inativo e aponta para o novo", () => {
   const inativo = lerEstoque().enderecos.find((e) => e.codigo === "R3004-P6-A500-AP503");
-  assert.deepEqual(reativarEndereco(inativo.id, { rua: 3001, predio: 1, andar: 100, apto: 102, tipo: "picking", deposito: "Principal" }),
+  assert.deepEqual(reativarEndereco(inativo.id, { rua: 3001, predio: 1, andar: 1, apto: 2, tipo: "picking", deposito: "Principal" }),
     { ok: false, msg: MSG_ENDERECO_EM_USO });
-  const r = reativarEndereco(inativo.id, { rua: 3004, predio: 6, andar: 500, apto: 503, tipo: "aereo", deposito: "Principal" });
+  const r = reativarEndereco(inativo.id, { rua: 3004, predio: 6, andar: 5, apto: 3, tipo: "aereo", deposito: "Principal" });
   assert.equal(r.ok, true);
+  assert.equal(r.endereco.codigo, "R3004-P6-A500-AP503"); // digitado andar 5, apto 3
   assert.notEqual(r.endereco.id, inativo.id);
   const antigo = lerEstoque().enderecos.find((e) => e.id === inativo.id);
   assert.equal(antigo.ativo, false);
