@@ -5,7 +5,7 @@
 // sem precisar mudar as telas.
 import { estoqueDeDemonstracao, importacaoDoErp } from "../demo-dados.js";
 import {
-  podeDesativar, codigoEmUso, codigoDoEndereco, TIPOS_ENDERECO, podeAssociar, naPrateleira, validarDigitado, MSG_ENDERECO_EM_USO,
+  podeDesativar, codigoEmUso, codigoDoEndereco, TIPOS_ENDERECO, podeAssociar, partesDoEndereco, validarPartes, MSG_ENDERECO_EM_USO,
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 
@@ -56,14 +56,14 @@ export const produtosDoEndereco = (db, enderecoId) =>
   db.associacoes.filter((a) => a.enderecoId === enderecoId).map((a) => produtoPorCodigo(db, a.produto));
 
 // ---------- endereços ----------
-// cadastra um endereço (andar e apartamento como digitados: andar 1, apto 3 → A100-AP103).
+// cadastra um endereço com os números da prateleira (rua 3001, prédio 1, andar 100, apto 101 → R3001-P1-A100-AP101).
 // Recebe um ID novo, que é o que vai no QR da prateleira. Devolve { ok, endereco } ou { ok: false, msg }.
 export function criarEndereco({ rua, predio, andar, apto, tipo, deposito }) {
   const db = lerEstoque();
-  const erro = validarDigitado({ rua, predio, andar, apto });
+  const erro = validarPartes({ rua, predio, andar, apto });
   if (erro) return { ok: false, msg: erro };
   if (!TIPOS_ENDERECO[tipo]) return { ok: false, msg: "Escolha o tipo do endereço." };
-  const partes = naPrateleira({ rua, predio, andar, apto });
+  const partes = partesDoEndereco({ rua, predio, andar, apto });
   if (codigoEmUso(db.enderecos, partes)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
   const novo = { id: db.proximoId.endereco++, ...partes, codigo: codigoDoEndereco(partes), tipo,
     deposito: String(deposito || "").trim() || "Principal", ativo: true, substituidoPor: null };
@@ -85,13 +85,12 @@ export function desativarEndereco(id) {
 
 // reativar com os mesmos ou novos dados: nasce um endereço novo (ID e QR novos).
 // O antigo continua inativo para sempre, guardando o histórico, e o QR antigo segue bloqueado.
-// Andar e apartamento chegam como digitados (andar 1, apto 3) e são gravados como na prateleira (A100, AP103).
 export function reativarEndereco(id, { rua, predio, andar, apto, tipo, deposito }) {
   const db = lerEstoque();
   const antigo = enderecoPorId(db, id);
-  const erro = validarDigitado({ rua, predio, andar, apto });
+  const erro = validarPartes({ rua, predio, andar, apto });
   if (erro) return { ok: false, msg: erro };
-  const partes = naPrateleira({ rua, predio, andar, apto });
+  const partes = partesDoEndereco({ rua, predio, andar, apto });
   if (codigoEmUso(db.enderecos, partes, id)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
   const novo = { id: db.proximoId.endereco++, ...partes, codigo: codigoDoEndereco(partes), tipo, deposito, ativo: true, substituidoPor: null };
   db.enderecos.push(novo);

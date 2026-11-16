@@ -22,15 +22,15 @@ test("demonstração: endereços no formato numérico, docas, inativos e saldo d
   assert.ok(db.produtos.every((p) => saldosDoProduto(db, p.codigo).length > 0));
 });
 
-test("novo endereço: andar e apto digitados viram o código da prateleira, com ID novo; repetido é bloqueado", () => {
-  const r = criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 10, tipo: "picking", deposito: " " });
+test("novo endereço: os números da prateleira viram o código, com ID novo; repetido é bloqueado", () => {
+  const r = criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: 110, tipo: "picking", deposito: " " });
   assert.equal(r.ok, true);
   assert.equal(r.endereco.codigo, "R3001-P1-A100-AP110");
   assert.equal(r.endereco.deposito, "Principal");
   assert.ok(porCodigo("R3001-P1-A100-AP110"));
-  assert.deepEqual(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 10, tipo: "picking" }), { ok: false, msg: MSG_ENDERECO_EM_USO });
-  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 100, tipo: "picking" }).msg, /de 1 a 99/);
-  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 11, tipo: "" }).msg, /tipo/);
+  assert.deepEqual(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: 110, tipo: "picking" }), { ok: false, msg: MSG_ENDERECO_EM_USO });
+  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: "", tipo: "picking" }).msg, /^Apartamento/);
+  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 100, apto: 111, tipo: "" }).msg, /tipo/);
 });
 
 test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
@@ -44,9 +44,9 @@ test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
 
 test("reativar: nasce endereço com ID novo; o antigo fica inativo e aponta para o novo", () => {
   const inativo = lerEstoque().enderecos.find((e) => e.codigo === "R3004-P6-A500-AP503");
-  assert.deepEqual(reativarEndereco(inativo.id, { rua: 3001, predio: 1, andar: 1, apto: 2, tipo: "picking", deposito: "Principal" }),
+  assert.deepEqual(reativarEndereco(inativo.id, { rua: 3001, predio: 1, andar: 100, apto: 102, tipo: "picking", deposito: "Principal" }),
     { ok: false, msg: MSG_ENDERECO_EM_USO });
-  const r = reativarEndereco(inativo.id, { rua: 3004, predio: 6, andar: 5, apto: 3, tipo: "aereo", deposito: "Principal" });
+  const r = reativarEndereco(inativo.id, { rua: 3004, predio: 6, andar: 500, apto: 503, tipo: "aereo", deposito: "Principal" });
   assert.equal(r.ok, true);
   assert.equal(r.endereco.codigo, "R3004-P6-A500-AP503"); // digitado andar 5, apto 3
   assert.notEqual(r.endereco.id, inativo.id);

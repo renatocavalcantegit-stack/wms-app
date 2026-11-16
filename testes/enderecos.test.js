@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   codigoDoEndereco, lerCodigoDoEndereco, acharEndereco, podeDesativar,
-  naPrateleira, comoDigitado, validarDigitado,
+  partesDoEndereco, validarPartes,
   codigoEmUso, compararEnderecos, podeAssociar,
   MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_COM_TAREFA, MSG_JA_ASSOCIADO, MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO,
 } from "../compartilhado/regras/enderecos.js";
@@ -52,11 +52,12 @@ test("endereçar produto: bloqueia repetido, endereço inativo e endereço que n
   assert.deepEqual(podeAssociar(assoc, "PN-29-225", null), { ok: false, msg: MSG_ENDERECO_NAO_ENCONTRADO });
 });
 
-test("andar e apartamento: digitados como 1, 2… e gravados como na prateleira (A100, AP101…)", () => {
-  assert.deepEqual(naPrateleira({ rua: 3001, predio: 7, andar: 1, apto: 1 }), { rua: 3001, predio: 7, andar: 100, apto: 101 });
-  assert.equal(codigoDoEndereco(naPrateleira({ rua: 3001, predio: 7, andar: 5, apto: 12 })), "R3001-P7-A500-AP512");
-  assert.deepEqual(comoDigitado({ rua: 3001, predio: 7, andar: 500, apto: 512 }), { rua: 3001, predio: 7, andar: 5, apto: 12 });
-  assert.equal(validarDigitado({ rua: 3001, predio: 7, andar: 1, apto: 99 }), null);
-  assert.match(validarDigitado({ rua: 3001, predio: 7, andar: 1, apto: 100 }), /de 1 a 99/);
-  assert.match(validarDigitado({ rua: "", predio: 7, andar: 1, apto: 1 }), /^Rua/);
+test("rua, prédio, andar e apartamento: digitados exatamente como na prateleira, sem conversão", () => {
+  const partes = partesDoEndereco({ rua: "3001", predio: "1", andar: "100", apto: "101" });
+  assert.deepEqual(partes, { rua: 3001, predio: 1, andar: 100, apto: 101 });
+  assert.equal(codigoDoEndereco(partes), "R3001-P1-A100-AP101");
+  assert.equal(validarPartes({ rua: 3001, predio: 7, andar: 500, apto: 512 }), null);
+  assert.match(validarPartes({ rua: "", predio: 7, andar: 100, apto: 101 }), /^Rua/);
+  assert.match(validarPartes({ rua: 3001, predio: 7, andar: 0, apto: 101 }), /^Andar/);
+  assert.match(validarPartes({ rua: 3001, predio: 7, andar: 100, apto: 1.5 }), /^Apartamento/);
 });
