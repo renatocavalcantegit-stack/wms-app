@@ -9,8 +9,8 @@ import {
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 
-// v2: entrou o Recebimento (notas, conferências e volumes); a demonstração antiga é trocada pela nova
-const CHAVE = "wms-bb-estoque-v2";
+// v3: produtos reais do catálogo (v2 trouxe o Recebimento); a demonstração antiga é trocada pela nova
+const CHAVE = "wms-bb-estoque-v3";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {

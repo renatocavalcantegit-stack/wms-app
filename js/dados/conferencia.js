@@ -5,9 +5,9 @@
 import { seedConferencia, seedConferenciaMont } from "../demo-dados.js";
 import { lerPedidosSalvos as lerPedidosDaSeparacao } from "./separacao.js";
 
-// v2: endereços no formato numérico das prateleiras (a versão nova da chave descarta os pedidos antigos)
+// v3: produtos e clientes reais na demonstração (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v2" : "wms-bb-conf-v2");
+const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v3" : "wms-bb-conf-v3");
 // posto de conferência escolhido neste aparelho
 const CHAVE_POSTO = "wms-bb-posto";
 

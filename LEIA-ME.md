@@ -18,7 +18,9 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
-  demo-dados.js          catálogo, endereços e pedidos de demonstração
+  demo-dados.js          equipe, catálogo, endereços e pedidos de demonstração
+  demo-catalogo.js       produtos mais vendidos (gerado por ferramentas/gerar-dados-demo.py)
+  demo-clientes.js       clientes do ranking, com cidade, rota e vendedor (gerado pelo mesmo script)
   dados/separacao.js     camada de dados da Separação (único lugar que sabe onde os pedidos ficam)
   dados/conferencia.js   camada de dados da Conferência (e os pedidos que chegam da Separação)
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos

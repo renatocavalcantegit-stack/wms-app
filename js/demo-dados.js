@@ -1,47 +1,56 @@
-// WMS Beach Bike — dados de demonstração: catálogo, endereços e pedidos de exemplo.
+// WMS Beach Bike — dados de demonstração: equipe, catálogo, endereços e pedidos de exemplo.
 // No sistema real tudo isto vem do servidor (que recebe do Sankhya).
+// Os produtos são os mais vendidos de verdade (js/demo-catalogo.js); os clientes ficam em js/demo-clientes.js.
 import { acharProduto, routeSort } from "../compartilhado/regras/produtos.js";
+import { PRODUTOS_BIKE, PRODUTOS_MOTO, PRODUTOS_NOVOS_DO_ERP } from "./demo-catalogo.js";
 
-export const PRODUTOS = [
-  { sku: "BK-29-ALU-18", ean: "7891000100011", desc: "Bicicleta Aro 29 Alumínio 21v Preta", tipo: "bike", preco: 1899.9 },
-  { sku: "BK-26-ACO-RD", ean: "7891000100028", desc: "Bicicleta Aro 26 Aço Vermelha", tipo: "bike", preco: 899.9 },
-  { sku: "BK-20-INF-AZ", ean: "7891000100035", desc: "Bicicleta Infantil Aro 20 Azul", tipo: "bike", preco: 649.9 },
-  { sku: "CM-29-PRESTA", ean: "7891000200018", desc: "Câmara de Ar Aro 29 Presta", tipo: "peca", preco: 29.9 },
-  { sku: "CM-26-SCHRAD", ean: "7891000200025", desc: "Câmara de Ar Aro 26 Schrader", tipo: "peca", preco: 22.9 },
-  { sku: "PN-29-225", ean: "7891000200032", desc: "Pneu 29 x 2.25 Cravo", tipo: "peca", preco: 119.9 },
-  { sku: "CP-MTB-M-PT", ean: "7891000300015", desc: "Capacete MTB Tam. M Preto", tipo: "acess", preco: 159.9 },
-  { sku: "LV-GEL-G", ean: "7891000300022", desc: "Luva Gel Dedo Curto G", tipo: "acess", preco: 49.9 },
-  { sku: "SN-LED-USB", ean: "7891000300039", desc: "Sinalizador LED USB Traseiro", tipo: "acess", preco: 39.9 },
-  { sku: "CR-KMC-9V", ean: "7891000200049", desc: "Corrente KMC 9 Velocidades", tipo: "peca", preco: 89.9 },
-  { sku: "PD-PLAT-AL", ean: "7891000200056", desc: "Pedal Plataforma Alumínio", tipo: "peca", preco: 79.9 },
-  { sku: "GF-SQ-750", ean: "7891000300046", desc: "Garrafa Squeeze 750 ml", tipo: "acess", preco: 24.9 },
-  { sku: "BM-PISO-AL", ean: "7891000300053", desc: "Bomba de Piso com Manômetro", tipo: "acess", preco: 139.9 },
-  { sku: "SL-GEL-CONF", ean: "7891000200063", desc: "Selim Gel Conforto", tipo: "peca", preco: 69.9 },
+// ---------- equipe ----------
+// separadores da expedição e da montagem, conferentes e faturista (nomes reais da operação; motoristas ainda fictícios)
+export const SEPARADORES = [
+  { id: "s1", nome: "Davi" }, { id: "s2", nome: "Helder" }, { id: "s3", nome: "Cilon" }, { id: "s4", nome: "Roberto" },
+  { id: "s5", nome: "Vinicius" }, { id: "s6", nome: "Kaynan" }, { id: "s7", nome: "Railson" }, { id: "s8", nome: "Anderson" },
+  { id: "s9", nome: "Dutra" }, { id: "s10", nome: "Elailson" }, { id: "s11", nome: "Oliveira" }, { id: "s12", nome: "Handerson" },
 ];
-// componentes usados nos pedidos de montagem (ordem de produção)
-export const COMPONENTES = [
-  { sku: "QD-29-ALU-M", ean: "7891000400012", desc: "Quadro Aro 29 Alumínio Tam. 17", tipo: "peca", preco: 389.9 },
-  { sku: "AR-29-PD-36", ean: "7891000400029", desc: "Aro 29 Parede Dupla 36 Furos", tipo: "peca", preco: 84.9 },
-  { sku: "GD-MTB-680", ean: "7891000400036", desc: "Guidão MTB 680 mm", tipo: "peca", preco: 59.9 },
-  { sku: "MS-31-60", ean: "7891000400043", desc: "Mesa 31,8 x 60 mm", tipo: "peca", preco: 54.9 },
-  { sku: "FR-VB-KIT", ean: "7891000400050", desc: "Kit Freio V-Brake Dianteiro + Traseiro", tipo: "peca", preco: 69.9 },
-  { sku: "CB-TR-7V", ean: "7891000400067", desc: "Câmbio Traseiro 7 Velocidades", tipo: "peca", preco: 74.9 },
-  { sku: "PE-3X-170", ean: "7891000400074", desc: "Pedivela Triplo 170 mm", tipo: "peca", preco: 119.9 },
-  { sku: "CU-36-QR", ean: "7891000400081", desc: "Par de Cubos 36 Furos Blocagem", tipo: "peca", preco: 99.9 },
+export const CONFERENTES = [
+  { id: "c1", nome: "Diego" }, { id: "c2", nome: "Armando" }, { id: "c3", nome: "Wesly" },
+  { id: "c4", nome: "Mike" }, { id: "c5", nome: "Darlisson" }, { id: "c6", nome: "Célio" },
 ];
-// endereço de picking de cada produto, no formato das prateleiras (rua-prédio-andar-apartamento, só números)
-export const ENDERECOS = {
-  "BK-29-ALU-18": "R3001-P1-A100-AP102", "BK-26-ACO-RD": "R3001-P1-A100-AP105", "BK-20-INF-AZ": "R3001-P2-A100-AP101",
-  "CM-29-PRESTA": "R3002-P3-A200-AP204", "CM-26-SCHRAD": "R3002-P3-A200-AP206", "PN-29-225": "R3002-P4-A100-AP102",
-  "CP-MTB-M-PT": "R3003-P1-A300-AP301", "LV-GEL-G": "R3003-P2-A200-AP203", "SN-LED-USB": "R3003-P2-A300-AP305",
-  "CR-KMC-9V": "R3002-P5-A200-AP201", "PD-PLAT-AL": "R3002-P5-A300-AP302", "GF-SQ-750": "R3003-P3-A100-AP104",
-  "BM-PISO-AL": "R3003-P4-A100-AP101", "SL-GEL-CONF": "R3002-P6-A200-AP203",
-  "QD-29-ALU-M": "R3004-P1-A100-AP101", "AR-29-PD-36": "R3004-P1-A200-AP203", "GD-MTB-680": "R3004-P2-A100-AP102", "MS-31-60": "R3004-P2-A200-AP201",
-  "FR-VB-KIT": "R3004-P3-A100-AP104", "CB-TR-7V": "R3004-P3-A200-AP202", "PE-3X-170": "R3004-P4-A100-AP101", "CU-36-QR": "R3004-P4-A200-AP203",
-};
-const CATALOGO = [...PRODUTOS, ...COMPONENTES];
+export const FATURISTAS = [{ id: "f1", nome: "Erika Cristina" }];
+export const MOTORISTAS = [
+  { id: "m1", nome: "José Carlos" }, { id: "m2", nome: "Severino Lima" }, { id: "m3", nome: "Antônio Neto" },
+  { id: "m4", nome: "Cícero Gomes" }, { id: "m5", nome: "Edilson Ramos" },
+];
+// setor atual de cada pessoa nos painéis (demonstração; no sistema real vem do app de cada um).
+// Quem não está aqui trabalha na expedição; todos os conferentes ficam na expedição.
+export const EQUIPE_SETOR = { s9: "mont", s10: "mont", s11: "mont", s12: "mont" };
 
-// produto pelo código lido (EAN ou SKU) no catálogo de demonstração
+// ---------- catálogo ----------
+// tipo do produto (só muda o ícone no coletor e o peso de exemplo no cadastro), deduzido da descrição
+const ACESSORIO = /^(BOMBA|CADEADO|CARAMANHOLA|SUPORTE CARAMANHOLA|FAROL|PISCA|CAPACETE|LUVA|ADESIVO|CAPA |RETROVISOR|BUZINA|CAMPAINHA|REFLETOR)/;
+const tipoDoProduto = (desc) => (/^BICICLETA /.test(desc) ? "bike" : ACESSORIO.test(desc) ? "acess" : "peca");
+const doCatalogo = (segmento) => ([sku, desc, un, ean, vendidos]) => ({ sku, ean, desc, un, segmento, vendidos, tipo: tipoDoProduto(desc) });
+
+export const PRODUTOS = [...PRODUTOS_BIKE.map(doCatalogo("Bike")), ...PRODUTOS_MOTO.map(doCatalogo("Moto"))];
+// peças que entram nos pedidos de montagem (ordem de produção): as de bicicleta usadas para montar uma bike
+const PECA_DE_MONTAGEM = /^(ARO|PNEU|CAMARA \d|CUBO|GUIDAO|SELIM|PEDAL|CORRENTE|CAMBIO|FREIO|MANETE|MOV |GARFO|CANOTE|RODA LIVRE|EIXO|PUNHO|SUPORTE GUIDAO|COROA)/;
+export const COMPONENTES = PRODUTOS.filter((p) => p.segmento === "Bike" && PECA_DE_MONTAGEM.test(p.desc));
+
+// endereço de picking de cada produto (rua-prédio-andar-apartamento, só números).
+// Os mais vendidos ficam mais perto: o 1º do ranking vai em R3001-P1-A100-AP101, o 2º no AP102…
+// Cada prédio tem 18 posições de picking (andares 100, 200 e 300, aptos x01 a x06) e cada rua 6 prédios (108 posições).
+// Bike nas ruas 3001 e 3002, Moto na 3003; a rua 3004 fica livre para os testes de cadastro.
+function enderecoDePicking(ruaInicial, posicao) {
+  const rua = ruaInicial + Math.floor(posicao / 108), naRua = posicao % 108;
+  const predio = Math.floor(naRua / 18) + 1, andar = 100 * (Math.floor((naRua % 18) / 6) + 1), apto = andar + (naRua % 6) + 1;
+  return `R${rua}-P${predio}-A${andar}-AP${apto}`;
+}
+export const ENDERECOS = Object.fromEntries([
+  ...PRODUTOS_BIKE.map(([sku], i) => [sku, enderecoDePicking(3001, i)]),
+  ...PRODUTOS_MOTO.map(([sku], i) => [sku, enderecoDePicking(3003, i)]),
+]);
+const CATALOGO = PRODUTOS;
+
+// produto pelo código lido (EAN ou código interno) no catálogo de demonstração
 export const find = (code) => acharProduto(CATALOGO, code);
 
 const item = (sku, qtd) => ({
@@ -54,11 +63,11 @@ const order = (id, cliente, cidade, prio, hora, itens) => ({
 
 // pedidos para separar
 export const seedSeparacao = () => [
-  order("PV-10421", "Pedal & Cia Bikes", "Recife · PE", "alta", "07:42", [item("BK-29-ALU-18", 2), item("CM-29-PRESTA", 6), item("CP-MTB-M-PT", 2), item("SN-LED-USB", 4)]),
-  order("PV-10422", "Bike Point Olinda", "Olinda · PE", "normal", "08:05", [item("BK-26-ACO-RD", 3), item("CM-26-SCHRAD", 5), item("PD-PLAT-AL", 2)]),
-  order("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", "alta", "08:31", [item("PN-29-225", 8), item("CM-29-PRESTA", 10), item("CR-KMC-9V", 6), item("SL-GEL-CONF", 4), item("BM-PISO-AL", 2)]),
-  order("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", "normal", "09:10", [item("BK-20-INF-AZ", 4), item("GF-SQ-750", 12), item("LV-GEL-G", 6)]),
-  order("PV-10425", "Mundo Pedal", "Jaboatão · PE", "normal", "09:48", [item("CP-MTB-M-PT", 3), item("LV-GEL-G", 3), item("SN-LED-USB", 3), item("GF-SQ-750", 6)]),
+  order("PV-10421", "Horizonte Cedro Comercial", "Fortaleza · CE", "alta", "07:42", [item("176", 20), item("122", 30), item("536", 6), item("17057", 10)]),
+  order("PV-10422", "Arco Cedro Comercial", "Maracanaú · CE", "normal", "08:05", [item("16016", 10), item("1797", 50), item("3243", 4)]),
+  order("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", "alta", "08:31", [item("883", 8), item("167", 10), item("283", 6), item("4084", 4), item("2843", 2)]),
+  order("PV-10424", "Diego Valente Pires", "Sobral · CE", "normal", "09:10", [item("13633", 4), item("19212", 12), item("17480", 6)]),
+  order("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", "normal", "09:48", [item("8745", 10), item("17726", 12), item("8545", 20), item("2825", 6)]),
 ].map(routeSort);
 
 // pedidos já separados, aguardando conferência
@@ -68,13 +77,13 @@ export const seedConferencia = () => {
       const f = faltas[i.sku];
       Object.assign(i, f != null ? { sep: f, status: "falta", motivo: "Quantidade insuficiente" } : { sep: i.qtd, status: "ok" });
     });
-    return Object.assign(o, { status: "concluido", operador: "Marcos", fim: Date.now() - 3600e3 });
+    return Object.assign(o, { status: "concluido", operador: "Davi", fim: Date.now() - 3600e3 });
   };
   return [
-    sep(order("PV-10401", "Casa do Ciclista", "Recife · PE", "alta", "06:55", [item("BK-29-ALU-18", 1), item("CM-29-PRESTA", 4), item("LV-GEL-G", 2), item("GF-SQ-750", 3)])),
-    sep(order("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", "normal", "07:10", [item("PN-29-225", 4), item("CR-KMC-9V", 2), item("PD-PLAT-AL", 2), item("BM-PISO-AL", 1)]), { "BM-PISO-AL": 0 }),
-    sep(order("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", "normal", "07:28", [item("BK-20-INF-AZ", 2), item("CP-MTB-M-PT", 2), item("SN-LED-USB", 5)])),
-    sep(order("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", "alta", "07:35", [item("BK-26-ACO-RD", 2), item("CM-26-SCHRAD", 6), item("SL-GEL-CONF", 3), item("GF-SQ-750", 6), item("LV-GEL-G", 4)]), { "CM-26-SCHRAD": 5 }),
+    sep(order("PV-10401", "Farol Cedro Comercial", "Fortaleza · CE", "alta", "06:55", [item("176", 10), item("16016", 4), item("17057", 2), item("19212", 3)])),
+    sep(order("PV-10402", "Paineira Cedro Comercial", "Fortaleza · CE", "normal", "07:10", [item("536", 4), item("283", 2), item("3243", 2), item("2843", 1)]), { "2843": 0 }),
+    sep(order("PV-10403", "Brisa Cedro Comercial", "Sobral · CE", "normal", "07:28", [item("13633", 2), item("8745", 6), item("14857", 5)])),
+    sep(order("PV-10404", "Alameda Arco Comercial", "Quixadá · CE", "alta", "07:35", [item("883", 2), item("167", 6), item("4084", 3), item("19212", 6), item("17480", 4)]), { "167": 5 }),
   ].map(routeSort);
 };
 
@@ -83,10 +92,10 @@ export const seedConferencia = () => {
 const OP_CLI = "Ordem de produção", OP_LOC = "Montagem";
 const op = (id, prio, hora, itens) => order(id, OP_CLI, OP_LOC, prio, hora, itens);
 export const seedSeparacaoMont = () => [
-  op("OP-3212", "alta", "07:20", [item("QD-29-ALU-M", 10), item("AR-29-PD-36", 20), item("CU-36-QR", 10), item("PN-29-225", 20), item("CM-29-PRESTA", 20)]),
-  op("OP-3213", "normal", "08:02", [item("GD-MTB-680", 12), item("MS-31-60", 12), item("FR-VB-KIT", 12), item("SL-GEL-CONF", 12)]),
-  op("OP-3214", "normal", "08:45", [item("CB-TR-7V", 8), item("PE-3X-170", 8), item("CR-KMC-9V", 8), item("PD-PLAT-AL", 8)]),
-  op("OP-3215", "normal", "09:30", [item("QD-29-ALU-M", 6), item("AR-29-PD-36", 12), item("CM-29-PRESTA", 12), item("GD-MTB-680", 6), item("SL-GEL-CONF", 6)]),
+  op("OP-3212", "alta", "07:20", [item("13075", 10), item("13633", 20), item("19958", 10), item("536", 20), item("16016", 20)]),
+  op("OP-3213", "normal", "08:02", [item("21844", 12), item("4084", 12), item("18726", 12), item("17057", 12)]),
+  op("OP-3214", "normal", "08:45", [item("18913", 8), item("17988", 8), item("283", 8), item("3243", 8)]),
+  op("OP-3215", "normal", "09:30", [item("13075", 6), item("13633", 12), item("16016", 12), item("21844", 6), item("16440", 6)]),
 ].map(routeSort);
 export const seedConferenciaMont = () => {
   const sep = (o, faltas = {}) => {
@@ -94,12 +103,12 @@ export const seedConferenciaMont = () => {
       const f = faltas[i.sku];
       Object.assign(i, f != null ? { sep: f, status: "falta", motivo: "Quantidade insuficiente" } : { sep: i.qtd, status: "ok" });
     });
-    return Object.assign(o, { status: "concluido", operador: "Thiago", fim: Date.now() - 3600e3 });
+    return Object.assign(o, { status: "concluido", operador: "Dutra", fim: Date.now() - 3600e3 });
   };
   return [
-    sep(op("OP-3208", "alta", "06:40", [item("QD-29-ALU-M", 8), item("AR-29-PD-36", 16), item("CU-36-QR", 8), item("PN-29-225", 16)])),
-    sep(op("OP-3209", "normal", "06:58", [item("FR-VB-KIT", 10), item("CB-TR-7V", 10), item("PE-3X-170", 10), item("CR-KMC-9V", 10)]), { "PE-3X-170": 9 }),
-    sep(op("OP-3210", "normal", "07:05", [item("GD-MTB-680", 15), item("MS-31-60", 15), item("SL-GEL-CONF", 15), item("PD-PLAT-AL", 15)])),
+    sep(op("OP-3208", "alta", "06:40", [item("13075", 8), item("13633", 16), item("19958", 8), item("536", 16)])),
+    sep(op("OP-3209", "normal", "06:58", [item("18726", 10), item("18913", 10), item("17988", 10), item("283", 10)]), { "17988": 9 }),
+    sep(op("OP-3210", "normal", "07:05", [item("21844", 15), item("4084", 15), item("16440", 15), item("3243", 15)])),
   ].map(routeSort);
 };
 
@@ -108,30 +117,27 @@ export const seedConferenciaMont = () => {
 export const seedEmbarque = () => {
   // obs: composição dos volumes informada na conferência (demonstração)
   const p = (id, cliente, cidade, volumes, tipos, atencao = "", outro = "") =>
-    ({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Usuário Conferente", em: null } : null });
+    ({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Diego", em: null } : null });
   const c = (id, rota, veiculo, placa, motorista, doca, saida, pedidos) => ({
     id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, operador: null, log: [], obs: "",
   });
   return [
-    c("CG-0231", "Recife / RMR", "VUC", "QYK-4B21", "José Carlos", "02", "10:30", [
-      p("PV-10401", "Casa do Ciclista", "Recife · PE", 2, { caixa: 1, sacola: 1 }),
-      p("PV-10402", "Speed Bikes Boa Viagem", "Recife · PE", 2, { pneuaro: 1, caixa: 1 }),
-      p("PV-10421", "Pedal & Cia Bikes", "Recife · PE", 3, { caixa: 2, pneuaro: 1 }, "Vai ter acréscimo de 1 bicicleta"),
-      p("PV-10425", "Mundo Pedal", "Jaboatão · PE", 2, { aro: 1, sacola: 1 }),
+    c("CG-0231", "Centro / Eusébio", "VUC", "QYK-4B21", "José Carlos", "02", "10:30", [
+      p("PV-10401", "Farol Cedro Comercial", "Fortaleza · CE", 2, { caixa: 1, sacola: 1 }),
+      p("PV-10402", "Paineira Cedro Comercial", "Fortaleza · CE", 2, { pneuaro: 1, caixa: 1 }),
+      p("PV-10421", "Horizonte Cedro Comercial", "Fortaleza · CE", 3, { caixa: 2, pneuaro: 1 }, "Vai ter acréscimo de 1 caixa de câmaras"),
+      p("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", 2, { caixa: 1, sacola: 1 }),
     ]),
-    c("CG-0232", "Agreste", "Toco", "PCZ-7H90", "Severino Lima", "03", "11:15", [
-      p("PV-10424", "Rota Bike Caruaru", "Caruaru · PE", 4, { amarrado: 1, pneu: 2, caixa: 1 }, "Amarrado com 6 pneus aro 29"),
-      p("PV-10403", "Pedala Garanhuns", "Garanhuns · PE", 2, { caixa: 2 }),
+    c("CG-0232", "Ceará Transporte", "Toco", "PCZ-7H90", "Severino Lima", "03", "11:15", [
+      p("PV-10424", "Diego Valente Pires", "Sobral · CE", 4, { amarrado: 1, aro: 2, caixa: 1 }, "Amarrado com 4 aros 29"),
+      p("PV-10403", "Brisa Cedro Comercial", "Sobral · CE", 2, { caixa: 2 }),
     ]),
-    c("CG-0233", "Sertão", "Truck", "RFA-2C33", "Antônio Neto", "01", "13:00", [
-      p("PV-10404", "Trilha Livre Bike Shop", "Petrolina · PE", 3, { bike: 1, caixa: 1, outro: 1 }, "", "Tubo de garfo"),
-      p("PV-10423", "Ciclo Norte Distribuidora", "Paulista · PE", 5, { caixa: 3, quadro: 2 }, "Quadros envoltos em plástico bolha"),
+    c("CG-0233", "F&P", "Truck", "RFA-2C33", "Antônio Neto", "01", "13:00", [
+      p("PV-10404", "Alameda Arco Comercial", "Quixadá · CE", 3, { pneu: 1, caixa: 1, outro: 1 }, "", "Bomba de oficina"),
+      p("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", 5, { caixa: 3, pneu: 2 }, "Pneus amarrados em par"),
     ]),
   ];
 };
-
-// setor atual de cada pessoa nos painéis (demonstração; no sistema real vem do app de cada um)
-export const EQUIPE_SETOR = { s5: "mont", s6: "mont", c4: "mont" };
 
 // =====================================================================
 // ESTOQUE (antes da venda): endereços, produtos do ERP, embalagens, endereço padrão e saldos
@@ -139,7 +145,7 @@ export const EQUIPE_SETOR = { s5: "mont", s6: "mont", c4: "mont" };
 
 // dados que o ERP manda de cada produto (exemplo do documento do estoquista; integração ainda simulada)
 const doErp = (p, i) => ({
-  codigo: p.sku, descricao: p.desc, un: "UN",
+  codigo: p.sku, descricao: p.desc, un: p.un,
   fornecedor: [8558, 8561, 8603, 8710][i % 4], grupo: { bike: 21, peca: 22, acess: 23 }[p.tipo], subgrupo: null,
   estoqueMin: null, estoqueMax: p.tipo === "bike" ? 40 : 100,
   controlaValidade: false, controlaLote: false, controlaSerie: false,
@@ -171,11 +177,11 @@ function embalagensDeDemonstracao() {
   let id = 1;
   const lista = CATALOGO.map((p) => ({ id: id++, produto: p.sku, codigo: p.ean, descricao: "Unidade", qtd: 1 }));
   const extra = (produto, codigo, descricao, qtd) => lista.push({ id: id++, produto, codigo, descricao, qtd });
-  extra("CM-29-PRESTA", "17891000200015", "Caixa com 50", 50);
-  extra("CM-26-SCHRAD", "17891000200022", "Caixa com 50", 50);
-  extra("GF-SQ-750", "17891000300043", "Caixa com 24", 24);
-  extra("LV-GEL-G", "", "Pacote com 12", 12); // sem código: localizado pelo código interno ou descrição
-  extra("PN-29-225", "17891000200039", "Fardo com 10", 10);
+  extra("176", "18019227210719", "Caixa com 50", 50); // câmara 26 Pirelli
+  extra("16016", "16938112670167", "Caixa com 50", 50); // câmara 29 Bison
+  extra("17726", "17898926432360", "Caixa com 24", 24); // óleo Dulub
+  extra("2825", "", "Caixa com 12", 12); // cola Vulcaflex — sem código: localizado pelo código interno ou descrição
+  extra("536", "14717294987988", "Fardo com 10", 10); // pneu 26 Kenda
   return lista;
 }
 
@@ -183,8 +189,9 @@ function embalagensDeDemonstracao() {
 function estoqueInicial(enderecos) {
   const porCodigo = (c) => enderecos.find((e) => e.codigo === c);
   const associacoes = [], saldos = [];
-  const aereo = { "BK-29-ALU-18": "R3001-P1-A500-AP501", "BK-26-ACO-RD": "R3001-P1-A500-AP502", "BK-20-INF-AZ": "R3001-P2-A500-AP501",
-    "PN-29-225": "R3002-P4-A500-AP501", "CM-29-PRESTA": "R3002-P3-A500-AP501", "QD-29-ALU-M": "R3004-P1-A500-AP501" };
+  // pulmão (aéreo) dos que mais saem: cabos e câmaras, pneu 26, câmara de moto e óleo
+  const aereo = { "122": "R3001-P1-A500-AP501", "176": "R3001-P1-A500-AP502", "16016": "R3001-P1-A500-AP503",
+    "536": "R3001-P2-A500-AP501", "8745": "R3003-P1-A500-AP501", "17726": "R3003-P1-A500-AP502" };
   CATALOGO.forEach((p, i) => {
     const pick = porCodigo(ENDERECOS[p.sku]);
     associacoes.push({ produto: p.sku, enderecoId: pick.id });
@@ -196,7 +203,7 @@ function estoqueInicial(enderecos) {
     }
   });
   // um produto guardado fora do endereço padrão (aparece na consulta, mesmo sem associação)
-  saldos.push({ enderecoId: porCodigo("R3003-P5-A500-AP501").id, produto: "GF-SQ-750", qtd: 48 });
+  saldos.push({ enderecoId: porCodigo("R3003-P5-A500-AP501").id, produto: "17726", qtd: 48 });
   return { associacoes, saldos };
 }
 
@@ -240,20 +247,20 @@ function recebimentoInicial(enderecos, saldos) {
   };
 
   // conferida, sem divergência, tudo armazenado
-  const a = nota(notaDoErp("48120", 8710, 3, [["BK-29-ALU-18", 10], ["CP-MTB-M-PT", 20]]), true);
-  conferiu(a, "BK-29-ALU-18", 10, 10, 10, 1, 3); conferiu(a, "CP-MTB-M-PT", 20, 20, 2, 1, 3);
+  const a = nota(notaDoErp("48120", 8710, 3, [["16016", 100], ["17057", 20]]), true);
+  conferiu(a, "16016", 100, 100, 2, 1, 3); conferiu(a, "17057", 20, 20, 2, 1, 3);
   // conferida com divergência (faltaram 4 aros), tudo o que chegou já armazenado
-  const b = nota(notaDoErp("48190", 8561, 1, [["AR-29-PD-36", 50], ["QD-29-ALU-M", 10]]), true);
-  conferiu(b, "AR-29-PD-36", 46, 46, 4, 2, 1); conferiu(b, "QD-29-ALU-M", 10, 10, 2, 2, 1);
+  const b = nota(notaDoErp("48190", 8561, 1, [["13633", 50], ["13075", 10]]), true);
+  conferiu(b, "13633", 46, 46, 4, 2, 1); conferiu(b, "13075", 10, 10, 2, 2, 1);
   // conferida, sem divergência, armazenamento parcial (metade das câmaras ainda na doca)
-  const c = nota(notaDoErp("48155", 8603, 1, [["CM-29-PRESTA", 100], ["GF-SQ-750", 48]]), true);
-  conferiu(c, "CM-29-PRESTA", 100, 50, 2, 2, 1); conferiu(c, "GF-SQ-750", 48, 48, 2, 2, 1);
+  const c = nota(notaDoErp("48155", 8603, 1, [["176", 100], ["19212", 48]]), true);
+  conferiu(c, "176", 100, 50, 2, 2, 1); conferiu(c, "19212", 48, 48, 2, 2, 1);
   // em aberto: parte conferida hoje, nada armazenado ainda
-  const d = nota(notaDoErp("48213", 8558, 0, [["PN-29-225", 40], ["CM-26-SCHRAD", 50], ["SL-GEL-CONF", 30]]), false);
-  conferiu(d, "PN-29-225", 24, 0, 2, 1, 0); conferiu(d, "SL-GEL-CONF", 30, 0, 1, 1, 0);
+  const d = nota(notaDoErp("48213", 8558, 0, [["536", 40], ["167", 50], ["4084", 30]]), false);
+  conferiu(d, "536", 24, 0, 2, 1, 0); conferiu(d, "4084", 30, 0, 1, 1, 0);
   // aguardando conferência
-  nota(notaDoErp("48177", 8603, 0, [["LV-GEL-G", 24], ["SN-LED-USB", 36], ["BM-PISO-AL", 6]]), false);
-  nota(notaDoErp("48201", 8558, 0, [["PN-29-225", 20], ["CM-29-PRESTA", 100], ["CR-KMC-9V", 15]]), false);
+  nota(notaDoErp("48177", 8603, 0, [["17480", 24], ["14857", 36], ["2843", 6]]), false);
+  nota(notaDoErp("48201", 8558, 0, [["536", 20], ["176", 100], ["283", 15]]), false);
 
   return { notas, conferencias, volumes, proximos: { nota: idNota, conferencia: idConf, volume: idVol } };
 }
@@ -275,14 +282,13 @@ export function estoqueDeDemonstracao() {
 
 // o que o "ERP" manda na próxima busca de notas: duas novas e uma que já existe (para mostrar o bloqueio)
 export const importacaoDeNotas = () => [
-  notaDoErp("48230", 8561, 0, [["AR-29-PD-36", 60], ["CU-36-QR", 20]]),
-  notaDoErp("48231", 8710, 0, [["BK-26-ACO-RD", 8], ["BK-20-INF-AZ", 6], ["GF-SQ-750", 48]]),
-  notaDoErp("48177", 8603, 0, [["LV-GEL-G", 24], ["SN-LED-USB", 36], ["BM-PISO-AL", 6]]),
+  notaDoErp("48230", 8561, 0, [["13633", 60], ["19958", 20]]),
+  notaDoErp("48231", 8710, 0, [["8745", 48], ["17726", 48], ["8545", 30]]),
+  notaDoErp("48177", 8603, 0, [["17480", 24], ["14857", 36], ["2843", 6]]),
 ];
 
 // o que o "ERP" manda na próxima importação simulada: produtos novos e um que já existe (para mostrar o bloqueio)
 export const importacaoDoErp = () => [
-  { sku: "CM-20-SCHRAD", desc: "Câmara de Ar Aro 20 Schrader", tipo: "peca" },
-  { sku: "FL-DIANT-USB", desc: "Farol Dianteiro LED USB 300 lm", tipo: "acess" },
-  { sku: "BK-29-ALU-18", desc: "Bicicleta Aro 29 Alumínio 21v Preta", tipo: "bike" },
+  ...PRODUTOS_NOVOS_DO_ERP.map(doCatalogo("Novo")),
+  CATALOGO[0],
 ].map(doErp);

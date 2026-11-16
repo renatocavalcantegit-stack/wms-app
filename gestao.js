@@ -3,7 +3,8 @@
 // Montagem (montagem.html, body data-setor="mont"): pedidos OP com Separação e Conferência (ou conferência dispensada).
 import * as R from "./compartilhado/regras/rotas.js";
 import { PERFIS, SETORES, session, logout } from "./js/sessao.js";
-import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.js";
+import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR, SEPARADORES, CONFERENTES, FATURISTAS, MOTORISTAS } from "./js/demo-dados.js";
+import { CLIENTES } from "./js/demo-clientes.js";
 
 (() => {
   "use strict";
@@ -12,7 +13,8 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const MONT = document.body.dataset.setor === "mont", SETOR = MONT ? "mont" : "exp";
   if (!sess || sess.perfil !== (MONT ? "coordmont" : "coord")) { location.replace("./"); return; }
 
-  const STORE = MONT ? "wms-bb-gestao-mont-v2" : "wms-bb-gestao-v3";
+  // v3 dos dados: equipe, produtos e clientes reais e ritmo em tempo real (a chave nova descarta a simulação antiga)
+  const STORE = MONT ? "wms-bb-gestao-mont-v3" : "wms-bb-gestao-v4";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -20,39 +22,34 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const MIN = 60000;
   const pad = (n) => String(n).padStart(2, "0");
 
-  // ---------- cadastros de demonstração ----------
-  const SEPS = [
-    { id: "s1", nome: "Marcos Silva" }, { id: "s2", nome: "Joana Lima" }, { id: "s3", nome: "Rafael Souza" },
-    { id: "s4", nome: "Bruno Alves" }, { id: "s5", nome: "Larissa Melo" }, { id: "s6", nome: "Thiago Nunes" },
-  ];
-  const CONFS = [{ id: "c1", nome: "Ana Paula" }, { id: "c2", nome: "Carla Dias" }, { id: "c3", nome: "Diego Rocha" }, { id: "c4", nome: "Vanessa Reis" }];
-  const FATS = [{ id: "f1", nome: "Rita Moreira" }, { id: "f2", nome: "Sônia Prado" }];
-  const MOTS = [
-    { id: "m1", nome: "José Carlos" }, { id: "m2", nome: "Severino Lima" }, { id: "m3", nome: "Antônio Neto" },
-    { id: "m4", nome: "Cícero Gomes" }, { id: "m5", nome: "Edilson Ramos" },
-  ];
+  // ---------- cadastros de demonstração (js/demo-dados.js e js/demo-clientes.js) ----------
+  const SEPS = SEPARADORES, CONFS = CONFERENTES, FATS = FATURISTAS, MOTS = MOTORISTAS;
   const PEOPLE = [...SEPS, ...CONFS, ...FATS, ...MOTS];
   const AV = ["#E10600", "#0E0E10", "#2563EB", "#EA580C", "#16A34A", "#7C3AED", "#0891B2", "#A16207", "#DB2777", "#475569"];
   const OPERADOR = "Operador de doca";
   const VEICULOS = { VUC: 40, Toco: 80, Truck: 140 };
-  const VENDEDORES = ["Paulo Henrique", "Fernanda Costa", "Lucas Martins", "Patrícia Rocha", "Diego Farias"];
-  const NOMES = ["Bike Center", "Pedal Forte", "Casa da Bike", "Rei das Bikes", "Ponto do Ciclista", "Mega Bikes", "Pedal Livre", "Duas Rodas", "Oficina do Pedal", "Ciclovia Bikes", "Bike Mais", "Roda Livre"];
-  // cidade e bairros fictícios por rota
-  const LOCAIS = {
-    centro: [["Fortaleza", ["Centro", "Benfica", "Fátima", "Joaquim Távora"]]],
-    eusebio: [["Eusébio", ["Centro", "Mangabeira", "Tamatanduba"]]],
-    caucaia: [["Caucaia", ["Centro", "Jurema", "Icaraí"]]],
-    maracanau: [["Maracanaú", ["Jereissati", "Pajuçara", "Centro"]]],
-    maranguape: [["Maranguape", ["Centro", "Novo Maranguape"]]],
-    cearatransp: [["Sobral", ["Centro", "Junco"]], ["Crateús", ["Centro", "São Vicente"]], ["Tianguá", ["Centro"]]],
-    megafrete: [["Juazeiro do Norte", ["Centro", "Pirajá"]], ["Crato", ["Centro"]], ["Iguatu", ["Centro", "Prado"]]],
-    nortlog: [["Itapipoca", ["Centro", "Violete"]], ["Acaraú", ["Centro"]], ["Itarema", ["Centro", "Riacho"]]],
-    fp: [["Quixadá", ["Centro", "Campo Novo"]], ["Russas", ["Centro"]], ["Limoeiro do Norte", ["Centro"]]],
-    messejana: [["Fortaleza", ["Messejana", "Cambeba", "Lagoa Redonda"]]],
-    itaitinga: [["Itaitinga", ["Centro", "Gereberaba"]]],
-    horizonte: [["Horizonte", ["Centro", "Planalto"]]],
-    cascavel: [["Cascavel", ["Centro", "Caponga"]]],
+  // clientes: [código, nome, cidade, bairro, vendedor, rota]; a posição no ranking dá o peso (quem compra mais aparece mais)
+  const CLI = CLIENTES.map(([cod, nome, cidade, bairro, vendedor, rota], i) => ({ cod, nome, cidade, bairro, vendedor, rota, peso: 1 / (i + 25) }));
+  const CLI_COM_ROTA = CLI.filter((c) => c.rota);
+
+  // ---------- ritmo da simulação: tempo real, com as médias da operação ----------
+  // 178 pedidos por dia; de 1 a 21 itens (SKUs), média 9; separador e conferente levam ~1 min por item (10 itens ≈ 10 min)
+  const SEG = 1000;
+  const RITMO = {
+    chegadaSeg: [120, 240],  // intervalo entre pedidos novos: média de 3 min ≈ 178 pedidos em 9 horas
+    sepItemSeg: [40, 80],    // separar um item (média 1 min)
+    confItemSeg: [40, 80],   // conferir um item (média 1 min)
+    pegarSeg: [30, 60],      // separador / conferente começa o pedido que recebeu
+    pegarFatSeg: [20, 40],   // a faturista abre o próximo pedido da fila
+    faturarSeg: [120, 180],  // faturar um pedido no Sankhya
+    cargaSeg: 180,           // de quanto em quanto tempo o ERP monta carga com os faturados
+    esperaCargaSeg: 300,     // o faturado espera pelo menos isso antes de entrar numa carga
+    pegarCargaSeg: 60,       // o operador de doca começa a carga do motorista
+    bipVolumeSeg: [12, 25],  // bipar um volume no carregamento
+    opMin: [20, 40],         // chega um pedido de montagem (OP)
   };
+  // pedidos feitos por pessoa a cada hora de expediente (para os contadores de "hoje" ao abrir o painel)
+  const POR_HORA = { sep: 178 / 8 / 9, conf: 178 / 6 / 9, lib: 178 / 9, mont: 1 };
   const DIARIAS = R.ROTAS.filter((r) => r.semanal == null).map((r) => r.id);
 
   const BOARDS = {
@@ -77,8 +74,15 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const rint = (a, b) => a + Math.floor(rnd() * (b - a + 1));
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   const shuffle = (a) => { const c = [...a]; for (let i = c.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [c[i], c[j]] = [c[j], c[i]]; } return c; };
-  // rotas diárias aparecem mais que as semanais
-  const pickRota = () => (rnd() < 0.85 ? pick(DIARIAS) : pick(["itaitinga", "horizonte", "cascavel"]));
+  // sorteio com peso (clientes que compram mais e produtos que vendem mais aparecem mais)
+  const pickPeso = (lista, peso) => { let r = rnd() * lista.reduce((t, x) => t + peso(x), 0); return lista.find((x) => (r -= peso(x)) < 0) || lista[lista.length - 1]; };
+  const entre = ([a, b]) => Math.round((a + rnd() * (b - a)) * SEG);
+  // quantidade de itens do pedido: de 1 a 21, média 9 (1 + 20 sorteios com 40% de chance)
+  const qtdItens = () => { let n = 1; for (let i = 0; i < 20; i++) if (rnd() < 0.4) n++; return n; };
+  const qtdDoItem = (x) => (x.tipo === "bike" ? rint(1, 2) : pick([1, 2, 2, 3, 4, 5, 6, 10, 12]));
+  // horas de expediente já passadas hoje (07:30 às 17:30)
+  const horasHoje = () => { const d = new Date(); return Math.max(0, Math.min(10, d.getHours() + d.getMinutes() / 60 - 7.5)); };
+  const feitosHoje = (tipo) => Math.round(horasHoje() * POR_HORA[tipo] * (0.8 + 0.4 * rnd()));
 
   // ---------- helpers ----------
   let db;
@@ -98,7 +102,7 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const avColor = (id) => AV[PEOPLE.findIndex((x) => x.id === id) % AV.length];
   const log = (o, txt, t = now()) => o.hist.push({ t, txt });
   const fillUnits = (p, k, frac) => { let n = Math.round(units(p) * frac); p.itens.forEach((i) => { const a = Math.min(i.qtd, n); i[k] = a; n -= a; }); };
-  const vols = (p) => Math.max(1, Math.ceil(units(p) / 10));
+  const vols = (p) => Math.max(1, Math.ceil(units(p) / 15));
   const cargaVol = (c) => c.pedidos.reduce((t, id) => t + (P(id).volumes || 0), 0);
   const cargaLidos = (c) => c.pedidos.reduce((t, id) => t + (c.lidos[id] || 0), 0);
   const cargaPedOk = (c) => c.pedidos.filter((id) => (c.lidos[id] || 0) >= P(id).volumes).length;
@@ -106,6 +110,21 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   const placa = () => { const L = "ABCDEFGHJKLMNPQRSTUVWXYZ"; return `${pick(L)}${pick(L)}${pick(L)}-${rint(1, 9)}${pick(L)}${rint(10, 99)}`; };
   const blank = () => ({ resp: null, atrib: null, inicio: null, fim: null });
   const sameDay = (ts) => R.iso(new Date(ts)) === hoje();
+
+  // separação / conferência: cada item ganha um tempo sorteado quando a etapa começa,
+  // e o andamento sai do relógio (funciona mesmo com a aba fechada um tempo)
+  const iniciarTempos = (p, k) => { p[k].tempos = p.itens.map(() => entre(k === "sep" ? RITMO.sepItemSeg : RITMO.confItemSeg)); };
+  const duracao = (p, k) => p[k].tempos.reduce((a, b) => a + b, 0);
+  // preenche as quantidades conforme o tempo desde o início; devolve true quando terminou
+  function andamento(p, k, t = now()) {
+    let resta = t - p[k].inicio;
+    p.itens.forEach((i, n) => {
+      const d = p[k].tempos[n];
+      i[k] = resta >= d ? i.qtd : resta > 0 ? Math.floor((i.qtd * resta) / d) : 0;
+      resta -= d;
+    });
+    return resta >= 0;
+  }
 
   // pedido chegou fora do horário e o coordenador ainda não decidiu (só no dia da chegada; virou o dia, vale a data interna)
   const foraPend = (p) => !!(p.embFora && !p.embDef && p.etapa !== "fim" && sameDay(p.chegada));
@@ -120,15 +139,17 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   }
 
   function makePedido({ semRota = false, prio = false, chegada = now(), rota = null } = {}) {
-    const rid = semRota ? null : rota || pickRota();
-    const [cidade, bairros] = pick(LOCAIS[rid || pickRota()]);
-    const bairro = pick(bairros);
-    const prods = shuffle(PRODUTOS).slice(0, rint(2, 6));
-    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: x.tipo === "bike" ? rint(1, 4) : rint(2, 12), sep: 0, conf: 0 }))
+    // o cliente vem do ranking (com peso); a rota e o vendedor são os do cadastro do cliente
+    const cli = pickPeso(rota ? CLI.filter((c) => c.rota === rota) : CLI_COM_ROTA, (c) => c.peso);
+    const rid = semRota ? null : cli.rota;
+    // produtos que vendem mais aparecem mais (peso pela raiz da quantidade vendida)
+    const restantes = [...PRODUTOS], prods = [];
+    for (let n = qtdItens(); n > 0; n--) { const x = pickPeso(restantes, (y) => Math.sqrt(y.vendidos)); prods.push(x); restantes.splice(restantes.indexOf(x), 1); }
+    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: qtdDoItem(x), sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
-      id: "PV-" + db.seq++, cli: { cod: "C" + String(rint(100, 899)).padStart(4, "0"), nome: `${pick(NOMES)} ${cidade === "Fortaleza" ? bairro : cidade}`, cidade, bairro },
-      vendedor: pick(VENDEDORES), rota: rid, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
+      id: "PV-" + db.seq++, cli: { cod: cli.cod, nome: cli.nome, cidade: cli.cidade, bairro: cli.bairro },
+      vendedor: cli.vendedor, rota: rid, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
       itens, etapa: "sep", sep: blank(), conf: blank(), lib: { ...blank(), ordem: null }, volumes: 0, nota: null, carga: null, hist: [],
     };
     db.pedidos[p.id] = p;
@@ -139,7 +160,7 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
 
   // pedido de montagem: chega do Sankhya igual a um pedido normal; só o tipo de operação muda (prefixo OP)
   function makeOP({ prio = false, chegada = now() } = {}) {
-    const pool = [...COMPONENTES, ...PRODUTOS.filter((x) => x.tipo === "peca")];
+    const pool = COMPONENTES;
     const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
@@ -154,9 +175,9 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   // dados iniciais da montagem
   function seedMont() {
     rnd = mulberry32(3301);
-    db = { v: 2, setor: "mont", seq: 3216, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
-    SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? rint(2, 5) : 0; });
-    CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? rint(2, 4) : 0; });
+    db = { v: 3, setor: "mont", seq: 3216, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
+    SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
+    CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
     const t = now(), early = () => t - rint(70, 160) * MIN;
     const stamp = (p, f) => Math.round(p.chegada + (t - 2 * MIN - p.chegada) * f);
     const sepsAqui = SEPS.filter((x) => aqui(x.id)).map((x) => x.id), confsAqui = CONFS.filter((x) => aqui(x.id)).map((x) => x.id);
@@ -167,30 +188,29 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
       p.etapa = "conf";
     };
     const assign = (p, k, resp, minsAgo) => { p[k].resp = resp; p[k].atrib = t - minsAgo * MIN; log(p, `${BOARDS[k].nome} atribuída a ${nameOf(resp)}`, p[k].atrib); };
-    const startAt = (p, k, frac, minsAgo) => { p[k].inicio = t - minsAgo * MIN; fillUnits(p, k, frac); log(p, `${BOARDS[k].nome} iniciada por ${nameOf(p[k].resp)}`, p[k].inicio); };
+    // etapa em andamento: "frac" do tempo total já passou
+    const emAndamento = (p, k, resp, frac) => {
+      iniciarTempos(p, k); const ini = t - Math.round(frac * duracao(p, k));
+      p[k].resp = resp; p[k].atrib = ini - rint(1, 3) * MIN; log(p, `${BOARDS[k].nome} atribuída a ${nameOf(resp)}`, p[k].atrib);
+      p[k].inicio = ini; andamento(p, k, t); log(p, `${BOARDS[k].nome} iniciada por ${nameOf(resp)}`, ini);
+    };
 
     // caixa de entrada da separação
     [{ chegada: t - 4 * MIN, prio: true }, { chegada: t - 13 * MIN }, { chegada: t - 26 * MIN }, { chegada: t - 44 * MIN }]
       .forEach((o) => db.sep.inbox.push(makeOP(o).id));
-    // separadores que estão na montagem
-    Object.entries({ s5: [[0.75, 9], 0], s6: [[0.3, 3]] }).forEach(([sid, plan]) => plan.forEach((step) => {
+    // separadores que estão na montagem: [fração já feita] = em andamento; 0 = na fila
+    Object.entries({ s9: [[0.75], 0], s10: [[0.3]], s11: [[0.5], 0], s12: [] }).forEach(([sid, plan]) => plan.forEach((step) => {
       const p = makeOP({ chegada: early() });
-      assign(p, "sep", sid, Array.isArray(step) ? step[1] + 2 : rint(2, 8));
-      if (Array.isArray(step)) startAt(p, "sep", step[0], step[1]);
+      if (Array.isArray(step)) emAndamento(p, "sep", sid, step[0]); else assign(p, "sep", sid, rint(2, 8));
       db.sep.cols[sid].push(p.id);
     }));
     // conferência: separados aguardando, conferente na montagem
     [0, 1, 2].forEach((i) => { const p = makeOP({ chegada: early(), prio: i === 1 }); sepDone(p); db.conf.inbox.push(p.id); });
-    Object.entries({ c4: [[0.5, 4], 0] }).forEach(([cid, plan]) => plan.forEach((step) => {
-      const p = makeOP({ chegada: early() }); sepDone(p);
-      assign(p, "conf", cid, Array.isArray(step) ? step[1] + 1 : rint(2, 6));
-      if (Array.isArray(step)) startAt(p, "conf", step[0], step[1]);
-      db.conf.cols[cid].push(p.id);
-    }));
+    // (todos os conferentes estão na expedição: os OPs conferidos hoje tiveram a conferência dispensada)
     // entregues à montagem hoje (conferidos e com conferência dispensada)
     [false, true, false, true].forEach((pulada, i) => {
       const p = makeOP({ chegada: t - (200 + i * 25) * MIN }); sepDone(p);
-      if (pulada) { p.confPulada = true; p.entregue = p.sep.fim + 3 * MIN; log(p, `Conferência dispensada por ${sess.nome} · entregue à montagem`, p.entregue); }
+      if (pulada || !confsAqui.length) { p.confPulada = true; p.entregue = p.sep.fim + 3 * MIN; log(p, `Conferência dispensada por ${sess.nome} · entregue à montagem`, p.entregue); }
       else {
         const r = pick(confsAqui);
         Object.assign(p.conf, { resp: r, atrib: p.sep.fim + MIN, inicio: p.sep.fim + 4 * MIN, fim: p.sep.fim + 15 * MIN }); fillUnits(p, "conf", 1);
@@ -200,6 +220,7 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
       p.etapa = "fim"; db.entregues.push(p.id);
     });
     db.entregues.sort((a, b) => P(b).entregue - P(a).entregue);
+    db.proxOP = t + entre(RITMO.opMin) * 60;
     rnd = Math.random;
     save();
   }
@@ -231,12 +252,12 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     if (MONT) return seedMont();
     rnd = mulberry32(2026);
     db = {
-      v: 2, seq: 10431, cargaSeq: 240, nfSeq: 236001, pedidos: {}, cargas: {}, mont: [],
+      v: 3, seq: 10431, cargaSeq: 240, nfSeq: 236001, pedidos: {}, cargas: {}, mont: [],
       sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, lib: { inbox: [], cols: {} }, emb: { inbox: [], cols: {} }, stats: {}, tick: 0,
     };
-    SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = rint(4, 11); });
-    CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = rint(6, 14); });
-    FATS.forEach((x) => { db.lib.cols[x.id] = []; db.stats[x.id] = rint(9, 18); });
+    SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("sep") : 0; });
+    CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = feitosHoje("conf"); });
+    FATS.forEach((x) => { db.lib.cols[x.id] = []; db.stats[x.id] = feitosHoje("lib"); });
     MOTS.forEach((x) => { db.emb.cols[x.id] = []; db.stats[x.id] = 0; });
     const t = now();
 
@@ -250,7 +271,7 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     const advance = (p, upto) => {
       const n = ["sep", "conf", "lib", "mont", "emb", "fim"].indexOf(upto);
       if (n > 0) {
-        const r = pick(SEPS).id;
+        const r = pick(SEPS.filter((x) => aqui(x.id))).id;
         Object.assign(p.sep, { resp: r, atrib: stamp(p, 0.04), inicio: stamp(p, 0.07), fim: stamp(p, 0.22) });
         fillUnits(p, "sep", 1); p.volumes = vols(p);
         log(p, `Separação atribuída a ${nameOf(r)}`, p.sep.atrib); log(p, `Separação iniciada por ${nameOf(r)}`, p.sep.inicio);
@@ -274,7 +295,12 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
       p.etapa = upto;
     };
     const assign = (p, k, resp, minsAgo) => { p[k].resp = resp; p[k].atrib = t - minsAgo * MIN; log(p, `${L[k]} atribuída a ${nameOf(resp)}`, p[k].atrib); };
-    const startAt = (p, k, frac, minsAgo) => { p[k].inicio = t - minsAgo * MIN; fillUnits(p, k, frac); log(p, `${L[k]} iniciada por ${nameOf(p[k].resp)}`, p[k].inicio); };
+    // etapa em andamento: "frac" do tempo total já passou
+    const emAndamento = (p, k, resp, frac) => {
+      iniciarTempos(p, k); const ini = t - Math.round(frac * duracao(p, k));
+      p[k].resp = resp; p[k].atrib = ini - rint(1, 3) * MIN; log(p, `${L[k]} atribuída a ${nameOf(resp)}`, p[k].atrib);
+      p[k].inicio = ini; andamento(p, k, t); log(p, `${L[k]} iniciada por ${nameOf(resp)}`, ini);
+    };
 
     // --- separação: caixa de entrada (fora do horário, sem rota, Messejana 12h–14h, rota semanal)
     [{ rota: "centro", chegada: at("09:24") }, { semRota: true, chegada: t - 6 * MIN }, { rota: "messejana", chegada: at("12:18") },
@@ -282,23 +308,24 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
      { rota: "nortlog", chegada: at("12:41") }, { rota: "messejana", chegada: at("13:35") }, { chegada: t - 31 * MIN }]
       .forEach((o) => db.sep.inbox.push(makePedido(o).id));
 
-    // --- separadores: andamento em vários estágios + filas
-    const sepPlan = { s1: [[0.92, 14], 0, 0], s2: [[0.65, 8], 1, 0], s3: [[0.35, 4], "eusebio", 0, 0], s4: [[0.1, 1]], s5: ["wait", 0], s6: [] };
+    // --- separadores: [fração já feita] = em andamento; 0 = na fila; 1 = na fila com prioridade; "wait" = acabou de receber
+    const sepPlan = {
+      s1: [[0.92], 0, 0], s2: [[0.65], 1, 0], s3: [[0.35], "eusebio", 0, 0], s4: [[0.1]],
+      s5: ["wait", 0], s6: [[0.5], 0], s7: [[0.2], 0], s8: [],
+    };
     Object.entries(sepPlan).forEach(([sid, plan]) => plan.forEach((step) => {
       const p = step === "eusebio" ? makePedido({ rota: "eusebio", chegada: at("09:41") }) : makePedido({ chegada: early(), prio: step === 1 });
-      assign(p, "sep", sid, Array.isArray(step) ? step[1] + 2 : rint(2, 10));
-      if (Array.isArray(step)) startAt(p, "sep", step[0], step[1]);
+      if (Array.isArray(step)) emAndamento(p, "sep", sid, step[0]); else assign(p, "sep", sid, rint(2, 10));
       if (step === "wait") p.sep.atrib = t;
       db.sep.cols[sid].push(p.id);
     }));
 
     // --- conferência
     [early(), early(), at("11:22"), early()].forEach((ch, i) => { const p = makePedido({ chegada: ch, rota: i === 2 ? "caucaia" : null }); advance(p, "conf"); db.conf.inbox.push(p.id); });
-    const confPlan = { c1: [[0.8, 6], 0], c2: [[0.4, 3]], c3: [[0.05, 1], 0, 0], c4: [] };
+    const confPlan = { c1: [[0.8], 0], c2: [[0.4]], c3: [[0.05], 0, 0], c4: [[0.6]], c5: [[0.25], 0], c6: [] };
     Object.entries(confPlan).forEach(([cid, plan]) => plan.forEach((step) => {
       const p = makePedido({ chegada: early() }); advance(p, "conf");
-      assign(p, "conf", cid, Array.isArray(step) ? step[1] + 1 : rint(2, 6));
-      if (Array.isArray(step)) startAt(p, "conf", step[0], step[1]);
+      if (Array.isArray(step)) emAndamento(p, "conf", cid, step[0]); else assign(p, "conf", cid, rint(2, 6));
       db.conf.cols[cid].push(p.id);
     }));
 
@@ -307,11 +334,11 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     [["centro"], ["caucaia"], ["maracanau", at("11:35")], ["centro"], ["messejana"], ["caucaia", null, true], ["centro"],
      ["cascavel"], ["messejana"], ["centro"], ["caucaia"], ["nortlog"]]
       .forEach(([rota, ch, prio]) => { const p = makePedido({ chegada: ch || early(), rota, prio: !!prio }); advance(p, "lib"); db.lib.inbox.push(p.id); });
-    const libPlan = { f1: ["live", 0, 0], f2: [0] };
+    const libPlan = { f1: ["live", 0, 0, 0] };
     Object.entries(libPlan).forEach(([fid, plan]) => plan.forEach((step) => {
       const p = makePedido({ chegada: early(), rota: pick(DIARIAS) }); advance(p, "lib");
       p.lib.resp = fid; p.lib.atrib = t - rint(2, 8) * MIN; log(p, `Liberado para faturamento → ${nameOf(fid)} · Sankhya atualizado`, p.lib.atrib);
-      if (step === "live") { p.lib.inicio = t - 4000; p.lib.dur = 16000; log(p, `Faturamento iniciado por ${nameOf(fid)} (Sankhya)`, p.lib.inicio); }
+      if (step === "live") { p.lib.inicio = t - 60 * SEG; p.lib.dur = 150 * SEG; log(p, `Faturamento iniciado por ${nameOf(fid)} (Sankhya)`, p.lib.inicio); }
       db.lib.cols[fid].push(p.id);
     }));
     FATS.forEach((f) => renumLib(f.id));
@@ -348,12 +375,15 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     mkCarga({ rota: "caucaia", mot: null, n: 3, minsAgo: 6 });
     mkCarga({ rota: "cearatransp", mot: null, n: 2, minsAgo: 12 });
 
+    // próximos eventos da simulação
+    db.proxChegada = t + entre(RITMO.chegadaSeg);
+    db.proxCarga = t + RITMO.cargaSeg * SEG;
     rnd = Math.random;
     save();
   }
 
   function load() {
-    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 2 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
+    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 3 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
     seed();
   }
   const save = () => localStorage.setItem(STORE, JSON.stringify(db));
@@ -1260,14 +1290,17 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
         if (!l.length || !aqui(pid)) return; // quem está em outro setor não pega pedido daqui
         const p = P(l[0]);
         if (!live(p, k)) {
-          if (now() - (p[k].atrib || 0) < 12000) return; // operador "pega" o próximo pedido alguns segundos após a atribuição
-          p[k].inicio = now(); p[k].resp = pid; log(p, `${BOARDS[k].nome} iniciada por ${nameOf(pid)}`);
+          // o operador começa o pedido um pouco depois de recebê-lo (anda até o primeiro endereço, pega o carrinho…)
+          if (!p[k].pegar) p[k].pegar = entre(RITMO.pegarSeg);
+          if (now() - (p[k].atrib || 0) < p[k].pegar) return;
+          p[k].inicio = now(); p[k].resp = pid; iniciarTempos(p, k); log(p, `${BOARDS[k].nome} iniciada por ${nameOf(pid)}`);
           changed = true; return;
         }
-        if (Math.random() > (k === "sep" ? 0.5 : 0.7)) return; // ritmo da demonstração
-        const c0 = curItem(p, k); if (c0) c0[k]++;
+        // andamento pelo relógio: cerca de 1 minuto por item
+        const antes = doneU(p, k), terminou = andamento(p, k);
+        if (doneU(p, k) !== antes) changed = true;
+        if (!terminou) return;
         changed = true;
-        if (curItem(p, k)) return;
         p[k].fim = now(); l.shift(); db.stats[pid]++;
         if (k === "sep") {
           if (!MONT) p.volumes = vols(p);
@@ -1283,13 +1316,14 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
           log(p, `Conferência finalizada por ${nameOf(pid)} · aguardando liberação p/ faturamento`);
           if (board === "conf" || board === "lib") toast(`${p.id} conferido → aguardando liberação p/ faturamento`);
         }
-        if (l[0]) P(l[0])[k].atrib = now();
+        if (l[0]) { P(l[0])[k].atrib = now(); P(l[0])[k].pegar = null; }
       });
     });
 
     // montagem: só separação e conferência; chega um pedido OP de tempos em tempos
     if (MONT) {
-      if (db.tick % 30 === 0) {
+      if (now() >= (db.proxOP || 0)) {
+        db.proxOP = now() + entre(RITMO.opMin) * 60;
         const p = makeOP({ prio: Math.random() < 0.15 });
         db.sep.inbox.unshift(p.id); flashId = p.id; changed = true;
         if (board === "sep") toast(`Novo pedido de montagem via integração: ${p.id}`);
@@ -1303,11 +1337,12 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
       if (!l.length) return;
       const p = P(l[0]);
       if (!live(p, "lib")) {
-        if (now() - (p.lib.atrib || 0) < 8000) return;
-        p.lib.inicio = now(); p.lib.dur = (9 + Math.floor(Math.random() * 8)) * 1000;
+        if (!p.lib.pegar) p.lib.pegar = entre(RITMO.pegarFatSeg);
+        if (now() - (p.lib.atrib || 0) < p.lib.pegar) return;
+        p.lib.inicio = now(); p.lib.dur = entre(RITMO.faturarSeg);
         log(p, `Faturamento iniciado por ${nameOf(fid)} (Sankhya)`); renumLib(fid); changed = true; return;
       }
-      if (now() - p.lib.inicio < (p.lib.dur || 12000)) return;
+      if (now() - p.lib.inicio < (p.lib.dur || 150 * SEG)) return;
       p.lib.fim = now(); p.nota = db.nfSeq++; l.shift(); db.stats[fid]++;
       p.etapa = "mont"; p.mont = now(); db.mont.push(p.id);
       log(p, `Faturado por ${nameOf(fid)} · NF ${p.nota} · aguardando montagem de carga no ERP`);
@@ -1317,8 +1352,9 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     });
 
     // ERP monta a carga com os faturados que embarcam hoje (mesma rota)
-    if (db.tick % 16 === 0) {
-      const td = hoje(), ready = db.mont.filter((id) => now() - (P(id).mont || 0) > 20000 && P(id).embarque && P(id).embarque <= td);
+    if (now() >= (db.proxCarga || 0)) {
+      db.proxCarga = now() + RITMO.cargaSeg * SEG;
+      const td = hoje(), ready = db.mont.filter((id) => now() - (P(id).mont || 0) > RITMO.esperaCargaSeg * SEG && P(id).embarque && P(id).embarque <= td);
       if (ready.length) {
         const g = {}; ready.forEach((id) => (g[P(id).rota] = g[P(id).rota] || []).push(id));
         const [rid, ids] = Object.entries(g).sort((a, b) => b[1].length - a[1].length)[0];
@@ -1334,13 +1370,15 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
       if (!l.length) return;
       const c = C(l[0]);
       if (c.status !== "carregando") {
-        if (now() - (c.atrib || 0) < 10000) return;
+        if (now() - (c.atrib || 0) < RITMO.pegarCargaSeg * SEG) return;
         c.status = "carregando"; c.inicio = now(); changed = true;
         log(c, `Carregamento iniciado na doca ${c.doca} · ${OPERADOR}`);
         c.pedidos.forEach((id) => log(P(id), `Carregamento iniciado (${c.id}, doca ${c.doca})`));
         return;
       }
-      if (Math.random() > 0.4) return;
+      // um volume bipado a cada 12–25 segundos
+      if (now() < (c.proxBip || 0)) return;
+      c.proxBip = now() + entre(RITMO.bipVolumeSeg);
       const cur = cargaCur(c);
       if (cur) {
         if (Math.random() < 0.05) {
@@ -1361,8 +1399,9 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
     });
 
     // integração simulada: chega um pedido novo de tempos em tempos
-    if (db.tick % 30 === 0) {
-      const p = makePedido({ semRota: Math.random() < 0.25, prio: Math.random() < 0.15 });
+    if (now() >= (db.proxChegada || 0)) {
+      db.proxChegada = now() + entre(RITMO.chegadaSeg); // em média um pedido a cada 3 minutos
+      const p = makePedido({ semRota: Math.random() < 0.05, prio: Math.random() < 0.1 });
       db.sep.inbox.unshift(p.id); flashId = p.id; changed = true;
       if (board === "sep") toast(`Novo pedido via integração: ${p.id}${p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}`);
     }
@@ -1370,8 +1409,18 @@ import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR } from "./js/demo-dados.
   }
   setInterval(tick, 1500);
 
+  // pausar congela o relógio da simulação: ao retomar, tudo o que estava contando é empurrado pelo tempo parado
+  function retomar(parado) {
+    Object.values(db.pedidos).forEach((p) => ["sep", "conf", "lib"].forEach((k) => {
+      if (live(p, k)) p[k].inicio += parado; else if (p[k] && p[k].atrib && !p[k].fim) p[k].atrib += parado;
+    }));
+    Object.values(db.cargas).forEach((c) => { if (c.atrib) c.atrib += parado; if (c.proxBip) c.proxBip += parado; });
+    ["proxChegada", "proxCarga", "proxOP"].forEach((x) => { if (db[x]) db[x] += parado; });
+  }
   $("#simBtn").addEventListener("click", () => {
-    sim = !sim; localStorage.setItem("wms-bb-gx-sim", sim ? "on" : "off"); renderTop();
+    sim = !sim; localStorage.setItem("wms-bb-gx-sim", sim ? "on" : "off");
+    if (!sim) db.pausa = now(); else if (db.pausa) { retomar(now() - db.pausa); db.pausa = null; }
+    save(); renderTop();
     toast(sim ? "Simulação retomada" : "Simulação pausada — o quadro fica parado para você organizar");
   });
 

@@ -9,7 +9,7 @@ import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser, C
 export const Embarque = (() => {
   "use strict";
 
-  const STORE = "wms-bb-emb-v1";
+  const STORE = "wms-bb-emb-v2"; // v2: clientes e rotas do Ceará na demonstração
 
   let cargas = load();
   let filter = "abertas";

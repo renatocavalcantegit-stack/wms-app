@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { routeSort } from "../compartilhado/regras/produtos.js";
 import { find } from "../js/demo-dados.js";
 
-test("find: acha o produto pelo EAN ou pelo SKU, ignorando espaços e maiúsculas/minúsculas", () => {
-  assert.equal(find("7891000100011").sku, "BK-29-ALU-18");
-  assert.equal(find(" bk-29-alu-18 ").ean, "7891000100011");
-  assert.equal(find("QD-29-ALU-M").desc, "Quadro Aro 29 Alumínio Tam. 17"); // componente de montagem
+test("find: acha o produto pelo EAN ou pelo código interno, ignorando espaços", () => {
+  assert.equal(find("7908005911280").sku, "122");
+  assert.equal(find(" 122 ").ean, "7908005911280");
+  assert.equal(find("8745").desc, "CAMARA MOTO 18 90/90-18 TITAN /FAN /YBR BMK BLUE"); // segmento Moto
 });
 
 test("find: código desconhecido devolve null", () => {

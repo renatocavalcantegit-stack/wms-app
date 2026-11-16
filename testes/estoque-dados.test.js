@@ -44,12 +44,12 @@ test("lote: grava com IDs novos e pula o que já existe ativo", () => {
 });
 
 test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
-  const cheio = porCodigo("R3001-P1-A100-AP102"); // picking da bicicleta aro 29
+  const cheio = porCodigo("R3001-P1-A100-AP102"); // picking da câmara 26 Pirelli (2º mais vendido)
   assert.deepEqual(desativarEndereco(cheio.id), { ok: false, msg: MSG_ENDERECO_COM_ESTOQUE });
-  const vazio = porCodigo("R3001-P6-A100-AP106");
+  const vazio = porCodigo("R3004-P6-A100-AP106");
   assert.equal(saldoDoEndereco(lerEstoque(), vazio.id), 0);
   assert.deepEqual(desativarEndereco(vazio.id), { ok: true });
-  assert.equal(porCodigo("R3001-P6-A100-AP106"), undefined);
+  assert.equal(porCodigo("R3004-P6-A100-AP106"), undefined);
 });
 
 test("reativar: nasce endereço com ID novo; o antigo fica inativo e aponta para o novo", () => {
@@ -73,10 +73,10 @@ test("importação do ERP: novos entram; repetido é bloqueado", () => {
 });
 
 test("embalagens: cria, bloqueia código repetido, edita e exclui", () => {
-  assert.deepEqual(salvarEmbalagem("PN-29-225", { codigo: "7891000100011", descricao: "Caixa", qtd: 2 }), { ok: false, msg: MSG_CODIGO_DUPLICADO });
-  assert.deepEqual(salvarEmbalagem("PN-29-225", { codigo: "555", descricao: "Caixa com 4", qtd: "4" }), { ok: true });
+  assert.deepEqual(salvarEmbalagem("536", { codigo: "7908005911280", descricao: "Caixa", qtd: 2 }), { ok: false, msg: MSG_CODIGO_DUPLICADO });
+  assert.deepEqual(salvarEmbalagem("536", { codigo: "555", descricao: "Caixa com 4", qtd: "4" }), { ok: true });
   const nova = lerEstoque().embalagens.find((e) => e.codigo === "555");
-  assert.equal(salvarEmbalagem("PN-29-225", { codigo: "556", descricao: "Caixa com 4", qtd: 4 }, nova.id).ok, true);
+  assert.equal(salvarEmbalagem("536", { codigo: "556", descricao: "Caixa com 4", qtd: 4 }, nova.id).ok, true);
   assert.equal(lerEstoque().embalagens.find((e) => e.id === nova.id).codigo, "556");
   excluirEmbalagem(nova.id);
   assert.equal(lerEstoque().embalagens.some((e) => e.id === nova.id), false);
@@ -84,8 +84,8 @@ test("embalagens: cria, bloqueia código repetido, edita e exclui", () => {
 
 test("endereço padrão: associa, bloqueia repetido e remove", () => {
   const end = porCodigo("R3002-P1-A100-AP101");
-  assert.deepEqual(associarProduto("PN-29-225", end.id), { ok: true });
-  assert.deepEqual(associarProduto("PN-29-225", end.id), { ok: false, msg: MSG_JA_ASSOCIADO });
-  removerAssociacao("PN-29-225", end.id);
-  assert.deepEqual(associarProduto("PN-29-225", end.id), { ok: true });
+  assert.deepEqual(associarProduto("536", end.id), { ok: true });
+  assert.deepEqual(associarProduto("536", end.id), { ok: false, msg: MSG_JA_ASSOCIADO });
+  removerAssociacao("536", end.id);
+  assert.deepEqual(associarProduto("536", end.id), { ok: true });
 });
