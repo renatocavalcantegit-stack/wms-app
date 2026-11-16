@@ -5,7 +5,7 @@
 // sem precisar mudar as telas.
 import { estoqueDeDemonstracao, importacaoDoErp } from "../demo-dados.js";
 import {
-  podeDesativar, conflitoAoReativar, codigoDoEndereco, podeAssociar, naPrateleira, validarDigitado, MSG_ENDERECO_EM_USO,
+  podeDesativar, codigoEmUso, codigoDoEndereco, TIPOS_ENDERECO, podeAssociar, naPrateleira, validarDigitado, MSG_ENDERECO_EM_USO,
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 
@@ -56,18 +56,20 @@ export const produtosDoEndereco = (db, enderecoId) =>
   db.associacoes.filter((a) => a.enderecoId === enderecoId).map((a) => produtoPorCodigo(db, a.produto));
 
 // ---------- endereços ----------
-// grava os endereços gerados em lote; os que já existem ativos com o mesmo código são ignorados (não duplica)
-export function criarEnderecos(novos, deposito) {
+// cadastra um endereço (andar e apartamento como digitados: andar 1, apto 3 → A100-AP103).
+// Recebe um ID novo, que é o que vai no QR da prateleira. Devolve { ok, endereco } ou { ok: false, msg }.
+export function criarEndereco({ rua, predio, andar, apto, tipo, deposito }) {
   const db = lerEstoque();
-  const ativos = new Set(db.enderecos.filter((e) => e.ativo).map((e) => e.codigo));
-  let criados = 0, ignorados = 0;
-  for (const e of novos) {
-    if (ativos.has(e.codigo)) { ignorados++; continue; }
-    db.enderecos.push({ ...e, id: db.proximoId.endereco++, deposito: deposito || "Principal", ativo: true, substituidoPor: null });
-    ativos.add(e.codigo); criados++;
-  }
+  const erro = validarDigitado({ rua, predio, andar, apto });
+  if (erro) return { ok: false, msg: erro };
+  if (!TIPOS_ENDERECO[tipo]) return { ok: false, msg: "Escolha o tipo do endereço." };
+  const partes = naPrateleira({ rua, predio, andar, apto });
+  if (codigoEmUso(db.enderecos, partes)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
+  const novo = { id: db.proximoId.endereco++, ...partes, codigo: codigoDoEndereco(partes), tipo,
+    deposito: String(deposito || "").trim() || "Principal", ativo: true, substituidoPor: null };
+  db.enderecos.push(novo);
   gravar(db);
-  return { criados, ignorados };
+  return { ok: true, endereco: novo };
 }
 
 export function desativarEndereco(id) {
@@ -90,7 +92,7 @@ export function reativarEndereco(id, { rua, predio, andar, apto, tipo, deposito 
   const erro = validarDigitado({ rua, predio, andar, apto });
   if (erro) return { ok: false, msg: erro };
   const partes = naPrateleira({ rua, predio, andar, apto });
-  if (conflitoAoReativar(db.enderecos, partes, id)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
+  if (codigoEmUso(db.enderecos, partes, id)) return { ok: false, msg: MSG_ENDERECO_EM_USO };
   const novo = { id: db.proximoId.endereco++, ...partes, codigo: codigoDoEndereco(partes), tipo, deposito, ativo: true, substituidoPor: null };
   db.enderecos.push(novo);
   antigo.substituidoPor = novo.id;

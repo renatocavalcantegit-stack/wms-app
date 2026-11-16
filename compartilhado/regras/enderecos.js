@@ -6,9 +6,6 @@
 
 export const TIPOS_ENDERECO = { picking: "Picking", aereo: "Aéreo", doca: "Doca" };
 
-// limite de endereços criados de uma vez (evita travar a tela com um intervalo digitado errado)
-export const MAXIMO_POR_LOTE = 5000;
-
 export const MSG_ENDERECO_COM_ESTOQUE = "ENDEREÇO POSSUI ESTOQUE. REALIZE A RETIRADA TOTAL ANTES DE DESATIVAR.";
 export const MSG_ENDERECO_COM_TAREFA = "ENDEREÇO POSSUI TAREFAS PENDENTES. CONCLUA OU CANCELE ANTES DE DESATIVAR.";
 export const MSG_ENDERECO_EM_USO = "JÁ EXISTE UM ENDEREÇO ATIVO COM ESTE CÓDIGO.";
@@ -23,7 +20,7 @@ export const naPrateleira = ({ rua, predio, andar, apto }) =>
 // o caminho inverso, para mostrar um endereço já cadastrado num formulário (andar 100, apto 103 → andar 1, apto 3)
 export const comoDigitado = (e) => ({ rua: e.rua, predio: e.predio, andar: Math.floor(e.andar / 100), apto: e.apto - e.andar });
 
-// confere rua, prédio, andar e apartamento digitados (um endereço só, como na reativação)
+// confere rua, prédio, andar e apartamento digitados (cadastro de um endereço e reativação)
 export function validarDigitado({ rua, predio, andar, apto }) {
   for (const [nome, v] of [["Rua", rua], ["Prédio", predio], ["Andar", andar], ["Apartamento", apto]]) {
     const n = Number(v);
@@ -54,44 +51,6 @@ export function acharEndereco(enderecos, lido) {
   return comCodigo.find((e) => e.ativo) || comCodigo[0] || null;
 }
 
-// valida um intervalo "inicial / final" de um campo (números inteiros positivos, inicial ≤ final)
-function intervalo(nome, ini, fim) {
-  const a = Number(ini), b = Number(fim);
-  if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1) return `${nome}: informe números inteiros a partir de 1.`;
-  if (a > b) return `${nome}: o inicial não pode ser maior que o final.`;
-  return null;
-}
-
-// quantos endereços um lote vai gerar (para mostrar antes de criar)
-export function contarLote(f) {
-  const n = (ini, fim) => Math.max(0, Number(fim) - Number(ini) + 1);
-  return n(f.ruaIni, f.ruaFim) * n(f.predioIni, f.predioFim) * n(f.andarIni, f.andarFim) * n(f.aptoIni, f.aptoFim);
-}
-
-// gera todos os endereços dentro dos intervalos (rua × prédio × andar × apartamento).
-// Andar e apartamento chegam como digitados (1, 2, 3…) e saem no formato da prateleira (A100, AP101…).
-// Ex.: rua 1–3, prédio 1–2, andar 1–2, apto 1–3 → 3 × 2 × 2 × 3 = 36 endereços (o documento citava 72; a conta é 36).
-// Devolve { erro } ou { enderecos: [{ rua, predio, andar, apto, codigo, tipo }] } — sem ID; quem grava dá o ID.
-export function gerarLote(f) {
-  const erro = intervalo("Rua", f.ruaIni, f.ruaFim) || intervalo("Prédio", f.predioIni, f.predioFim)
-    || intervalo("Andar", f.andarIni, f.andarFim) || intervalo("Apartamento", f.aptoIni, f.aptoFim);
-  if (erro) return { erro };
-  if (+f.aptoFim > MAXIMO_APTOS_POR_ANDAR) return { erro: `Apartamento: de 1 a ${MAXIMO_APTOS_POR_ANDAR} em cada andar.` };
-  if (!TIPOS_ENDERECO[f.tipo]) return { erro: "Escolha o tipo do endereço." };
-  const total = contarLote(f);
-  if (total > MAXIMO_POR_LOTE) return { erro: `O lote geraria ${total} endereços. O máximo de uma vez é ${MAXIMO_POR_LOTE}.` };
-
-  const enderecos = [];
-  for (let rua = +f.ruaIni; rua <= +f.ruaFim; rua++)
-    for (let predio = +f.predioIni; predio <= +f.predioFim; predio++)
-      for (let andar = +f.andarIni; andar <= +f.andarFim; andar++)
-        for (let apto = +f.aptoIni; apto <= +f.aptoFim; apto++) {
-          const partes = naPrateleira({ rua, predio, andar, apto });
-          enderecos.push({ ...partes, codigo: codigoDoEndereco(partes), tipo: f.tipo });
-        }
-  return { enderecos };
-}
-
 // só desativa endereço vazio e sem tarefa pendente (abastecimento, armazenamento…); nunca se exclui um endereço
 export function podeDesativar({ saldo, tarefasPendentes = 0 }) {
   if (saldo > 0) return { ok: false, msg: MSG_ENDERECO_COM_ESTOQUE };
@@ -99,10 +58,11 @@ export function podeDesativar({ saldo, tarefasPendentes = 0 }) {
   return { ok: true };
 }
 
-// reativar com novos dados não pode bater com outro endereço que já está ativo
-export function conflitoAoReativar(enderecos, partes, idAtual) {
+// endereço novo (ou reativado) não pode ter o mesmo código de outro endereço que já está ativo.
+// `idIgnorar`: na reativação, o próprio endereço antigo não conta.
+export function codigoEmUso(enderecos, partes, idIgnorar = null) {
   const codigo = codigoDoEndereco(partes);
-  return enderecos.some((e) => e.ativo && e.codigo === codigo && e.id !== idAtual);
+  return enderecos.some((e) => e.ativo && e.codigo === codigo && e.id !== idIgnorar);
 }
 
 // ordem de caminhada no galpão: rua, prédio, andar, apartamento (como números: P9 vem antes de P10)

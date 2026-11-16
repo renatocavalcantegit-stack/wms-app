@@ -3,10 +3,10 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
 import {
-  lerEstoque, criarEnderecos, desativarEndereco, reativarEndereco, importarProdutosDoErp,
+  lerEstoque, criarEndereco, desativarEndereco, reativarEndereco, importarProdutosDoErp,
   salvarEmbalagem, excluirEmbalagem, associarProduto, removerAssociacao, saldosDoProduto, saldoDoEndereco,
 } from "../js/dados/estoque.js";
-import { gerarLote, MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_EM_USO, MSG_JA_ASSOCIADO } from "../compartilhado/regras/enderecos.js";
+import { MSG_ENDERECO_COM_ESTOQUE, MSG_ENDERECO_EM_USO, MSG_JA_ASSOCIADO } from "../compartilhado/regras/enderecos.js";
 import { MSG_CODIGO_DUPLICADO, MSG_PRODUTO_JA_IMPORTADO } from "../compartilhado/regras/embalagens.js";
 
 beforeEach(limparArmazenamento);
@@ -22,11 +22,15 @@ test("demonstração: endereços no formato numérico, docas, inativos e saldo d
   assert.ok(db.produtos.every((p) => saldosDoProduto(db, p.codigo).length > 0));
 });
 
-test("lote: grava com IDs novos e ignora o que já existe ativo", () => {
-  const { enderecos } = gerarLote({ ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 1, andarIni: 1, andarFim: 1, aptoIni: 1, aptoFim: 10, tipo: "picking" });
-  const r = criarEnderecos(enderecos, "Principal");
-  assert.deepEqual(r, { criados: 4, ignorados: 6 }); // 101 a 106 já existiam
+test("novo endereço: andar e apto digitados viram o código da prateleira, com ID novo; repetido é bloqueado", () => {
+  const r = criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 10, tipo: "picking", deposito: " " });
+  assert.equal(r.ok, true);
+  assert.equal(r.endereco.codigo, "R3001-P1-A100-AP110");
+  assert.equal(r.endereco.deposito, "Principal");
   assert.ok(porCodigo("R3001-P1-A100-AP110"));
+  assert.deepEqual(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 10, tipo: "picking" }), { ok: false, msg: MSG_ENDERECO_EM_USO });
+  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 100, tipo: "picking" }).msg, /de 1 a 99/);
+  assert.match(criarEndereco({ rua: 3001, predio: 1, andar: 1, apto: 11, tipo: "" }).msg, /tipo/);
 });
 
 test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {

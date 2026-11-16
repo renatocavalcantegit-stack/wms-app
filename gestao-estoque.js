@@ -5,11 +5,11 @@ import { $, $$, esc } from "./js/util.js";
 import { qrSvg } from "./js/qr.js";
 import {
   lerEstoque, aoMudarEstoque, reiniciarDemonstracao, enderecoPorId, produtoPorCodigo, embalagensDoProduto,
-  enderecosPadraoDoProduto, saldoDoEndereco, criarEnderecos, desativarEndereco, reativarEndereco,
+  enderecosPadraoDoProduto, saldoDoEndereco, criarEndereco, desativarEndereco, reativarEndereco,
   importarProdutosDoErp, salvarEmbalagem, excluirEmbalagem, removerAssociacao,
 } from "./js/dados/estoque.js";
 import {
-  TIPOS_ENDERECO, gerarLote, contarLote, compararEnderecos, podeDesativar, comoDigitado, naPrateleira, codigoDoEndereco, validarDigitado,
+  TIPOS_ENDERECO, compararEnderecos, codigoEmUso, podeDesativar, comoDigitado, naPrateleira, codigoDoEndereco, validarDigitado,
 } from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos, validarEmbalagem, MSG_EXCLUIR_EMBALAGEM } from "./compartilhado/regras/embalagens.js";
 
@@ -90,7 +90,7 @@ function telaEnderecos() {
     <div><h1>Endereços</h1><p class="ge-sub">Cadastro único, usado por todos os módulos. Nunca se exclui um endereço: só se desativa.</p></div>
     <div class="ge-actions">
       <button class="btn ghost" id="btQr">Imprimir QR · ${imprimir}</button>
-      <button class="btn primary" id="btLote">Criar endereços</button>
+      <button class="btn primary" id="btNovo">Novo endereço</button>
     </div>
   </div>
   <div class="gx-kpis ge-kpis">
@@ -132,39 +132,43 @@ function linhaEndereco(e) {
   </tr>`;
 }
 
-// ---------- criar em lote ----------
-function abrirLote() {
-  abrirModal(`
-    <h2>Criar endereços em lote</h2>
-    <p>O sistema gera todos os endereços dentro dos intervalos. Endereços que já existem são ignorados.</p>
-    <p class="ge-dica">Andar e apartamento como se conta no prédio: <b>andar 1, apto 1</b> vira <span class="gaddr">A100-AP101</span>; andar 2, apto 3 vira <span class="gaddr">A200-AP203</span>.</p>
-    <form id="fLote" class="ge-lote">
-      ${[["rua", "Rua", "3001"], ["predio", "Prédio", "1"], ["andar", "Andar", "1"], ["apto", "Apartamento", "1"]].map(([k, l, ex]) => `
-        <span class="ge-lote-l">${l}</span>
-        <input name="${k}Ini" type="number" min="1" inputmode="numeric" placeholder="Inicial (ex.: ${ex})" required>
-        <input name="${k}Fim" type="number" min="1" inputmode="numeric" placeholder="Final" required>`).join("")}
-      <span class="ge-lote-l">Tipo</span>
-      <select name="tipo" required><option value="">Escolha…</option>${Object.entries(TIPOS_ENDERECO).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
-      <input name="deposito" value="Principal" placeholder="Depósito" required>
-      <p id="loteInfo" class="ge-lote-info">Preencha os intervalos para ver quantos endereços serão criados.</p>
-      <div class="m-act"><button type="button" class="btn ghost" data-fechar>Cancelar</button><button class="btn primary" id="loteGo">Criar endereços</button></div>
-    </form>`);
-  $("#modal").classList.add("wide");
+// ---------- formulário de endereço (novo e reativar) ----------
+// Andar e apartamento como se conta no prédio: andar 1, apto 1 → A100-AP101.
+function formEndereco(id, v, tipo, deposito, botao, dataId = "") {
+  return `<form id="${id}" class="ge-lote" ${dataId}>
+    ${[["rua", "Rua", "3001"], ["predio", "Prédio", "7"], ["andar", "Andar", "1"], ["apto", "Apartamento", "1"]].map(([k, l, ex]) =>
+      `<span class="ge-lote-l">${l}</span><input name="${k}" type="number" min="1" inputmode="numeric" value="${v[k] ?? ""}" placeholder="Ex.: ${ex}" required><span></span>`).join("")}
+    <span class="ge-lote-l">Tipo</span>
+    <select name="tipo" required><option value="">Escolha…</option>${Object.entries(TIPOS_ENDERECO).map(([k, l]) => `<option value="${k}" ${tipo === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <input name="deposito" value="${esc(deposito)}" placeholder="Depósito" required>
+    <p id="endInfo" class="ge-lote-info"></p>
+    <div class="m-act"><button type="button" class="btn ghost" data-fechar>Fechar</button><button class="btn primary">${botao}</button></div>
+  </form>`;
 }
 
-function previaLote() {
-  const f = Object.fromEntries(new FormData($("#fLote")));
-  const r = gerarLote(f);
-  const info = $("#loteInfo");
-  if (r.erro) {
-    const vazio = ["ruaIni", "ruaFim", "predioIni", "predioFim", "andarIni", "andarFim", "aptoIni", "aptoFim"].some((k) => f[k] === "");
-    info.className = "ge-lote-info" + (vazio ? "" : " err");
-    info.textContent = vazio ? "Preencha os intervalos para ver quantos endereços serão criados." : r.erro;
-    return null;
+// mostra, enquanto digita, o código que vai sair (ou o motivo de não poder)
+function previaEndereco(form) {
+  const d = Object.fromEntries(new FormData(form));
+  const info = $("#endInfo");
+  if (["rua", "predio", "andar", "apto"].some((k) => d[k] === "")) {
+    info.className = "ge-lote-info"; info.textContent = "Preencha rua, prédio, andar e apartamento para ver o código."; return;
   }
-  info.className = "ge-lote-info ok";
-  info.innerHTML = `Vai gerar <b>${num(contarLote(f))}</b> endereços: <span class="gaddr">${r.enderecos[0].codigo}</span> até <span class="gaddr">${r.enderecos.at(-1).codigo}</span>`;
-  return { ...r, deposito: f.deposito.trim() || "Principal" };
+  const erro = validarDigitado(d);
+  const partes = erro ? null : naPrateleira(d);
+  const emUso = partes && codigoEmUso(db.enderecos, partes, +form.dataset.id || null);
+  info.className = "ge-lote-info" + (erro || emUso ? " err" : " ok");
+  info.innerHTML = erro || (emUso ? `${codigoDoEndereco(partes)} · JÁ EXISTE UM ENDEREÇO ATIVO COM ESTE CÓDIGO.`
+    : `Código na prateleira: <span class="gaddr">${codigoDoEndereco(partes)}</span>`);
+}
+
+// cadastro individual (no MVP, um endereço por vez). A janela fica aberta para cadastrar o próximo.
+function abrirNovoEndereco() {
+  abrirModal(`<h2>Novo endereço</h2>
+    <p class="ge-dica">Andar e apartamento como se conta no prédio: <b>andar 1, apto 1</b> vira <span class="gaddr">A100-AP101</span>; andar 2, apto 3 vira <span class="gaddr">A200-AP203</span>.</p>
+    ${formEndereco("fNovo", {}, "", "Principal", "Cadastrar")}
+    <p id="endOk" class="ge-imp ok" hidden></p>`);
+  $("#modal").classList.add("wide");
+  previaEndereco($("#fNovo"));
 }
 
 // ---------- desativar / reativar ----------
@@ -181,19 +185,12 @@ function pedirDesativar(id) {
 
 function pedirReativar(id) {
   const e = enderecoPorId(db, id);
-  const d = comoDigitado(e); // o formulário usa andar 1, apto 1 (e não 100, 101)
+  // o formulário usa andar 1, apto 1 (e não 100, 101)
   abrirModal(`<h2>Reativar endereço</h2>
     <p>Pode reutilizar com os mesmos dados ou mudar o que precisar. Ele volta com <b>ID e QR novos</b>; o QR antigo (ID ${e.id}) continua bloqueado.</p>
-    <form id="fReativar" class="ge-lote" data-id="${id}">
-      ${[["rua", "Rua"], ["predio", "Prédio"], ["andar", "Andar"], ["apto", "Apartamento"]].map(([k, l]) =>
-        `<span class="ge-lote-l">${l}</span><input name="${k}" type="number" min="1" value="${d[k]}" required><span></span>`).join("")}
-      <span class="ge-lote-l">Tipo</span>
-      <select name="tipo">${Object.entries(TIPOS_ENDERECO).map(([k, l]) => `<option value="${k}" ${e.tipo === k ? "selected" : ""}>${l}</option>`).join("")}</select>
-      <input name="deposito" value="${esc(e.deposito)}" required>
-      <p id="reatInfo" class="ge-lote-info">Vai virar <span class="gaddr">${e.codigo}</span></p>
-      <div class="m-act"><button type="button" class="btn ghost" data-fechar>Cancelar</button><button class="btn primary">Reativar</button></div>
-    </form>`);
+    ${formEndereco("fReativar", comoDigitado(e), e.tipo, e.deposito, "Reativar", `data-id="${id}"`)}`);
   $("#modal").classList.add("wide");
+  previaEndereco($("#fReativar"));
 }
 
 // ---------- impressão dos QR ----------
@@ -368,7 +365,7 @@ $("#tela").addEventListener("click", (ev) => {
   if (t.dataset.kpi) { Object.assign(filtros.enderecos, JSON.parse(t.dataset.kpi)); pagina.enderecos = 1; return render(); }
   if (t.dataset.limpar !== undefined) { filtros[aba] = structuredClone(FILTROS_PADRAO[aba]); selecionados.clear(); pagina[aba] = 1; return render(); }
   if (t.dataset.pag) { pagina[aba] += +t.dataset.pag; return render(); }
-  if (t.id === "btLote") return abrirLote();
+  if (t.id === "btNovo") return abrirNovoEndereco();
   if (t.id === "btQr") return imprimirQr();
   if (t.dataset.desativar) return pedirDesativar(+t.dataset.desativar);
   if (t.dataset.reativar) return pedirReativar(+t.dataset.reativar);
@@ -410,14 +407,8 @@ $("#modal").addEventListener("click", (ev) => {
   if (t.dataset.confdelemb) { excluirEmbalagem(+t.dataset.confdelemb); fecharModal(); render(); return toast("Embalagem excluída"); }
 });
 $("#modal").addEventListener("input", (ev) => {
-  if (ev.target.form?.id === "fLote") previaLote();
-  // reativação: mostra o código que vai sair do que foi digitado
-  if (ev.target.form?.id === "fReativar") {
-    const d = Object.fromEntries(new FormData(ev.target.form));
-    const erro = validarDigitado(d);
-    $("#reatInfo").className = "ge-lote-info" + (erro ? " err" : "");
-    $("#reatInfo").innerHTML = erro || `Vai virar <span class="gaddr">${codigoDoEndereco(naPrateleira(d))}</span>`;
-  }
+  // novo endereço e reativação: mostra o código que vai sair do que foi digitado
+  if (ev.target.form?.id === "fNovo" || ev.target.form?.id === "fReativar") { $("#endOk") && ($("#endOk").hidden = true); previaEndereco(ev.target.form); }
   // embalagem: código repetido é avisado enquanto digita (e conferido de novo ao salvar)
   if (ev.target.form?.id === "fEmb") {
     const f = ev.target.form, id = +f.dataset.id || null;
@@ -428,15 +419,19 @@ $("#modal").addEventListener("input", (ev) => {
 $("#modal").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const f = ev.target;
-  if (f.id === "fLote") {
-    const r = previaLote(); if (!r) return;
-    const res = criarEnderecos(r.enderecos, r.deposito);
-    fecharModal(); render();
-    return toast(`${num(res.criados)} endereço(s) criado(s)` + (res.ignorados ? ` · ${num(res.ignorados)} já existiam` : ""));
+  if (f.id === "fNovo") {
+    const r = criarEndereco(Object.fromEntries(new FormData(f)));
+    if (!r.ok) { $("#endInfo").className = "ge-lote-info err"; $("#endInfo").textContent = r.msg; return; }
+    render();
+    // deixa pronto para o próximo: mesmo andar, apartamento seguinte
+    $("#endOk").hidden = false;
+    $("#endOk").innerHTML = `Cadastrado <b>${r.endereco.codigo}</b> · ID ${r.endereco.id}`;
+    f.apto.value = +f.apto.value + 1; previaEndereco(f); f.apto.focus(); f.apto.select();
+    return;
   }
   if (f.id === "fReativar") {
     const r = reativarEndereco(+f.dataset.id, Object.fromEntries(new FormData(f)));
-    if (!r.ok) { $("#reatInfo").className = "ge-lote-info err"; $("#reatInfo").textContent = r.msg; return; }
+    if (!r.ok) { $("#endInfo").className = "ge-lote-info err"; $("#endInfo").textContent = r.msg; return; }
     fecharModal(); render(); return toast(`Reativado como ${r.endereco.codigo} · ID ${r.endereco.id}`);
   }
   if (f.id === "fEmb") {
@@ -445,7 +440,7 @@ $("#modal").addEventListener("submit", (ev) => {
     fecharModal(); render(); return toast("Embalagem salva");
   }
 });
-// a janela larga do lote volta ao normal ao fechar
+// a janela larga (formulário de endereço) volta ao normal ao fechar
 new MutationObserver(() => { if ($("#modal").hidden) $("#modal").classList.remove("wide"); }).observe($("#modal"), { attributes: true, attributeFilter: ["hidden"] });
 
 // usuário: sair ou reiniciar a demonstração

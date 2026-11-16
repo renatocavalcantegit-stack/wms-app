@@ -11,7 +11,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   volumes.js             observação dos volumes e texto [WMS] enviado ao Sankhya
   etiqueta-volume.js     conteúdo do QR da etiqueta e leitura no embarque
   produtos.js            busca por EAN/SKU e ordem de separação pelo endereço
-  enderecos.js           endereço numérico da prateleira (R3001-P7-A100-AP101), criação em lote, desativar/reativar, endereço padrão
+  enderecos.js           endereço numérico da prateleira (R3001-P7-A100-AP101), cadastro um a um, desativar/reativar, endereço padrão
   embalagens.js          embalagens e código de barras único, busca de produto, importação do ERP
   codigo-barras.js       EAN-13 / Code 128 da etiqueta de produto 90 × 20 mm
 
