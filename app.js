@@ -1,6 +1,7 @@
 // WMS Beach Bike — MVP de Separação (dados locais de demonstração)
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao } from "./js/dados/separacao.js";
+import { baixarPorSeparacao } from "./js/dados/movimentacao.js";
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";
@@ -236,7 +237,13 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     if (i.sep === 0 || i.sep > i.qtd) return;
     if (i.sep < i.qtd) { openShort(i.sep); return; }
     i.status = "ok"; save();
+    baixarDoPicking(i);
     next();
+  }
+
+  // o que foi separado sai do saldo do picking no Estoque (e, se ficar no mínimo, nasce a tarefa de abastecimento)
+  function baixarDoPicking(i) {
+    baixarPorSeparacao({ endereco: i.end, produto: i.sku, qtd: i.sep, usuario: sess?.login, pedido: current.id });
   }
   $("#btnConfirm").addEventListener("click", confirmItem);
 
@@ -268,6 +275,7 @@ import { lerCodigoDoEndereco } from "./compartilhado/regras/enderecos.js";
     const q = Math.max(0, Math.min(i.qtd - 1, parseInt($("#shortQty").value, 10) || 0));
     Object.assign(i, { sep: q, status: "falta", motivo: reason });
     save(); closeSheets(); vibrate(40);
+    baixarDoPicking(i);
     toast(`Falta registrada · ${q}/${i.qtd}`);
     next();
   });

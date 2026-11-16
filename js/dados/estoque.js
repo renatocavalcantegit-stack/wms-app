@@ -8,15 +8,17 @@ import {
   podeDesativar, codigoEmUso, codigoDoEndereco, TIPOS_ENDERECO, podeAssociar, partesDoEndereco, validarPartes, MSG_ENDERECO_EM_USO,
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
+import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 
-// v3: produtos reais do catálogo (v2 trouxe o Recebimento); a demonstração antiga é trocada pela nova
-const CHAVE = "wms-bb-estoque-v3";
+// v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
+// Mudar a chave troca a demonstração antiga pela nova.
+const CHAVE = "wms-bb-estoque-v4";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
   try {
     const d = JSON.parse(localStorage.getItem(CHAVE));
-    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas)) return d;
+    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas) && Array.isArray(d.tarefas)) return d;
   } catch {}
   return estoqueDeDemonstracao();
 }
@@ -110,8 +112,8 @@ export function criarEnderecos(novos, deposito) {
 export function desativarEndereco(id) {
   const db = lerEstoque();
   const e = enderecoPorId(db, id);
-  // tarefas pendentes (abastecimento, armazenamento) entram aqui quando esses módulos existirem
-  const r = podeDesativar({ saldo: saldoDoEndereco(db, id), tarefasPendentes: 0 });
+  // com saldo (inclusive o que espera armazenamento na doca) ou com tarefa de abastecimento pendente, não desativa
+  const r = podeDesativar({ saldo: saldoDoEndereco(db, id), tarefasPendentes: tarefasNoEndereco(db.tarefas, id) });
   if (!r.ok) return r;
   e.ativo = false;
   gravar(db);

@@ -1,5 +1,5 @@
 // WMS Beach Bike — Gestão de Estoque (WEB): cadastro de endereços, produtos/embalagens e endereçamento.
-// A aba Entrada (notas do recebimento) fica em gestao-entrada.js.
+// A aba Entrada (notas do recebimento) fica em gestao-entrada.js e a Movimentação (abastecimento) em gestao-movimentacao.js.
 // As regras ficam em compartilhado/regras/ e os dados passam por js/dados/estoque.js.
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
@@ -15,6 +15,9 @@ import {
 } from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos, validarEmbalagem, MSG_EXCLUIR_EMBALAGEM } from "./compartilhado/regras/embalagens.js";
 import { FILTROS_ENTRADA, iniciarEntrada, telaEntrada, cliqueEntrada, cliqueModalEntrada, sairDaEntrada } from "./gestao-entrada.js";
+import {
+  FILTROS_MOVIMENTACAO, iniciarMovimentacao, telaMovimentacao, cliqueMovimentacao, cliqueModalMovimentacao, enviarModalMovimentacao,
+} from "./gestao-movimentacao.js";
 
 const sess = session();
 let db = lerEstoque();
@@ -27,9 +30,10 @@ const FILTROS_PADRAO = {
   produtos: { busca: "" },
   enderecamento: { busca: "", tipo: "" },
   entrada: FILTROS_ENTRADA,
+  movimentacao: FILTROS_MOVIMENTACAO,
 };
 const filtros = structuredClone(FILTROS_PADRAO);
-const pagina = { enderecos: 1, produtos: 1, enderecamento: 1, entrada: 1 };
+const pagina = { enderecos: 1, produtos: 1, enderecamento: 1, entrada: 1, movimentacao: 1 };
 let porPagina = 20;
 const selecionados = new Set(); // IDs de endereços marcados para imprimir o QR
 
@@ -380,8 +384,10 @@ function telaEnderecamento() {
 // =====================================================================
 // desenho da tela e eventos
 // =====================================================================
-const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento, entrada: () => telaEntrada(db, filtros.entrada) };
+const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento, entrada: () => telaEntrada(db, filtros.entrada),
+  movimentacao: () => telaMovimentacao(db, filtros.movimentacao) };
 iniciarEntrada({ paginar, render, abrirModal, fecharModal, toast });
+iniciarMovimentacao({ paginar, render, abrirModal, fecharModal, toast, voltarPagina: () => (pagina.movimentacao = 1) });
 
 function render() {
   db = lerEstoque();
@@ -423,9 +429,14 @@ $("#tela").addEventListener("change", (ev) => {
 $("#tela").addEventListener("click", (ev) => {
   const t = ev.target.closest("button, tr[data-produto], tr[data-nota]"); if (!t) return;
   if (t.dataset.kpi) { Object.assign(filtros[aba], JSON.parse(t.dataset.kpi)); pagina[aba] = 1; return render(); }
-  if (t.dataset.limpar !== undefined) { filtros[aba] = structuredClone(FILTROS_PADRAO[aba]); selecionados.clear(); pagina[aba] = 1; return render(); }
+  if (t.dataset.limpar !== undefined) {
+    const sub = filtros[aba].sub; // "Limpar filtros" não troca a sub-aba (ex.: Mínimo e máximo)
+    filtros[aba] = structuredClone(FILTROS_PADRAO[aba]); if (sub) filtros[aba].sub = sub;
+    selecionados.clear(); pagina[aba] = 1; return render();
+  }
   if (t.dataset.pag) { pagina[aba] += +t.dataset.pag; return render(); }
   if (aba === "entrada" && cliqueEntrada(t, db)) return;
+  if (aba === "movimentacao" && cliqueMovimentacao(t, db, filtros.movimentacao)) return;
   if (t.id === "btNovo") return abrirNovoEndereco();
   if (t.id === "btLote") return abrirLote();
   if (t.id === "btQr") return imprimirQr();
@@ -463,6 +474,7 @@ $("#modal").addEventListener("click", (ev) => {
   const t = ev.target.closest("button"); if (!t) return;
   if (t.dataset.fechar !== undefined) return fecharModal();
   if (cliqueModalEntrada(t, db)) return;
+  if (cliqueModalMovimentacao(t, db)) return;
   if (t.dataset.confdesativar) {
     const r = desativarEndereco(+t.dataset.confdesativar);
     fecharModal(); render(); return toast(r.ok ? "Endereço desativado" : r.msg);
@@ -483,6 +495,7 @@ $("#modal").addEventListener("input", (ev) => {
 $("#modal").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const f = ev.target;
+  if (enviarModalMovimentacao(f, db)) return;
   if (f.id === "fNovo") {
     const r = criarEndereco(Object.fromEntries(new FormData(f)));
     if (!r.ok) { $("#endInfo").className = "ge-lote-info err"; $("#endInfo").textContent = r.msg; return; }

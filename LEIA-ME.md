@@ -15,6 +15,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   embalagens.js          embalagens e código de barras único, busca de produto, importação do ERP
   etiqueta-produto.js    etiqueta de produto com QR: rolo 90 × 20 mm, 3 por linha
   recebimento.js         recebimento: status da nota, conferência (soma, bloqueia acima da nota), volumes, armazenamento da doca
+  movimentacao.js        mínimo/máximo, origens do abastecimento (menor saldo, mais perto), passos da tarefa, transferência
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -25,6 +26,7 @@ js/
   dados/conferencia.js   camada de dados da Conferência (e os pedidos que chegam da Separação)
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos
   dados/recebimento.js   camada de dados do Recebimento: notas, conferências, volumes, armazenamento, notas do ERP
+  dados/movimentacao.js  camada de dados da Movimentação: tarefas de abastecimento, limites, transferência, baixa da separação
   qr.js                  desenho do QR Code em SVG
   etiqueta-produto.js    desenho da etiqueta de produto (QR em SVG, linhas de 3)
   etiqueta-recebimento.js   etiqueta do volume do recebimento (80 × 60 mm, QR com o código do volume)
@@ -41,6 +43,8 @@ estoque.html + .js       coletor do Estoquista: consulta de produto, embalagem, 
 estoque-recepcao.js      coletor do Estoquista, Recepção: conferência, armazenamento e consulta de recebimentos
 gestao-estoque.html + .js   Gestão de Estoque (WEB): endereços, produtos/embalagens, endereçamento
 gestao-entrada.js        Gestão de Estoque (WEB), aba Entrada: notas, detalhe, volumes, cancelar pendente
+estoque-movimentacao.js  coletor do Estoquista, Movimentação: abastecimento (aéreo → picking) e transferência
+gestao-movimentacao.js   Gestão de Estoque (WEB), aba Movimentação: tarefas de abastecimento e mínimo/máximo do picking
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
 testes/                  testes automatizados (rodam no Node, sem instalar nada)

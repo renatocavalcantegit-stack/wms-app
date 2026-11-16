@@ -33,7 +33,7 @@ export function beep(ok = true) {
 const ACCESS = {
   sep: ["viewSetor", "viewHome", "viewPick", "viewDone"],
   emb: ["viewEmbHome", "viewLoad", "viewLoadDone"],
-  estq: ["viewEstHome", "viewConsulta", "viewEmbalagem", "viewEnderecar", "viewRecConf", "viewRecArm", "viewRecCons"],
+  estq: ["viewEstHome", "viewConsulta", "viewEmbalagem", "viewEnderecar", "viewRecConf", "viewRecArm", "viewRecCons", "viewAbast", "viewTransf"],
 };
 export function show(id) {
   const sess = session();

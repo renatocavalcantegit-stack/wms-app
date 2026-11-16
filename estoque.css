@@ -65,6 +65,18 @@
 .rc-conferindo { gap: 2px !important; }
 .rc-conferindo span { font-size: 11px !important; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-3) !important; }
 .rc-conferindo b { font-size: 26px !important; }
+.rc-st.r { background: var(--red-soft); color: var(--red); }
+.scan-msg.warn { color: var(--warn); font-weight: 700; }
+/* Movimentação */
+.mv-topo:not(:empty) { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.mv-tarefa .line-desc small + small { margin-top: 0; }
+.mv-pills { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.mv-pk { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.mv-resumo { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 4px 14px; }
+.mv-resumo div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mv-resumo div:last-child { border-bottom: 0; }
+.mv-resumo span { font-size: 13px; color: var(--ink-3); }
+.mv-resumo b { font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 14px; text-align: right; }
 .rc-dica { font-size: 13.5px; line-height: 1.45; padding: 4px 2px; }
 .rc-cons { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
 .rc-cons .product-desc { margin: 0; }

@@ -2,6 +2,7 @@
 // No sistema real tudo isto vem do servidor (que recebe do Sankhya).
 // Os produtos são os mais vendidos de verdade (js/demo-catalogo.js); os clientes ficam em js/demo-clientes.js.
 import { acharProduto, routeSort } from "../compartilhado/regras/produtos.js";
+import { escolherOrigens, necessidade } from "../compartilhado/regras/movimentacao.js";
 import { PRODUTOS_BIKE, PRODUTOS_MOTO, PRODUTOS_NOVOS_DO_ERP } from "./demo-catalogo.js";
 
 // ---------- equipe ----------
@@ -265,18 +266,73 @@ function recebimentoInicial(enderecos, saldos) {
   return { notas, conferencias, volumes, proximos: { nota: idNota, conferencia: idConf, volume: idVol } };
 }
 
+// ---------- movimentação ----------
+// mínimo e máximo de cada produto no seu picking (bicicleta ocupa mais espaço) e tarefas de abastecimento
+// em todos os estados: urgente, normal, em andamento (com duas origens) e o histórico (concluída, parcial, cancelada).
+function movimentacaoInicial(enderecos, associacoes, saldos) {
+  const porCodigo = (c) => enderecos.find((e) => e.codigo === c);
+  const tipoDe = (sku) => CATALOGO.find((p) => p.sku === sku).tipo;
+  const limites = associacoes
+    .filter((a) => enderecos.find((e) => e.id === a.enderecoId).tipo === "picking")
+    .map((a) => ({ produto: a.produto, enderecoId: a.enderecoId, ...(tipoDe(a.produto) === "bike" ? { minimo: 3, maximo: 12 } : { minimo: 10, maximo: 60 }) }));
+  const pickingDe = (sku) => porCodigo(ENDERECOS[sku]).id;
+  const saldo = (enderecoId, produto) => saldos.find((x) => x.enderecoId === enderecoId && x.produto === produto);
+  const definir = (enderecoId, produto, qtd) => { const x = saldo(enderecoId, produto); if (x) x.qtd = qtd; else saldos.push({ enderecoId, produto, qtd }); };
+
+  // pickings que a separação já esvaziou (no mínimo ou abaixo)
+  definir(pickingDe("536"), "536", 4);
+  definir(pickingDe("176"), "176", 6);
+  definir(pickingDe("16016"), "16016", 8);
+  definir(pickingDe("122"), "122", 14);
+  // um segundo aéreo, com pouco saldo, para a câmara 26: a tarefa sai com duas origens
+  definir(porCodigo("R3001-P2-A500-AP502").id, "176", 8);
+
+  const tarefas = [];
+  let id = 1;
+  const criada = (minutosAtras) => new Date(Date.now() - minutosAtras * 60000).toISOString();
+  const tarefa = (produto, prioridade, quem, minutosAtras, extra = {}) => {
+    const pickingId = pickingDe(produto);
+    const picking = enderecos.find((e) => e.id === pickingId);
+    const lim = limites.find((l) => l.produto === produto && l.enderecoId === pickingId);
+    const falta = necessidade(saldo(pickingId, produto)?.qtd || 0, lim.maximo);
+    const aereos = saldos.filter((x) => x.produto === produto).map((x) => ({ endereco: enderecos.find((e) => e.id === x.enderecoId), saldo: x.qtd }))
+      .filter((a) => a.endereco.tipo === "aereo");
+    const t = { id: id++, produto, pickingId, prioridade, status: "aberta", quem, usuario: quem === "sistema" ? "" : "estoquista",
+      criada: criada(minutosAtras), necessidade: falta, origens: escolherOrigens(aereos, falta, picking).map((o) => ({ ...o, feito: 0 })), ...extra };
+    tarefas.push(t);
+    return t;
+  };
+  // histórico (já encerradas)
+  tarefa("17726", "normal", "sistema", 300, { status: "concluida", fim: criada(280) }).origens.forEach((o) => (o.feito = o.qtd));
+  const parcial = tarefa("8745", "normal", "gestor", 240, { status: "parcial", fim: criada(220) });
+  parcial.origens[0].feito = Math.floor(parcial.origens[0].qtd / 2);
+  tarefa("16016", "normal", "coletor", 200, { status: "cancelada", fim: criada(190) });
+  // abertas: o coletor mostra as urgentes primeiro
+  tarefa("176", "normal", "sistema", 50);
+  tarefa("536", "urgente", "sistema", 35);
+  tarefa("122", "normal", "coletor", 20);
+  // em andamento: já retirou 20 do aéreo e guardou no picking
+  const andamento = tarefa("16016", "normal", "sistema", 10, { status: "andamento" });
+  andamento.origens[0].feito = 20;
+  saldo(andamento.origens[0].enderecoId, "16016").qtd -= 20;
+  saldo(andamento.pickingId, "16016").qtd += 20;
+  return { limites, tarefas, proximaTarefa: id };
+}
+
 export function estoqueDeDemonstracao() {
   const enderecos = enderecosDeDemonstracao();
   const inicial = estoqueInicial(enderecos);
   const rec = recebimentoInicial(enderecos, inicial.saldos);
+  const mov = movimentacaoInicial(enderecos, inicial.associacoes, inicial.saldos);
   return {
     enderecos,
     produtos: CATALOGO.map(doErp),
     embalagens: embalagensDeDemonstracao(),
     ...inicial,
     notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,
+    limites: mov.limites, tarefas: mov.tarefas,
     movimentos: [],
-    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos },
+    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa },
   };
 }
 
