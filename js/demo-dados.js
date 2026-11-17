@@ -34,7 +34,12 @@ export const EQUIPE_SETOR = { s9: "mont", s10: "mont", s11: "mont", s12: "mont" 
 // tipo do produto (só muda o ícone no coletor e o peso de exemplo no cadastro), deduzido da descrição
 const ACESSORIO = /^(BOMBA|CADEADO|CARAMANHOLA|SUPORTE CARAMANHOLA|FAROL|PISCA|CAPACETE|LUVA|ADESIVO|CAPA |RETROVISOR|BUZINA|CAMPAINHA|REFLETOR)/;
 const tipoDoProduto = (desc) => (/^BICICLETA /.test(desc) ? "bike" : ACESSORIO.test(desc) ? "acess" : "peca");
-const doCatalogo = (segmento) => ([sku, desc, un, ean, vendidos]) => ({ sku, ean, desc, un, segmento, vendidos, tipo: tipoDoProduto(desc) });
+// códigos de barras de cada produto vêm da planilha real (o 1º é o principal); o do catálogo fica só se o produto não estiver nela
+const CODIGOS_REAIS = new Map(PRODUTOS_REAIS.map(([codigo, , , cods]) => [codigo, cods || []]));
+const doCatalogo = (segmento) => ([sku, desc, un, ean, vendidos]) => {
+  const eans = CODIGOS_REAIS.get(sku) || (ean ? [ean] : []);
+  return { sku, ean: eans[0] || "", eans, desc, un, segmento, vendidos, tipo: tipoDoProduto(desc) };
+};
 
 // ---------- estoque real ----------
 const codigoReal = ([, rua, predio, andar, apto]) => `R${rua}-P${predio}-A${andar}-AP${apto}`;
@@ -57,9 +62,13 @@ export const COMPONENTES = PRODUTOS.filter((p) => p.segmento === "Bike" && PECA_
 // endereço de separação de cada produto do catálogo (código da prateleira, ex.: R602-P2-A6-AP601)
 export const ENDERECOS = Object.fromEntries(PRODUTOS.map((p) => [p.sku, SEPARAR_EM.get(p.sku)]));
 const CATALOGO = PRODUTOS;
+const CATALOGO_SKUS = new Set(CATALOGO.map((p) => p.sku));
 
-// produto pelo código lido (EAN ou código interno) no catálogo de demonstração
-export const find = (code) => acharProduto(CATALOGO, code);
+// produto pelo código lido (EAN, outro código de barras ou código interno): primeiro os do catálogo, depois
+// qualquer produto do estoque real (assim a Conferência reconhece um produto bipado que não é do pedido)
+const OUTROS_REAIS = PRODUTOS_REAIS.filter(([codigo]) => !CATALOGO.some((p) => p.sku === codigo))
+  .map(([sku, desc, grupo, eans]) => ({ sku, ean: eans[0] || "", eans, desc, un: "UN", segmento: grupo, tipo: tipoDoProduto(desc) }));
+export const find = (code) => acharProduto(CATALOGO, code) || acharProduto(OUTROS_REAIS, code);
 
 const item = (sku, qtd) => ({
   ...CATALOGO.find((x) => x.sku === sku), end: ENDERECOS[sku], qtd, sep: 0, status: "pendente", motivo: "",
@@ -214,10 +223,14 @@ function enderecosDeDemonstracao() {
   return lista;
 }
 
-// embalagens: todo produto tem a "Unidade" com o EAN; alguns têm caixa/pacote (com ou sem código)
-function embalagensDeDemonstracao() {
+// embalagens: cada código de barras do produto é uma "Unidade" (produto com dois códigos tem duas);
+// produto sem código de barras não tem embalagem (é achado pelo código interno). Alguns têm caixa/pacote.
+function embalagensDeDemonstracao(produtos) {
   let id = 1;
-  const lista = CATALOGO.map((p) => ({ id: id++, produto: p.sku, codigo: p.ean, descricao: "Unidade", qtd: 1 }));
+  const lista = [];
+  const unidades = (codigo, cods) => cods.forEach((c) => lista.push({ id: id++, produto: codigo, codigo: c, descricao: "Unidade", qtd: 1 }));
+  CATALOGO.forEach((p) => unidades(p.sku, p.eans));
+  produtos.filter((p) => !CATALOGO_SKUS.has(p.codigo)).forEach((p) => unidades(p.codigo, CODIGOS_REAIS.get(p.codigo) || []));
   const extra = (produto, codigo, descricao, qtd) => lista.push({ id: id++, produto, codigo, descricao, qtd });
   extra("176", "18019227210719", "Caixa com 50", 50); // câmara 26 Pirelli
   extra("16016", "16938112670167", "Caixa com 50", 50); // câmara 29 Bison
@@ -428,18 +441,18 @@ function inventarioInicial(enderecos, associacoes, saldos) {
 }
 
 // produtos: os do catálogo com os dados de exemplo do ERP; os demais do estoque real só com código, descrição e grupo.
-// Todos nascem com conferência por checkout; na demonstração, os do catálogo sem código de barras já vêm como granel.
+// Todos nascem com conferência por checkout; na demonstração, quem não tem código de barras já vem como granel.
 function produtosDeDemonstracao() {
   const grupo = new Map(PRODUTOS_REAIS.map(([codigo, , g]) => [codigo, g]));
   const doCat = CATALOGO.map((p, i) => ({ ...doErp(p, i), grupo: grupo.get(p.sku) || null, checkout: !!p.ean }));
   const jaTem = new Set(doCat.map((p) => p.codigo));
   const outros = PRODUTOS_REAIS.filter(([codigo]) => !jaTem.has(codigo) && !NOVOS.has(codigo))
-    .map(([codigo, descricao, g]) => ({ codigo, descricao, un: "UN", grupo: g, checkout: true }));
+    .map(([codigo, descricao, g, cods]) => ({ codigo, descricao, un: "UN", grupo: g, checkout: cods.length > 0 }));
   return [...doCat, ...outros];
 }
 
 export function estoqueDeDemonstracao() {
-  const enderecos = enderecosDeDemonstracao();
+  const enderecos = enderecosDeDemonstracao(), produtos = produtosDeDemonstracao();
   const inicial = estoqueInicial();
   const rec = recebimentoInicial(enderecos, inicial.saldos);
   const mov = movimentacaoInicial(enderecos, inicial.associacoes, inicial.saldos);
@@ -447,8 +460,8 @@ export function estoqueDeDemonstracao() {
   return {
     enderecos,
     // demonstração: os produtos sem código de barras já vêm como granel (checkout desligado) para testar
-    produtos: produtosDeDemonstracao(),
-    embalagens: embalagensDeDemonstracao(),
+    produtos,
+    embalagens: embalagensDeDemonstracao(produtos),
     ...inicial,
     notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,
     limites: mov.limites, tarefas: mov.tarefas,

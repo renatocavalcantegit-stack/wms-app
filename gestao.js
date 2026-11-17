@@ -18,7 +18,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   // v4 dos dados: doca de expedição, lotes (vários pedidos numa viagem) e pedido dividido entre separadores
   // (a chave nova descarta a simulação antiga)
-  const STORE = MONT ? "wms-bb-gestao-mont-v5" : "wms-bb-gestao-v6";
+  const STORE = MONT ? "wms-bb-gestao-mont-v6" : "wms-bb-gestao-v7";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -179,7 +179,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
     // produtos que vendem mais aparecem mais (peso pela raiz da quantidade vendida)
     const restantes = [...PRODUTOS], prods = [];
     for (let n = nItens || qtdItens(); n > 0; n--) { const x = pickPeso(restantes, (y) => Math.sqrt(y.vendidos)); prods.push(x); restantes.splice(restantes.indexOf(x), 1); }
-    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: qtdDoItem(x), sep: 0, conf: 0 }))
+    const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, eans: x.eans, desc: x.desc, end: ENDERECOS[x.sku], qtd: qtdDoItem(x), sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "PV-" + db.seq++, cli: { cod: cli.cod, nome: cli.nome, cidade: cli.cidade, bairro: cli.bairro },
@@ -195,7 +195,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
   // pedido de montagem: chega do Sankhya igual a um pedido normal; só o tipo de operação muda (prefixo OP)
   function makeOP({ prio = false, chegada = now() } = {}) {
     const pool = COMPONENTES;
-    const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, desc: x.desc, end: ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
+    const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, eans: x.eans, desc: x.desc, end: ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "OP-" + db.seq++, op: true, cli: null, vendedor: null, rota: null, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,

@@ -50,7 +50,7 @@ export function montarParadas(pedidos, posicoes) {
   for (const p of ordem) {
     p.itens.forEach((i, idx) => {
       const chave = `${i.end}|${i.sku}`;
-      if (!mapa.has(chave)) mapa.set(chave, { end: i.end, sku: i.sku, ean: i.ean, desc: i.desc, tipo: i.tipo, linhas: [] });
+      if (!mapa.has(chave)) mapa.set(chave, { end: i.end, sku: i.sku, ean: i.ean, eans: i.eans, desc: i.desc, tipo: i.tipo, linhas: [] });
       mapa.get(chave).linhas.push({ pedido: p.id, pos: posicoes[p.id], idx, qtd: i.qtd, sep: i.sep, status: i.status });
     });
   }

@@ -1,10 +1,16 @@
 // WMS Beach Bike — regras de produto e de separação.
 import { compararEnderecos } from "./enderecos.js";
 
+// o código lido é deste produto? Vale o código de barras principal (ean), qualquer outro código de barras
+// do produto (eans: há produto com dois, ex.: o EAN e o UPC de 12 dígitos) ou o código interno (sku).
+// `codigo` já vem sem espaços e em maiúsculas.
+export const ehCodigoDoProduto = (p, codigo) =>
+  !!codigo && (p.ean === codigo || (p.eans || []).includes(codigo) || p.sku.toUpperCase() === codigo);
+
 // acha o produto pelo código lido (EAN ou SKU), ignorando espaços e maiúsculas/minúsculas
 export const acharProduto = (catalogo, codigo) => {
   const c = String(codigo).trim().toUpperCase();
-  return catalogo.find((p) => p.ean === c || p.sku.toUpperCase() === c) || null;
+  return catalogo.find((p) => ehCodigoDoProduto(p, c)) || null;
 };
 
 // rota de separação: ordena os itens do pedido pelo endereço (rua > prédio > andar > apartamento)

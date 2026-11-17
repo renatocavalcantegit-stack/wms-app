@@ -253,7 +253,7 @@ import { $, $$, esc } from "./js/util.js";
       const okish = s === "ok" || s === "parcial";
       setLast({
         label: s === "ok" ? "Item completo ✓" : s === "excesso" ? "Excesso — retire do volume" : `Lido +${q}`,
-        desc: p.desc, code: `${p.sku} · ${p.ean}`, conf: c, exp: it.sep, kind: okish ? "ok" : "err",
+        desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: c, exp: it.sep, kind: okish ? "ok" : "err",
       });
       setMsg(s === "excesso" ? `Excesso de ${c - it.sep} un. em ${p.sku}` : s === "ok" ? "Item conferido" : `Faltam ${it.sep - c} un.`, okish ? "ok" : "err");
       beep(okish);
@@ -262,7 +262,7 @@ import { $, $$, esc } from "./js/util.js";
       if (!f) cur.conf.fora.push((f = { sku: p.sku, ean: p.ean, desc: p.desc, q: 0 }));
       f.q += q;
       cur.conf.log.push({ sku: p.sku, q, fora: true });
-      setLast({ label: "Produto fora do pedido", desc: p.desc, code: `${p.sku} · ${p.ean}`, conf: f.q, exp: 0, kind: "err" });
+      setLast({ label: "Produto fora do pedido", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: f.q, exp: 0, kind: "err" });
       setMsg("Este produto não pertence ao pedido — separe para devolução.", "err");
       beep(false);
     }

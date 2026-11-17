@@ -324,7 +324,7 @@ import {
     $("#prodThumb").innerHTML = ICONS[i.tipo] || ICONS.peca;
     $("#prodDesc").textContent = i.desc;
     $("#prodSku").textContent = i.sku;
-    $("#prodEan").textContent = "EAN " + i.ean;
+    $("#prodEan").textContent = i.ean ? "EAN " + i.ean : "Sem código de barras · digite o código";
     $("#loteBox").hidden = true;
     $("#qtyInput").value = "";
     renderEndereco();
@@ -352,7 +352,7 @@ import {
     $("#prodThumb").innerHTML = ICONS[p.tipo] || ICONS.peca;
     $("#prodDesc").textContent = p.desc;
     $("#prodSku").textContent = p.sku;
-    $("#prodEan").textContent = "EAN " + p.ean;
+    $("#prodEan").textContent = p.ean ? "EAN " + p.ean : "Sem código de barras · digite o código";
     desenharCaixas(p);
     $("#qtyInput").value = "";
     renderEndereco();
@@ -370,7 +370,7 @@ import {
   const produtoOk = () => enderecoOk() && dono().prodOk === chaveProduto();
   const etapa = () => (!enderecoOk() ? "endereco" : !produtoOk() ? "produto" : "quantidade");
   const solicitado = () => (lote ? parada().total : item().qtd);
-  const ehDaVez = (code) => { const x = lote ? parada() : item(); return code === x.ean || code === x.sku.toUpperCase(); };
+  const ehDaVez = (code) => ehCodigoDoProduto(lote ? parada() : item(), code);
   // quantidade digitada (null = ainda vazio)
   const digitado = () => { const v = $("#qtyInput").value.trim(); return v === "" ? null : Math.max(0, parseInt(v, 10) || 0); };
 
@@ -452,7 +452,7 @@ import {
   // o produto é bipado UMA vez; depois o separador digita a quantidade
   function lerProduto(code) {
     if (!ehDaVez(code)) {
-      const outro = lote ? paradas().find((x) => x.ean === code || x.sku.toUpperCase() === code) : current.itens.find((x) => x.ean === code || x.sku.toUpperCase() === code);
+      const outro = (lote ? paradas() : current.itens).find((x) => ehCodigoDoProduto(x, code));
       return erroLeitura(outro ? `Produto de outro endereço (${outro.end}).` : "PRODUTO ERRADO. NÃO PERTENCE A ESTE ENDEREÇO.");
     }
     dono().prodOk = chaveProduto(); save();

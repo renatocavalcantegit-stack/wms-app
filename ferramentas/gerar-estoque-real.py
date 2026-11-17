@@ -1,6 +1,7 @@
-# Gera js/demo-estoque-real.js a partir da planilha de estoque do WMS do Sankhya (Estoque_WMS.xlsx).
+# Gera js/demo-estoque-real.js a partir da planilha de estoque do WMS do Sankhya (Estoque_WMS_com_codigos_de_barras.xlsx).
 # Uso: python ferramentas/gerar-estoque-real.py <caminho do .xlsx>
 # Colunas esperadas: Endereço (ID do QR) | Rua | Prédio | Andar | Apto | End.Padrão | Cod.Prod | Produto | Grupo | Saldo
+#                    | Código de barras (opcional; vários separados por "/")
 # Lê o .xlsx só com a biblioteca padrão do Python (o .xlsx é um zip de XMLs), sem instalar nada.
 import os, re, sys, zipfile
 import xml.etree.ElementTree as ET
@@ -30,6 +31,20 @@ cab = [linhas[0].get(c, "").strip() for c in "ABCDEFGHIJ"]
 if not cab[0].startswith("Endere") or cab[6] != "Cod.Prod":
     sys.exit(f"cabeçalho inesperado: {cab}")
 
+# códigos de barras da célula: vários separados por "/". Célula SUJA (letras ou símbolos, como "ssss",
+# o prefixo "[C1" do leitor ou um apóstrofo) fica em branco: o produto entra sem código de barras e, por isso,
+# com o checkout desligado até o cadastro ser corrigido. Números de qualquer tamanho são mantidos
+# (há produto com o EAN e a referência do fabricante, ex.: "0789600815282 / 1050064").
+sujos = {}
+def codigos_de_barras(celula, produto):
+    texto = (celula or "").strip()
+    if not texto: return []
+    partes = [x.strip() for x in texto.split("/")]
+    if any(not re.fullmatch(r"\d+", x) for x in partes):
+        sujos[produto] = texto
+        return []
+    return list(dict.fromkeys(partes))  # sem repetir
+
 def numero(s):
     f = float(s)
     return int(f) if f == int(f) else round(f, 3)
@@ -44,7 +59,7 @@ for r in linhas[1:]:
     eid = int(r["A"])
     enderecos[eid] = [eid, int(r["B"]), int(r["C"]), int(r["D"]), int(r["E"])]
     cod = r["G"].strip()
-    produtos.setdefault(cod, [cod, " ".join(r["H"].split()), (r.get("I") or "").strip() or "-"])
+    produtos.setdefault(cod, [cod, " ".join(r["H"].split()), (r.get("I") or "").strip() or "-", codigos_de_barras(r.get("K"), cod)])
     s = saldos.setdefault((eid, cod), [eid, cod, 0, 0])
     s[2] += numero(r["J"])           # mesmo produto no mesmo endereço em mais de uma linha: soma
     if r["F"] == "VERDADEIRO": s[3] = 1  # endereço padrão (picking) do produto
@@ -64,7 +79,7 @@ export const ENDERECOS_REAIS = [
 {linhas_js(sorted(enderecos.values()))},
 ];
 
-// [código do produto, descrição, grupo]
+// [código do produto, descrição, grupo, [códigos de barras; o 1º é o principal; vazio = sem código (granel)]]
 export const PRODUTOS_REAIS = [
 {linhas_js(sorted(produtos.values(), key=lambda p: int(p[0]) if p[0].isdigit() else 10**9))},
 ];
@@ -75,4 +90,5 @@ export const SALDOS_REAIS = [
 ];
 """
 open(OUT, "w", encoding="utf-8", newline="\n").write(js)
+print("códigos de barras sujos (deixados em branco):", sujos)
 print(f"{len(enderecos)} endereços, {len(produtos)} produtos, {len(saldos)} saldos -> {os.path.relpath(OUT)}")

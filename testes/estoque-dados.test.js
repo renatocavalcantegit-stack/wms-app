@@ -20,6 +20,13 @@ test("demonstração: endereços no formato numérico, docas, inativos e saldo d
   assert.equal(db.enderecos.filter((e) => !e.ativo).length, 2);
   assert.equal(new Set(db.enderecos.map((e) => e.id)).size, db.enderecos.length); // IDs únicos
   assert.ok(db.produtos.every((p) => saldosDoProduto(db, p.codigo).length > 0));
+  // códigos de barras reais: nenhum repetido entre embalagens; produto sem código (ou com código sujo) é granel
+  const cods = db.embalagens.map((e) => e.codigo).filter(Boolean);
+  assert.equal(new Set(cods).size, cods.length);
+  const p176 = db.produtos.find((p) => p.codigo === "176"); // planilha: "8019227210712 / ssss"
+  assert.equal(p176.checkout, false);
+  assert.equal(db.embalagens.some((e) => e.produto === "176" && e.descricao === "Unidade"), false);
+  assert.equal(db.embalagens.filter((e) => e.produto === "20" && e.descricao === "Unidade").length, 2); // dois códigos
 });
 
 test("novo endereço: os números da prateleira viram o código, com ID novo; repetido é bloqueado", () => {

@@ -11,9 +11,9 @@ import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 import { exigeCheckout } from "../../compartilhado/regras/produtos.js";
 
-// v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
+// v9: códigos de barras reais (embalagens) e granel = sem código; v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
-const CHAVE = "wms-bb-estoque-v8";
+const CHAVE = "wms-bb-estoque-v9";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
