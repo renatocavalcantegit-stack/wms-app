@@ -49,7 +49,7 @@ test("finalizar: nota não reabre; o que faltou vira divergência", () => {
 });
 
 test("armazenar: tira da doca, põe no destino; parcial continua pendente", () => {
-  const destino = end("R3002-P4-A100-AP102");
+  const destino = end("R3004-P6-A100-AP102") // endereço vazio (rua de teste);
   const antes = saldoNoEndereco(db(), destino, "536");
   assert.equal(armazenar({ produto: "536", docaId: end(DOCA1), qtd: 20, destinoId: destino }).ok, true);
   assert.equal(saldoNoEndereco(db(), end(DOCA1), "536"), 4);

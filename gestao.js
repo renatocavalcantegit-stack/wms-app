@@ -18,7 +18,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 
   // v4 dos dados: doca de expedição, lotes (vários pedidos numa viagem) e pedido dividido entre separadores
   // (a chave nova descarta a simulação antiga)
-  const STORE = MONT ? "wms-bb-gestao-mont-v4" : "wms-bb-gestao-v5";
+  const STORE = MONT ? "wms-bb-gestao-mont-v5" : "wms-bb-gestao-v6";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));

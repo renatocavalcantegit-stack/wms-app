@@ -8,7 +8,7 @@ import { partesCompletas, juntarPartes } from "../../compartilhado/regras/separa
 
 // v4: doca de expedição e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v4" : "wms-bb-conf-v4");
+const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v5" : "wms-bb-conf-v5");
 // posto de conferência escolhido neste aparelho
 const CHAVE_POSTO = "wms-bb-posto";
 

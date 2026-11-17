@@ -116,7 +116,8 @@ export function validarPartes(itens, grupos) {
 
 // rótulo das ruas de uma parte (ex.: "Rua 3001–3002")
 export function ruasDaParte(itens, idxs) {
-  const ruas = [...new Set(idxs.map((k) => +String(itens[k].end).match(/^R(\d+)/)?.[1]).filter(Boolean))].sort();
+  // números de verdade: a rua 0 existe e a 802 vem antes da 1000 (ordenar como texto daria o contrário)
+  const ruas = [...new Set(idxs.map((k) => String(itens[k].end).match(/^R(\d+)/)?.[1]).filter((r) => r != null).map(Number))].sort((a, b) => a - b);
   return ruas.length ? `Rua ${ruas[0]}${ruas.length > 1 ? "–" + ruas[ruas.length - 1] : ""}` : "";
 }
 

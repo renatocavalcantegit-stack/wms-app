@@ -23,6 +23,7 @@ js/
   sessao.js              login de demonstração e sessão guardada no aparelho
   demo-dados.js          equipe, catálogo, endereços e pedidos de demonstração
   demo-catalogo.js       produtos mais vendidos (gerado por ferramentas/gerar-dados-demo.py)
+  demo-estoque-real.js   endereços, produtos e saldos reais do WMS (gerado por ferramentas/gerar-estoque-real.py)
   demo-clientes.js       clientes do ranking, com cidade, rota e vendedor (gerado pelo mesmo script)
   dados/separacao.js     camada de dados da Separação (único lugar que sabe onde os pedidos ficam)
   dados/conferencia.js   camada de dados da Conferência (e os pedidos que chegam da Separação)

@@ -1,11 +1,14 @@
 // WMS Beach Bike — dados de demonstração: equipe, catálogo, endereços e pedidos de exemplo.
 // No sistema real tudo isto vem do servidor (que recebe do Sankhya).
 // Os produtos são os mais vendidos de verdade (js/demo-catalogo.js); os clientes ficam em js/demo-clientes.js.
+// Endereços, saldos e endereço padrão são os REAIS do WMS do Sankhya (js/demo-estoque-real.js): dá para testar
+// o bipe nas prateleiras que já têm etiqueta.
 import { acharProduto, routeSort } from "../compartilhado/regras/produtos.js";
 import { escolherOrigens, necessidade } from "../compartilhado/regras/movimentacao.js";
 import { enderecoInventariavel, previstosDoEndereco } from "../compartilhado/regras/inventario.js";
 import { posicoesDoLote, sugerirDivisao, ruasDaParte } from "../compartilhado/regras/separacao.js";
 import { PRODUTOS_BIKE, PRODUTOS_MOTO, PRODUTOS_NOVOS_DO_ERP } from "./demo-catalogo.js";
+import { ENDERECOS_REAIS, PRODUTOS_REAIS, SALDOS_REAIS } from "./demo-estoque-real.js";
 
 // ---------- equipe ----------
 // separadores da expedição e da montagem, conferentes e faturista (nomes reais da operação; motoristas ainda fictícios)
@@ -33,24 +36,26 @@ const ACESSORIO = /^(BOMBA|CADEADO|CARAMANHOLA|SUPORTE CARAMANHOLA|FAROL|PISCA|C
 const tipoDoProduto = (desc) => (/^BICICLETA /.test(desc) ? "bike" : ACESSORIO.test(desc) ? "acess" : "peca");
 const doCatalogo = (segmento) => ([sku, desc, un, ean, vendidos]) => ({ sku, ean, desc, un, segmento, vendidos, tipo: tipoDoProduto(desc) });
 
-export const PRODUTOS = [...PRODUTOS_BIKE.map(doCatalogo("Bike")), ...PRODUTOS_MOTO.map(doCatalogo("Moto"))];
+// ---------- estoque real ----------
+const codigoReal = ([, rua, predio, andar, apto]) => `R${rua}-P${predio}-A${andar}-AP${apto}`;
+const ENDERECO_REAL = new Map(ENDERECOS_REAIS.map((e) => [e[0], e]));
+// produtos que a "importação do ERP" simulada traz como novos: ficam fora do estoque inicial
+const NOVOS = new Set(PRODUTOS_NOVOS_DO_ERP.map(([sku]) => sku));
+const SALDOS_INICIAIS = SALDOS_REAIS.filter(([, produto]) => !NOVOS.has(produto));
+
+// endereço onde o separador pega cada produto: o endereço padrão (picking) com mais saldo;
+// produto sem endereço padrão sai do endereço onde tem mais saldo
+const SEPARAR_EM = new Map();
+[...SALDOS_INICIAIS].sort((a, b) => a[3] - b[3] || a[2] - b[2]).forEach(([id, produto]) => SEPARAR_EM.set(produto, codigoReal(ENDERECO_REAL.get(id))));
+
+// só entram no catálogo dos pedidos os mais vendidos que existem no estoque real
+export const PRODUTOS = [...PRODUTOS_BIKE.map(doCatalogo("Bike")), ...PRODUTOS_MOTO.map(doCatalogo("Moto"))].filter((p) => SEPARAR_EM.has(p.sku));
 // peças que entram nos pedidos de montagem (ordem de produção): as de bicicleta usadas para montar uma bike
 const PECA_DE_MONTAGEM = /^(ARO|PNEU|CAMARA \d|CUBO|GUIDAO|SELIM|PEDAL|CORRENTE|CAMBIO|FREIO|MANETE|MOV |GARFO|CANOTE|RODA LIVRE|EIXO|PUNHO|SUPORTE GUIDAO|COROA)/;
 export const COMPONENTES = PRODUTOS.filter((p) => p.segmento === "Bike" && PECA_DE_MONTAGEM.test(p.desc));
 
-// endereço de picking de cada produto (rua-prédio-andar-apartamento, só números).
-// Os mais vendidos ficam mais perto: o 1º do ranking vai em R3001-P1-A100-AP101, o 2º no AP102…
-// Cada prédio tem 18 posições de picking (andares 100, 200 e 300, aptos x01 a x06) e cada rua 6 prédios (108 posições).
-// Bike nas ruas 3001 e 3002, Moto na 3003; a rua 3004 fica livre para os testes de cadastro.
-function enderecoDePicking(ruaInicial, posicao) {
-  const rua = ruaInicial + Math.floor(posicao / 108), naRua = posicao % 108;
-  const predio = Math.floor(naRua / 18) + 1, andar = 100 * (Math.floor((naRua % 18) / 6) + 1), apto = andar + (naRua % 6) + 1;
-  return `R${rua}-P${predio}-A${andar}-AP${apto}`;
-}
-export const ENDERECOS = Object.fromEntries([
-  ...PRODUTOS_BIKE.map(([sku], i) => [sku, enderecoDePicking(3001, i)]),
-  ...PRODUTOS_MOTO.map(([sku], i) => [sku, enderecoDePicking(3003, i)]),
-]);
+// endereço de separação de cada produto do catálogo (código da prateleira, ex.: R602-P2-A6-AP601)
+export const ENDERECOS = Object.fromEntries(PRODUTOS.map((p) => [p.sku, SEPARAR_EM.get(p.sku)]));
 const CATALOGO = PRODUTOS;
 
 // produto pelo código lido (EAN ou código interno) no catálogo de demonstração
@@ -188,22 +193,21 @@ const doErp = (p, i) => ({
   pesoBruto: { bike: 14.8, peca: 0.394, acess: 0.21 }[p.tipo], pesoLiquido: null, shelflife: null,
 });
 
-// endereços de demonstração: ruas 3001 a 3004, prédios 1 a 6;
-// andares 100, 200 e 300 são picking (apartamentos x01 a x06) e o andar 500 é aéreo (501 a 503).
-// Docas de recebimento na rua 9001 e de expedição na 9002. O ID é o que vai no QR da prateleira.
+// endereços REAIS (mesmo ID do QR das etiquetas). Quem é endereço padrão de algum produto é picking; o resto, aéreo (pulmão).
+// Além deles, só na demonstração: docas de recebimento (rua 9001), de expedição (9002) e o prédio 6 da rua 3004,
+// vazio, para os testes de cadastro e desativação. O ID é o que vai no QR da prateleira.
 function enderecosDeDemonstracao() {
-  const lista = [];
-  let id = 607500;
+  const picking = new Set(SALDOS_INICIAIS.filter((s) => s[3]).map((s) => s[0]));
+  const lista = ENDERECOS_REAIS.map((e) => ({ id: e[0], rua: e[1], predio: e[2], andar: e[3], apto: e[4], codigo: codigoReal(e),
+    tipo: picking.has(e[0]) ? "picking" : "aereo", deposito: "Principal", ativo: true, substituidoPor: null }));
+  let id = 608004; // depois do maior ID real (as docas mantêm os IDs que já estavam impressos)
   const add = (rua, predio, andar, apto, tipo) =>
     lista.push({ id: id++, rua, predio, andar, apto, codigo: `R${rua}-P${predio}-A${andar}-AP${apto}`, tipo, deposito: "Principal", ativo: true, substituidoPor: null });
-  for (let rua = 3001; rua <= 3004; rua++)
-    for (let predio = 1; predio <= 6; predio++) {
-      for (const andar of [100, 200, 300]) for (let a = 1; a <= 6; a++) add(rua, predio, andar, andar + a, "picking");
-      for (let a = 1; a <= 3; a++) add(rua, predio, 500, 500 + a, "aereo");
-    }
   for (let a = 1; a <= 4; a++) add(9001, 1, 100, 100 + a, "doca");
   // docas de expedição na rua 9002: o separador deixa o pedido aqui e o conferente busca
   for (let a = 1; a <= 6; a++) add(9002, 1, 100, 100 + a, "expedicao");
+  for (const andar of [100, 200, 300]) for (let a = 1; a <= 6; a++) add(3004, 6, andar, andar + a, "picking");
+  for (let a = 1; a <= 3; a++) add(3004, 6, 500, 500 + a, "aereo");
   // dois endereços já desativados, para mostrar o filtro de INATIVOS
   lista.find((e) => e.codigo === "R3004-P6-A500-AP503").ativo = false;
   lista.find((e) => e.codigo === "R3004-P6-A300-AP306").ativo = false;
@@ -223,25 +227,10 @@ function embalagensDeDemonstracao() {
   return lista;
 }
 
-// saldos iniciais: cada produto no seu picking e, os mais volumosos, também no aéreo
-function estoqueInicial(enderecos) {
-  const porCodigo = (c) => enderecos.find((e) => e.codigo === c);
-  const associacoes = [], saldos = [];
-  // pulmão (aéreo) dos que mais saem: cabos e câmaras, pneu 26, câmara de moto e óleo
-  const aereo = { "122": "R3001-P1-A500-AP501", "176": "R3001-P1-A500-AP502", "16016": "R3001-P1-A500-AP503",
-    "536": "R3001-P2-A500-AP501", "8745": "R3003-P1-A500-AP501", "17726": "R3003-P1-A500-AP502" };
-  CATALOGO.forEach((p, i) => {
-    const pick = porCodigo(ENDERECOS[p.sku]);
-    associacoes.push({ produto: p.sku, enderecoId: pick.id });
-    saldos.push({ enderecoId: pick.id, produto: p.sku, qtd: p.tipo === "bike" ? 6 + (i % 5) : 20 + ((i * 7) % 40) });
-    if (aereo[p.sku]) {
-      const a = porCodigo(aereo[p.sku]);
-      associacoes.push({ produto: p.sku, enderecoId: a.id });
-      saldos.push({ enderecoId: a.id, produto: p.sku, qtd: p.tipo === "bike" ? 24 : 120 });
-    }
-  });
-  // um produto guardado fora do endereço padrão (aparece na consulta, mesmo sem associação)
-  saldos.push({ enderecoId: porCodigo("R3003-P5-A500-AP501").id, produto: "17726", qtd: 48 });
+// saldos iniciais: os reais da planilha; o endereço padrão (End.Padrão) vira a associação produto → picking
+function estoqueInicial() {
+  const associacoes = SALDOS_INICIAIS.filter((s) => s[3]).map(([enderecoId, produto]) => ({ produto, enderecoId }));
+  const saldos = SALDOS_INICIAIS.map(([enderecoId, produto, qtd]) => ({ enderecoId, produto, qtd }));
   return { associacoes, saldos };
 }
 
@@ -309,20 +298,25 @@ function recebimentoInicial(enderecos, saldos) {
 function movimentacaoInicial(enderecos, associacoes, saldos) {
   const porCodigo = (c) => enderecos.find((e) => e.codigo === c);
   const tipoDe = (sku) => CATALOGO.find((p) => p.sku === sku).tipo;
+  // mínimo/máximo só dos pickings dos produtos do catálogo (os que entram nos pedidos de demonstração)
+  const doCatalogo = new Set(CATALOGO.map((p) => p.sku)), tipoPorId = new Map(enderecos.map((e) => [e.id, e.tipo]));
   const limites = associacoes
-    .filter((a) => enderecos.find((e) => e.id === a.enderecoId).tipo === "picking")
+    .filter((a) => doCatalogo.has(a.produto) && tipoPorId.get(a.enderecoId) === "picking")
     .map((a) => ({ produto: a.produto, enderecoId: a.enderecoId, ...(tipoDe(a.produto) === "bike" ? { minimo: 3, maximo: 12 } : { minimo: 10, maximo: 60 }) }));
   const pickingDe = (sku) => porCodigo(ENDERECOS[sku]).id;
   const saldo = (enderecoId, produto) => saldos.find((x) => x.enderecoId === enderecoId && x.produto === produto);
   const definir = (enderecoId, produto, qtd) => { const x = saldo(enderecoId, produto); if (x) x.qtd = qtd; else saldos.push({ enderecoId, produto, qtd }); };
 
+  // produtos das tarefas: os mais vendidos cujo picking tem mínimo/máximo e que têm saldo no aéreo (pulmão) de verdade
+  const temAereo = (sku) => saldos.some((x) => x.produto === sku && x.qtd > 0 && tipoPorId.get(x.enderecoId) === "aereo");
+  const [A, B, C, D, E, F] = CATALOGO.map((p) => p.sku)
+    .filter((sku) => limites.some((l) => l.produto === sku && l.enderecoId === pickingDe(sku)) && temAereo(sku));
+
   // pickings que a separação já esvaziou (no mínimo ou abaixo)
-  definir(pickingDe("536"), "536", 4);
-  definir(pickingDe("176"), "176", 6);
-  definir(pickingDe("16016"), "16016", 8);
-  definir(pickingDe("122"), "122", 14);
-  // um segundo aéreo, com pouco saldo, para a câmara 26: a tarefa sai com duas origens
-  definir(porCodigo("R3001-P2-A500-AP502").id, "176", 8);
+  definir(pickingDe(A), A, 4);
+  definir(pickingDe(B), B, 6);
+  definir(pickingDe(C), C, 8);
+  definir(pickingDe(D), D, 2);
 
   const tarefas = [];
   let id = 1;
@@ -340,19 +334,23 @@ function movimentacaoInicial(enderecos, associacoes, saldos) {
     return t;
   };
   // histórico (já encerradas)
-  tarefa("17726", "normal", "sistema", 300, { status: "concluida", fim: criada(280) }).origens.forEach((o) => (o.feito = o.qtd));
-  const parcial = tarefa("8745", "normal", "gestor", 240, { status: "parcial", fim: criada(220) });
+  // (o histórico guarda a necessidade da época: o picking estava no mínimo)
+  definir(pickingDe(E), E, 2); definir(pickingDe(F), F, 2);
+  tarefa(E, "normal", "sistema", 300, { status: "concluida", fim: criada(280) }).origens.forEach((o) => (o.feito = o.qtd));
+  const parcial = tarefa(F, "normal", "gestor", 240, { status: "parcial", fim: criada(220) });
   parcial.origens[0].feito = Math.floor(parcial.origens[0].qtd / 2);
-  tarefa("16016", "normal", "coletor", 200, { status: "cancelada", fim: criada(190) });
+  // depois das tarefas encerradas, o picking deles voltou ao normal
+  definir(pickingDe(E), E, 40); definir(pickingDe(F), F, 40);
+  tarefa(C, "normal", "coletor", 200, { status: "cancelada", fim: criada(190) });
   // abertas: o coletor mostra as urgentes primeiro
-  tarefa("176", "normal", "sistema", 50);
-  tarefa("536", "urgente", "sistema", 35);
-  tarefa("122", "normal", "coletor", 20);
+  tarefa(B, "normal", "sistema", 50);
+  tarefa(A, "urgente", "sistema", 35);
+  tarefa(D, "normal", "coletor", 20);
   // em andamento: já retirou 20 do aéreo e guardou no picking
-  const andamento = tarefa("16016", "normal", "sistema", 10, { status: "andamento" });
+  const andamento = tarefa(C, "normal", "sistema", 10, { status: "andamento" });
   andamento.origens[0].feito = 20;
-  saldo(andamento.origens[0].enderecoId, "16016").qtd -= 20;
-  saldo(andamento.pickingId, "16016").qtd += 20;
+  saldo(andamento.origens[0].enderecoId, C).qtd -= 20;
+  saldo(andamento.pickingId, C).qtd += 20;
   return { limites, tarefas, proximaTarefa: id };
 }
 
@@ -429,23 +427,34 @@ function inventarioInicial(enderecos, associacoes, saldos) {
   return { inventarios: [h, c, r], proximoInventario: 4 };
 }
 
+// produtos: os do catálogo com os dados de exemplo do ERP; os demais do estoque real só com código, descrição e grupo.
+// Todos nascem com conferência por checkout; na demonstração, os do catálogo sem código de barras já vêm como granel.
+function produtosDeDemonstracao() {
+  const grupo = new Map(PRODUTOS_REAIS.map(([codigo, , g]) => [codigo, g]));
+  const doCat = CATALOGO.map((p, i) => ({ ...doErp(p, i), grupo: grupo.get(p.sku) || null, checkout: !!p.ean }));
+  const jaTem = new Set(doCat.map((p) => p.codigo));
+  const outros = PRODUTOS_REAIS.filter(([codigo]) => !jaTem.has(codigo) && !NOVOS.has(codigo))
+    .map(([codigo, descricao, g]) => ({ codigo, descricao, un: "UN", grupo: g, checkout: true }));
+  return [...doCat, ...outros];
+}
+
 export function estoqueDeDemonstracao() {
   const enderecos = enderecosDeDemonstracao();
-  const inicial = estoqueInicial(enderecos);
+  const inicial = estoqueInicial();
   const rec = recebimentoInicial(enderecos, inicial.saldos);
   const mov = movimentacaoInicial(enderecos, inicial.associacoes, inicial.saldos);
   const inv = inventarioInicial(enderecos, inicial.associacoes, inicial.saldos);
   return {
     enderecos,
     // demonstração: os produtos sem código de barras já vêm como granel (checkout desligado) para testar
-    produtos: CATALOGO.map((p, i) => ({ ...doErp(p, i), checkout: !!p.ean })),
+    produtos: produtosDeDemonstracao(),
     embalagens: embalagensDeDemonstracao(),
     ...inicial,
     notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,
     limites: mov.limites, tarefas: mov.tarefas,
     inventarios: inv.inventarios,
     movimentos: [],
-    proximoId: { endereco: 607500 + enderecos.length, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa, inventario: inv.proximoInventario },
+    proximoId: { endereco: Math.max(...enderecos.map((e) => e.id)) + 1, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa, inventario: inv.proximoInventario },
   };
 }
 

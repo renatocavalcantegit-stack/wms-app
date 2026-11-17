@@ -88,3 +88,10 @@ test("junção das partes: só com todas concluídas; vira um pedido com as doca
   assert.deepEqual(j.partes.map((x) => x.doca.codigo), ["R9002-P1-A100-AP101", "R9002-P1-A100-AP102"]);
   assert.equal(j.fim, 200); assert.equal(j.inicio, 10); assert.equal(j.parte, null);
 });
+
+test("rótulo das ruas da parte: ordem numérica e rua 0 conta", () => {
+  const itens = [it("a", "R1000-P0-A100-AP101", 1), it("b", "R802-P1-A100-AP101", 1), it("c", "R0-P0-A100-AP101", 1)];
+  assert.equal(ruasDaParte(itens, [0, 1]), "Rua 802–1000");
+  assert.equal(ruasDaParte(itens, [0, 1, 2]), "Rua 0–1000");
+  assert.equal(ruasDaParte(itens, [2]), "Rua 0");
+});

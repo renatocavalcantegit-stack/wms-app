@@ -34,17 +34,17 @@ test("novo endereço: os números da prateleira viram o código, com ID novo; re
 });
 
 test("lote: grava com IDs novos e pula o que já existe ativo", () => {
-  const { enderecos } = gerarLote({ ruaIni: 3001, ruaFim: 3001, predioIni: 1, predioFim: 1, andarIni: 100, andarFim: 300,
+  const { enderecos } = gerarLote({ ruaIni: 3004, ruaFim: 3004, predioIni: 6, predioFim: 6, andarIni: 100, andarFim: 300,
     andarPasso: 100, aptoIni: 101, aptoFim: 110, tipo: "picking" });
   const r = criarEnderecos(enderecos, " ");
-  assert.deepEqual(r, { criados: 12, ignorados: 18 }); // x01 a x06 dos 3 andares já existiam
-  assert.equal(porCodigo("R3001-P1-A300-AP310").deposito, "Principal");
+  assert.deepEqual(r, { criados: 13, ignorados: 17 }); // x01 a x06 dos 3 andares já existiam (o AP306, inativo, nasce de novo)
+  assert.equal(porCodigo("R3004-P6-A300-AP310").deposito, "Principal");
   const ids = lerEstoque().enderecos.map((e) => e.id);
   assert.equal(new Set(ids).size, ids.length); // nenhum ID repetido
 });
 
 test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
-  const cheio = porCodigo("R3001-P1-A100-AP102"); // picking da câmara 26 Pirelli (2º mais vendido)
+  const cheio = porCodigo("R602-P2-A6-AP601"); // picking real do cabo de freio 122 (1º mais vendido)
   assert.deepEqual(desativarEndereco(cheio.id), { ok: false, msg: MSG_ENDERECO_COM_ESTOQUE });
   const vazio = porCodigo("R3004-P6-A100-AP106");
   assert.equal(saldoDoEndereco(lerEstoque(), vazio.id), 0);
@@ -54,7 +54,7 @@ test("desativar: endereço com estoque é bloqueado; vazio desativa", () => {
 
 test("reativar: nasce endereço com ID novo; o antigo fica inativo e aponta para o novo", () => {
   const inativo = lerEstoque().enderecos.find((e) => e.codigo === "R3004-P6-A500-AP503");
-  assert.deepEqual(reativarEndereco(inativo.id, { rua: 3001, predio: 1, andar: 100, apto: 102, tipo: "picking", deposito: "Principal" }),
+  assert.deepEqual(reativarEndereco(inativo.id, { rua: 602, predio: 2, andar: 6, apto: 601, tipo: "picking", deposito: "Principal" }),
     { ok: false, msg: MSG_ENDERECO_EM_USO });
   const r = reativarEndereco(inativo.id, { rua: 3004, predio: 6, andar: 500, apto: 503, tipo: "aereo", deposito: "Principal" });
   assert.equal(r.ok, true);

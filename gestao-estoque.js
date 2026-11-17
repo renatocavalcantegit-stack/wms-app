@@ -48,6 +48,8 @@ function fecharModal() { $("#modal").hidden = true; $("#mScrim").hidden = true; 
 const semInfo = (v) => (v === null || v === undefined || v === "" ? `<i class="ge-nd">Sem informação</i>`
   : typeof v === "number" && !Number.isInteger(v) ? v.toLocaleString("pt-BR") : esc(v)); // 0.394 → 0,394 (códigos inteiros ficam sem ponto)
 const simNao = (v) => (v ? "Sim" : "Não");
+// ordena códigos de produto como números ("1005" antes de "10005"); um comparador só, criado uma vez (é bem mais rápido)
+const porCodigo = new Intl.Collator("pt-BR", { numeric: true }).compare;
 const num = (n) => Number(n).toLocaleString("pt-BR");
 const tipoTag = (t) => `<span class="ge-tipo ${t}">${TIPOS_ENDERECO[t]}</span>`;
 
@@ -275,7 +277,7 @@ function imprimirQr() {
 // PRODUTOS E EMBALAGENS
 // =====================================================================
 function telaProdutos() {
-  const lista = buscarProdutos(db.produtos, filtros.produtos.busca).slice().sort((a, b) => a.codigo.localeCompare(b.codigo));
+  const lista = buscarProdutos(db.produtos, filtros.produtos.busca).slice().sort((a, b) => porCodigo(a.codigo, b.codigo));
   const { itens, rodape } = paginar(lista, "produtos");
   return `
   <div class="ge-head">
@@ -291,7 +293,7 @@ function telaProdutos() {
     <table class="ge-tab click">
       <thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="r">Fornecedor</th><th class="r">Grupo</th><th class="r">Embalagens</th><th class="r">Endereços padrão</th></tr></thead>
       <tbody>${itens.map((p) => `<tr data-produto="${esc(p.codigo)}">
-        <td class="mono">${esc(p.codigo)}</td><td>${esc(p.descricao)}</td><td>${esc(p.un)}</td><td class="r">${p.fornecedor}</td><td class="r">${p.grupo}</td>
+        <td class="mono">${esc(p.codigo)}</td><td>${esc(p.descricao)}</td><td>${esc(p.un)}</td><td class="r">${p.fornecedor ?? "—"}</td><td class="r">${esc(p.grupo ?? "—")}</td>
         <td class="r">${embalagensDoProduto(db, p.codigo).length}</td><td class="r">${db.associacoes.filter((a) => a.produto === p.codigo).length}</td>
       </tr>`).join("") || `<tr><td colspan="7" class="ge-vazio">Nenhum produto encontrado.</td></tr>`}</tbody>
     </table>
@@ -364,12 +366,14 @@ function abrirEmbalagem(id = null) {
 function telaEnderecamento() {
   const f = filtros.enderecamento;
   const busca = f.busca.trim().toLowerCase();
+  // índices: com o estoque real são milhares de associações; procurar uma a uma na lista deixava a tela lenta
+  const prodPor = new Map(db.produtos.map((p) => [p.codigo, p])), endPor = new Map(db.enderecos.map((e) => [e.id, e]));
   const linhas = db.associacoes
-    .map((a) => ({ p: produtoPorCodigo(db, a.produto), e: enderecoPorId(db, a.enderecoId) }))
+    .map((a) => ({ p: prodPor.get(a.produto), e: endPor.get(a.enderecoId) }))
     .filter((l) => l.p && l.e)
     .filter((l) => !busca || l.p.codigo.toLowerCase().includes(busca) || l.p.descricao.toLowerCase().includes(busca) || l.e.codigo.toLowerCase().includes(busca) || String(l.e.id) === busca)
     .filter((l) => !f.tipo || l.e.tipo === f.tipo)
-    .sort((a, b) => a.p.codigo.localeCompare(b.p.codigo) || compararEnderecos(a.e.codigo, b.e.codigo));
+    .sort((a, b) => porCodigo(a.p.codigo, b.p.codigo) || compararEnderecos(a.e.codigo, b.e.codigo));
   const { itens, rodape } = paginar(linhas, "enderecamento");
   return `
   <div class="ge-head">

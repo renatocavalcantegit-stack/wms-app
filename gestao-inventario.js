@@ -149,7 +149,7 @@ function telaPainel(db, f, inv) {
     const ativo = Object.keys(filtro).length && f.status === alvo.status && f.situacao === alvo.situacao;
     return `<button class="gx-kpi ge-kpi ${cor} ${ativo ? "on" : ""}" data-kpi='${JSON.stringify(alvo)}'>${rotulo} <b>${n}</b></button>`;
   };
-  const ruas = [...new Set(inv.enderecos.map((id) => enderecoPorId(db, id).rua))].sort();
+  const ruas = [...new Set(inv.enderecos.map((id) => enderecoPorId(db, id).rua))].sort((a, b) => a - b); // numérica: a rua 802 antes da 1000
   const operadores = [...new Set(inv.itens.flatMap((i) => i.contagens.map((c) => c.operador)))].sort();
   const sel = (chave, pares, rotulo) => `<select data-f="${chave}"><option value="">${rotulo}</option>${pares.map(([v, l]) =>
     `<option value="${v}" ${String(f[chave]) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -256,7 +256,7 @@ function paresFiltrados(db) {
 }
 
 function modalNovo(db, foco) {
-  const ruas = [...new Set(db.enderecos.filter(enderecoInventariavel).map((e) => e.rua))].sort();
+  const ruas = [...new Set(db.enderecos.filter(enderecoInventariavel).map((e) => e.rua))].sort((a, b) => a - b);
   const contaRua = (r) => db.enderecos.filter((e) => enderecoInventariavel(e) && e.rua === r).length;
   const pares = novo.tipo === "rotativo" ? paresFiltrados(db) : [];
   const mostra = pares.slice(0, 200);
