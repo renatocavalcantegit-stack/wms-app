@@ -95,6 +95,20 @@
 .et-previa { display: grid; place-items: center; background: var(--bg); border-radius: 14px; padding: 14px 6px; overflow: hidden; }
 .et-previa .et { border: 1px dashed #C9C9D1; zoom: 2; }
 .et-print { display: none; }
+/* modo compacto (coletores de tela pequena, ex.: Chainway C6000 de 4"): menu e blocos mais baixos */
+@media (max-height: 600px) {
+  .es-grupo { margin: 10px 2px 5px; font-size: 10.5px; }
+  .es-menu { gap: 6px; }
+  .es-op { padding: 8px 10px; gap: 10px; }
+  .es-ico { width: 36px; height: 36px; border-radius: 10px; }
+  .es-ico svg { width: 20px; height: 20px; }
+  .es-t b { font-size: 14px; }
+  .es-t small { font-size: 11.5px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .es-form { gap: 8px; }
+  .rc-res { gap: 6px; }
+  .rc-nota, .rc-cons { padding: 8px 10px; }
+}
+
 @media print {
   @page { size: 90mm 20mm; margin: 0; }
   body.es > *:not(.et-print) { display: none !important; }

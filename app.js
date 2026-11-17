@@ -445,7 +445,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $("#pickCard .product").classList.toggle("ok", e === "quantidade");
     $("#pickCard .product").classList.toggle("wait", e === "produto");
     $("#scanForm").hidden = e === "quantidade";
-    $("#scanInput").placeholder = e === "endereco" ? "Bipe o QR ou digite o ID do endereço" : "Bipe ou digite o EAN / SKU do produto";
+    $("#scanInput").placeholder = e === "endereco" ? "Bipe o QR ou digite o ID" : "Bipe ou digite EAN / SKU";
     $("#scanInput").inputMode = "text";
     $(".qty").classList.toggle("locked", e !== "quantidade");
     $("#qtyInput").disabled = e !== "quantidade";
@@ -469,10 +469,20 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   }
 
   function setMsg(txt, kind = "") {
+    if (kind !== "err") esconderAlerta(); // leitura certa (ou item novo) apaga o alerta de erro
     const m = $("#scanMsg"); m.textContent = txt; m.className = "scan-msg " + kind;
   }
 
+  // erro de leitura: além da mensagem embaixo, uma faixa vermelha no topo por alguns segundos
+  // (só aparece no modo compacto, nas telas pequenas dos coletores)
+  let alertaTimer = null;
+  function mostrarAlerta(txt) {
+    const a = $("#pickAlerta"); a.textContent = txt; a.hidden = false;
+    clearTimeout(alertaTimer); alertaTimer = setTimeout(() => (a.hidden = true), 3500);
+  }
+  function esconderAlerta() { clearTimeout(alertaTimer); $("#pickAlerta").hidden = true; }
   function erroLeitura(txt) {
+    mostrarAlerta(txt);
     setMsg(txt, "err"); beep(false); vibrate([80, 50, 80]);
     const f = $("#scanForm"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err");
   }
@@ -627,6 +637,14 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const l = e.target.closest(".line[data-idx]"); if (!l) return;
     if (lote) lote.atual = +l.dataset.idx; else current.atual = +l.dataset.idx;
     save(); closeSheets(); renderPick(true);
+  });
+
+  // teclas físicas do coletor na separação: F1 registra falta, F2 abre a lista de itens (o Enter já confirma)
+  document.addEventListener("keydown", (e) => {
+    if ((e.key !== "F1" && e.key !== "F2") || $("#viewPick").hidden || !$("#scrim").hidden) return;
+    e.preventDefault();
+    if (e.key === "F1") { if (!$("#btnShort").disabled) $("#btnShort").click(); else erroLeitura("PRIMEIRO LEIA O QR DO ENDEREÇO."); }
+    else $("#pickListBtn").click();
   });
 
   $("#pickBack").addEventListener("click", () => {

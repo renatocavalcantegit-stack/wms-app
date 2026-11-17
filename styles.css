@@ -179,6 +179,9 @@ input { font: inherit; color: inherit; }
 .scan-msg.ok { color: var(--ok); }
 .scan-msg.err { color: var(--red); }
 
+/* erro de leitura no topo: só existe no modo compacto (ver o fim do arquivo) */
+.sp-alerta { display: none; }
+.sp-curto { display: none; }
 .pick-foot { display: flex; gap: 10px; padding: 12px 16px calc(14px + var(--safe-b)); background: var(--bg); position: sticky; bottom: 0; }
 
 /* ---------- done ---------- */
@@ -425,3 +428,75 @@ a.btn { text-decoration: none; }
 #pickCard .product { transition: box-shadow .2s; }
 #pickCard .product.wait { box-shadow: 0 0 0 3px var(--red-brand); }
 #pickCard .product.ok { box-shadow: 0 0 0 2px var(--ok); }
+
+/* =====================================================================
+   MODO COMPACTO — coletores com tela pequena (ex.: 4", 320×480)
+   Quando a tela é baixa, o mesmo app fica mais enxuto para que, na separação,
+   endereço, produto, quantidade, campo de bipe, mensagem e botões caibam sem rolar.
+   Celular grande (altura acima de 600 px) não muda nada.
+   ===================================================================== */
+@media (max-height: 600px) {
+  /* separação */
+  .pick-bar { padding: calc(4px + var(--safe-t)) 10px 4px; gap: 8px; }
+  .pick-bar .icon-btn { width: 36px; height: 36px; border-radius: 10px; }
+  .pick-order { font-size: 14px; }
+  .pick-client { font-size: 11.5px; }
+  .progress { height: 4px; margin: 0 10px; }
+  .pick-step { margin: 3px 10px 0; font-size: 10.5px; }
+  .pick-main { padding: 4px 10px 6px; gap: 6px; }
+  .addr { border-radius: 14px; padding: 7px 10px 8px; }
+  .addr::after { display: none; }
+  .addr-label { font-size: 10px; }
+  .addr-status { font-size: 10.5px; padding: 2px 8px; }
+  .addr-parts { gap: 5px; margin-top: 5px; }
+  .addr-part { border-radius: 9px; padding: 3px 2px 2px; }
+  .addr-part b { font-size: 25px; }
+  .addr-part.long b { font-size: 19px; padding-top: 3px; }
+  .addr-part small { font-size: 8.5px; }
+  .product { padding: 7px 10px; gap: 8px; border-radius: 12px; }
+  .product-thumb { display: none; }
+  .product-desc { font-size: 13.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .product-meta { font-size: 11px; margin-top: 2px; }
+  .qty { padding: 4px 10px; border-radius: 12px; }
+  .qty-center { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+  .qty-val { font-size: 28px; }
+  .qty-of { font-size: 16px; }
+  .qty-center .qty-l { margin: 0; white-space: nowrap; font-size: 11.5px; }
+  .qty-val { display: flex; align-items: baseline; white-space: nowrap; }
+  #qtyInput { width: 4ch; min-width: 70px; border-bottom-width: 2px; }
+  .pick-step { line-height: 1.2; }
+  .scan { height: 44px; border-radius: 12px; padding: 0 4px 0 10px; gap: 8px; }
+  .scan input { font-size: 15px; }
+  .scan-ok, .scan-cam { height: 36px; border-radius: 10px; }
+  .scan-cam { width: 36px; }
+  .scan-msg { margin: -2px 2px 0; min-height: 15px; font-size: 11.5px; }
+  .lote-box { gap: 4px; }
+  .caixa { padding: 4px 8px; }
+  .pick-foot { padding: 6px 10px calc(6px + var(--safe-b)); gap: 8px; }
+  .pick-foot .btn { height: 44px; font-size: 14px; border-radius: 12px; padding: 0 12px; }
+  .sp-longo { display: none; }
+  .sp-curto { display: inline; }
+  /* as teclas físicas do coletor aparecem nos botões (F1 falta · F2 lista · Enter confirma) */
+  .pick-foot [data-tecla]::after { content: attr(data-tecla); font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: rgba(0,0,0,.1); }
+  .pick-bar [data-tecla] { position: relative; }
+  .pick-bar [data-tecla]::after { content: attr(data-tecla); position: absolute; right: -4px; bottom: -4px; font-size: 8.5px; font-weight: 700; padding: 0 3px; border-radius: 4px; background: var(--ink); color: #fff; }
+  /* erro de leitura: faixa vermelha por cima de tudo */
+  .sp-alerta { display: block; position: fixed; left: 0; right: 0; top: 0; z-index: 50; margin: 0; padding: calc(10px + var(--safe-t)) 12px 10px;
+    background: var(--red); color: #fff; font-weight: 800; font-size: 14px; text-align: center; line-height: 1.25; overflow-wrap: anywhere; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+
+  /* tela inicial: saudação e números numa faixa só, para caber mais pedidos */
+  .appbar-logo { height: 30px; }
+  .home { padding: 2px 12px calc(16px + var(--safe-b)); }
+  .hello-kicker { display: none; }
+  .hello-title { font-size: 17px; margin: 0 0 8px; }
+  .kpis { gap: 6px; margin-bottom: 8px; }
+  .kpi { padding: 6px 8px; border-radius: 12px; flex-direction: row; align-items: baseline; gap: 5px; }
+  .kpi-n { font-size: 18px; }
+  .kpi-l { font-size: 10.5px; margin: 0; line-height: 1.1; }
+  .tabs { margin-bottom: 8px; padding: 3px; }
+  .tab { height: 32px; font-size: 13px; }
+  .orders { gap: 8px; }
+  .order { padding: 10px 12px; gap: 6px; }
+  .order-id { font-size: 15px; }
+  .order-client { font-size: 13px; }
+}
