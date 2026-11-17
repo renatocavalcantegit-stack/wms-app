@@ -1,0 +1,72 @@
+// Migrações e carga da demonstração no banco de teste.
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { prepararBancoDeTeste } from "./banco-de-teste.js";
+import { migrar } from "../db/migrar.js";
+import { semear } from "../db/semear.js";
+import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont } from "../../js/demo-dados.js";
+import { USERS } from "../../js/sessao.js";
+
+let pool;
+before(async () => { pool = await prepararBancoDeTeste(); });
+after(async () => { await pool.end(); });
+
+const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FROM ${tabela}`)).rows[0].n;
+
+test("migrar de novo não aplica nada (cada arquivo roda uma vez só)", async () => {
+  assert.deepEqual(await migrar(pool), []);
+  const { rows } = await pool.query("SELECT nome FROM migracoes");
+  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql"]);
+});
+
+test("a demonstração do banco é a mesma do app", async () => {
+  const estoque = estoqueDeDemonstracao();
+  assert.equal(await contar("usuarios"), USERS.length);
+  assert.equal(await contar("produtos"), estoque.produtos.length);
+  assert.equal(await contar("embalagens"), estoque.embalagens.length);
+  assert.equal(await contar("enderecos"), estoque.enderecos.length);
+  assert.equal(await contar("saldos"), estoque.saldos.length);
+  assert.equal(await contar("associacoes"), estoque.associacoes.length);
+  assert.equal(await contar("pedidos"), seedSeparacao().length + seedSeparacaoMont().length);
+});
+
+test("o PIN não fica guardado no banco", async () => {
+  const { rows } = await pool.query("SELECT login, pin_hash FROM usuarios");
+  for (const r of rows) {
+    const pin = USERS.find((u) => u.login === r.login).pin;
+    assert.ok(!r.pin_hash.includes(pin), `PIN de ${r.login} aparece no hash`);
+  }
+});
+
+test("endereço é identificado pelo ID: a base real tem códigos repetidos", async () => {
+  const { rows } = await pool.query("SELECT codigo, count(*)::int AS n FROM enderecos GROUP BY codigo HAVING count(*) > 1");
+  assert.ok(rows.length > 0);
+});
+
+test("saldo fracionado da base real é guardado sem arredondar e volta como número", async () => {
+  const fracionados = estoqueDeDemonstracao().saldos.filter((s) => !Number.isInteger(s.qtd));
+  assert.ok(fracionados.length > 0);
+  const s = fracionados[0];
+  const { rows } = await pool.query("SELECT qtd FROM saldos WHERE endereco_id = $1 AND produto = $2", [s.enderecoId, s.produto]);
+  assert.equal(rows[0].qtd, s.qtd);
+});
+
+test("pedido dividido guarda de quem é a parte", async () => {
+  const { rows } = await pool.query("SELECT pedido_pai, parte_numero, partes_total FROM pedidos WHERE id = 'PV-10426/1'");
+  assert.deepEqual(rows[0], { pedido_pai: "PV-10426", parte_numero: 1, partes_total: 2 });
+});
+
+test("o banco recusa dado inválido", async () => {
+  // saldo negativo
+  await assert.rejects(pool.query("INSERT INTO saldos (endereco_id, produto, qtd) VALUES (4123, '122', -1)"));
+  // código de barras repetido
+  const { rows } = await pool.query("SELECT produto, codigo FROM embalagens WHERE codigo IS NOT NULL LIMIT 1");
+  await assert.rejects(pool.query("INSERT INTO embalagens (id, produto, codigo, descricao, qtd) VALUES (999999, $1, $2, 'Cópia', 1)", [rows[0].produto, rows[0].codigo]));
+  // item de produto que não existe
+  await assert.rejects(pool.query("INSERT INTO itens_pedido (pedido_id, sequencia, produto, endereco_codigo, qtd) VALUES ('PV-10421', 99, 'NAO-EXISTE', 'R1', 1)"));
+});
+
+test("semear de novo recomeça a demonstração sem duplicar", async () => {
+  await semear(pool);
+  assert.equal(await contar("usuarios"), USERS.length);
+});
