@@ -3,8 +3,8 @@
 //   · um pedido (ou uma PARTE de um pedido grande que o coordenador dividiu entre separadores);
 //   · um LOTE: vários pedidos numa viagem só, com uma caixa por pedido no carrinho (A, B, C…);
 //   · e, no fim de qualquer um deles, o separador lê o QR da DOCA DE EXPEDIÇÃO onde deixou a mercadoria.
-// Em cada item (ou parada do lote) o separador CONFIRMA O ENDEREÇO primeiro (QR ou ID digitado) e só então bipa o produto:
-// assim o sistema sabe que ele está na prateleira certa, e a falta "endereço vazio" é confiável.
+// Em cada item (ou parada do lote): CONFIRMA O ENDEREÇO (QR ou ID digitado), BIPA O PRODUTO uma vez e DIGITA A QUANTIDADE.
+// Assim o sistema sabe que ele está na prateleira certa com o produto certo, e a falta "endereço vazio" é confiável.
 // As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao } from "./js/dados/separacao.js";
@@ -16,7 +16,7 @@ import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } fr
 import { Embarque } from "./embarque.js";
 import { lerCodigoDoEndereco, acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import {
-  validarDocaExpedicao, validarLote, posicoesDoLote, montarParadas, paradaConcluida, destinoDaLeitura, distribuirAchado, MAX_PEDIDOS_LOTE,
+  validarDocaExpedicao, validarLote, posicoesDoLote, montarParadas, paradaConcluida, distribuirAchado, MAX_PEDIDOS_LOTE,
 } from "./compartilhado/regras/separacao.js";
 
 (() => {
@@ -268,7 +268,7 @@ import {
     const o = pedido(go.dataset.id);
     if (o.status === "concluido") {
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: "pendente", motivo: "" }));
-      Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null });
+      Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null, prodOk: null });
     }
     if (o.status === "pendente") { o.status = "andamento"; o.inicio = Date.now(); o.operador = user; }
     current = o; lote = null; save(); closeSheets();
@@ -326,6 +326,7 @@ import {
     $("#prodSku").textContent = i.sku;
     $("#prodEan").textContent = "EAN " + i.ean;
     $("#loteBox").hidden = true;
+    $("#qtyInput").value = "";
     renderEndereco();
     renderQty();
     setMsg("");
@@ -353,71 +354,72 @@ import {
     $("#prodSku").textContent = p.sku;
     $("#prodEan").textContent = "EAN " + p.ean;
     desenharCaixas(p);
+    $("#qtyInput").value = "";
     renderEndereco();
     renderQty();
     setMsg("");
     $("#scanInput").value = "";
     if (anim) { const c = $("#pickCard"); c.classList.remove("enter"); void c.offsetWidth; c.classList.add("enter"); }
   }
-  // as caixas do carrinho nesta parada: quanto vai em cada uma (a próxima peça bipada vai para a destacada)
+  // três passos em cada item (ou parada do lote):
+  //   1. ENDEREÇO: lê o QR do endereço (ou digita o ID);
+  //   2. PRODUTO: bipa o produto uma vez (confirma que pegou o produto certo);
+  //   3. QUANTIDADE: digita quanto pegou e tecla Enter. Menos que o pedido abre a falta.
+  // O que já foi confirmado fica guardado no pedido/lote: pausar e voltar não pede de novo.
+  const chaveProduto = () => (lote ? `${parada().end}|${parada().sku}` : `${item().end}|${item().sku}`);
+  const produtoOk = () => enderecoOk() && dono().prodOk === chaveProduto();
+  const etapa = () => (!enderecoOk() ? "endereco" : !produtoOk() ? "produto" : "quantidade");
+  const solicitado = () => (lote ? parada().total : item().qtd);
+  const ehDaVez = (code) => { const x = lote ? parada() : item(); return code === x.ean || code === x.sku.toUpperCase(); };
+  // quantidade digitada (null = ainda vazio)
+  const digitado = () => { const v = $("#qtyInput").value.trim(); return v === "" ? null : Math.max(0, parseInt(v, 10) || 0); };
+
+  // as caixas do carrinho nesta parada: quanto vai em cada uma. Com a quantidade digitada menor que o total,
+  // mostra como o achado será distribuído (a caixa A primeiro) e quem fica com falta
   function desenharCaixas(p) {
-    const destino = destinoDaLeitura(p);
+    const v = digitado(), dist = v != null && v < p.total ? distribuirAchado(p.linhas, v) : null;
     $("#loteBox").hidden = false;
-    $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${p.total}</b> · distribua nas caixas</p>` + p.linhas.map((l) => {
-      const o = pedido(l.pedido), cheio = l.sep >= l.qtd;
-      return `<div class="caixa ${destino === l ? "atual" : ""} ${cheio ? "cheia" : ""} ${l.status === "falta" ? "falta" : ""}">
-        <b class="pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}</small></span>
-        <span class="caixa-q">${l.sep}<small>/${l.qtd}</small></span></div>`;
+    $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${p.total}</b> · coloque em cada caixa</p>` + p.linhas.map((l, k) => {
+      const o = pedido(l.pedido), vai = dist ? dist[k].sep : l.qtd, falta = dist && dist[k].falta;
+      return `<div class="caixa ${falta ? "falta" : ""} ${l.status === "ok" ? "cheia" : ""}">
+        <b class="pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}${falta ? ` · falta ${l.qtd - vai}` : ""}</small></span>
+        <span class="caixa-q">${vai}<small>/${l.qtd}</small></span></div>`;
     }).join("");
   }
 
-  // o cartão do endereço mostra se falta ler o QR; quantidade, confirmar e falta ficam travados até a leitura
+  // cartão do endereço, produto e quantidade conforme o passo da vez
   function renderEndereco() {
-    const ok = enderecoOk();
-    $("#addrCard").classList.toggle("ok", ok);
-    $("#addrCard").classList.toggle("wait", !ok);
-    $("#addrStatus").textContent = ok ? "Endereço confirmado ✓" : "Leia o QR do endereço";
-    $("#scanInput").placeholder = ok ? "Bipe ou digite o EAN / SKU" : "Bipe o QR ou digite o ID do endereço";
+    const e = etapa(), endOk = e !== "endereco";
+    $("#addrCard").classList.toggle("ok", endOk);
+    $("#addrCard").classList.toggle("wait", !endOk);
+    $("#addrStatus").textContent = endOk ? "Endereço confirmado ✓" : "Leia o QR do endereço";
+    $("#pickCard .product").classList.toggle("ok", e === "quantidade");
+    $("#pickCard .product").classList.toggle("wait", e === "produto");
+    $("#scanForm").hidden = e === "quantidade";
+    $("#scanInput").placeholder = e === "endereco" ? "Bipe o QR ou digite o ID do endereço" : "Bipe ou digite o EAN / SKU do produto";
     $("#scanInput").inputMode = "text";
-    $(".qty").classList.toggle("locked", !ok);
-    $("#qtyMinus").disabled = $("#qtyPlus").disabled = $("#btnShort").disabled = !ok;
+    $(".qty").classList.toggle("locked", e !== "quantidade");
+    $("#qtyInput").disabled = e !== "quantidade";
+    $("#btnShort").disabled = !endOk; // falta (ex.: endereço vazio) só depois de confirmar o endereço
   }
 
-  function renderQty(bump) {
-    const lido = lote ? parada().lido : item().sep, total = lote ? parada().total : item().qtd;
-    $("#qtySep").textContent = lido;
+  function renderQty() {
+    const total = solicitado(), v = digitado();
     $("#qtyReq").textContent = total;
+
     const q = $(".qty");
-    q.classList.toggle("full", lido === total);
-    q.classList.toggle("over", lido > total);
-    if (bump) { const v = $(".qty-val"); v.classList.remove("bump"); void v.offsetWidth; v.classList.add("bump"); }
-    $("#btnConfirm").disabled = !enderecoOk() || lido === 0 || lido > total;
-    $("#btnConfirm").textContent = lido < total && lido > 0 ? `Confirmar ${lido} de ${total}` : lote ? "Confirmar parada" : "Confirmar item";
+    q.classList.toggle("full", v === total);
+    q.classList.toggle("over", v != null && v > total);
+    const pronto = etapa() === "quantidade" && v != null && v <= total;
+    $("#btnConfirm").disabled = !pronto;
+    $("#btnConfirm").textContent = pronto && v < total ? `Confirmar ${v} de ${total} · falta` : lote ? "Confirmar parada" : "Confirmar item";
+    if (v != null && v > total) setMsg(`Acima do solicitado (${total}). Confira a quantidade.`, "err");
+    if (lote) desenharCaixas(parada());
   }
 
   function setMsg(txt, kind = "") {
     const m = $("#scanMsg"); m.textContent = txt; m.className = "scan-msg " + kind;
   }
-
-  function changeQty(d) {
-    if (!enderecoOk()) return;
-    if (lote) {
-      const p = parada();
-      // + vai para a caixa da vez; − tira da última caixa que recebeu
-      const l = d > 0 ? destinoDaLeitura(p) : [...p.linhas].reverse().find((x) => x.sep > 0);
-      if (!l) return;
-      const i = itemDaLinha(l);
-      i.sep = Math.max(0, i.sep + d); i.status = "pendente";
-      save(); desenharCaixas(parada()); renderQty(true);
-      return;
-    }
-    const i = item();
-    i.sep = Math.max(0, i.sep + d);
-    if (i.status !== "pendente") i.status = "pendente";
-    save(); renderQty(true);
-  }
-  $("#qtyMinus").addEventListener("click", () => changeQty(-1));
-  $("#qtyPlus").addEventListener("click", () => changeQty(1));
 
   function erroLeitura(txt) {
     setMsg(txt, "err"); beep(false); vibrate([80, 50, 80]);
@@ -428,20 +430,9 @@ import {
     const code = raw.trim().toUpperCase();
     if (!code) return;
     $("#scanInput").value = "";
-    if (!enderecoOk()) return lerEndereco(code);
-    if (lote) return lerNoLote(code);
-    const i = item();
-    if (code === i.ean || code === i.sku.toUpperCase()) {
-      if (i.sep >= i.qtd) { setMsg("Quantidade já atingida para este item.", "err"); beep(false); vibrate([60, 40, 60]); return; }
-      i.sep++; i.status = "pendente"; save();
-      beep(true); vibrate(30);
-      renderQty(true);
-      setMsg(i.sep === i.qtd ? "Quantidade completa ✓" : `Leitura ok · faltam ${i.qtd - i.sep}`, "ok");
-      if (i.sep === i.qtd) setTimeout(() => item() === i && confirmItem(), 450);
-    } else {
-      const other = current.itens.find((x) => x.ean === code || x.sku.toUpperCase() === code);
-      erroLeitura(other ? `Produto de outro endereço (${other.end}).` : "Código não pertence a este item.");
-    }
+    if (etapa() === "endereco") return lerEndereco(code);
+    if (etapa() === "produto") return lerProduto(code);
+    setMsg("Produto já confirmado · digite a quantidade"); focarQuantidade();
   }
   // confirmação do endereço: QR (código R3001-P7-A100-AP101) ou ID digitado do cadastro de endereços
   function lerEndereco(code) {
@@ -450,8 +441,7 @@ import {
     const lidoCodigo = achado ? achado.codigo : code;
     if (lidoCodigo !== esperado) {
       // bipou o produto antes do endereço: explica o passo que falta
-      const ehProduto = lote ? (code === parada().ean || code === parada().sku.toUpperCase()) : (code === item().ean || code === item().sku.toUpperCase());
-      return erroLeitura(ehProduto ? "PRIMEIRO LEIA O QR DO ENDEREÇO." : `ENDEREÇO ERRADO. VÁ PARA ${esperado}.`);
+      return erroLeitura(ehDaVez(code) ? "PRIMEIRO LEIA O QR DO ENDEREÇO." : `ENDEREÇO ERRADO. VÁ PARA ${esperado}.`);
     }
     if (achado && !achado.ativo) return erroLeitura("ENDEREÇO INATIVO. AVISE O GESTOR DE ESTOQUE.");
     dono().endOk = esperado; save();
@@ -459,38 +449,41 @@ import {
     renderEndereco(); renderQty();
     setMsg("Endereço confirmado · agora bipe o produto", "ok");
   }
-
-  // lote: cada peça bipada vai para a caixa da vez (A primeiro, que tem a prioridade)
-  function lerNoLote(code) {
-    const p = parada();
-    if (code !== p.ean && code !== p.sku.toUpperCase()) {
-      const outra = paradas().find((x) => x.ean === code || x.sku.toUpperCase() === code);
-      return erroLeitura(outra ? `Produto de outra parada (${outra.end}).` : "Código não pertence a esta parada.");
+  // o produto é bipado UMA vez; depois o separador digita a quantidade
+  function lerProduto(code) {
+    if (!ehDaVez(code)) {
+      const outro = lote ? paradas().find((x) => x.ean === code || x.sku.toUpperCase() === code) : current.itens.find((x) => x.ean === code || x.sku.toUpperCase() === code);
+      return erroLeitura(outro ? `Produto de outro endereço (${outro.end}).` : "PRODUTO ERRADO. NÃO PERTENCE A ESTE ENDEREÇO.");
     }
-    const l = destinoDaLeitura(p);
-    if (!l) { setMsg("Quantidade já atingida nesta parada.", "err"); beep(false); vibrate([60, 40, 60]); return; }
-    const i = itemDaLinha(l);
-    i.sep++; i.status = "pendente"; save();
+    dono().prodOk = chaveProduto(); save();
     beep(true); vibrate(30);
-    const agora = parada();
-    desenharCaixas(agora); renderQty(true);
-    setMsg(`Caixa ${l.pos} · ${l.pedido}${i.sep === i.qtd ? " ✓" : ` · faltam ${i.qtd - i.sep}`}`, "ok");
-    if (agora.lido === agora.total) setTimeout(() => lote && parada().sku === agora.sku && parada().end === agora.end && confirmItem(), 450);
+    renderEndereco(); renderQty();
+    setMsg(`Produto confirmado · digite a quantidade (solicitado ${solicitado()})`, "ok");
+    focarQuantidade();
   }
+  function focarQuantidade() { const i = $("#qtyInput"); i.value = ""; renderQty(); setTimeout(() => i.focus(), 30); }
   $("#scanForm").addEventListener("submit", (e) => { e.preventDefault(); handleCode($("#scanInput").value); });
 
+  // quantidade: Enter confirma. Se o leitor "digitar" um código aqui (bipou o produto de novo), não vira quantidade.
+  $("#qtyInput").addEventListener("input", () => renderQty());
+  $("#qtyForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("#qtyInput").value.trim().toUpperCase();
+    if (v.length > 4 || ehDaVez(v)) { $("#qtyInput").value = ""; renderQty(); setMsg("Produto já confirmado · digite a quantidade", "err"); beep(false); return; }
+    confirmItem();
+  });
+
   function confirmItem() {
+    if (etapa() !== "quantidade") return;
+    const v = digitado(), total = solicitado();
+    if (v == null || v > total) return;
+    if (v < total) { openShort(v); return; }
     if (lote) {
-      const p = parada();
-      if (p.lido === 0 || p.lido > p.total) return;
-      if (p.lido < p.total) { openShort(p.lido); return; }
-      p.linhas.forEach((l) => { itemDaLinha(l).status = "ok"; baixar(l.pedido, itemDaLinha(l)); });
+      parada().linhas.forEach((l) => { const i = itemDaLinha(l); Object.assign(i, { sep: i.qtd, status: "ok", motivo: "" }); baixar(l.pedido, i); });
       save(); return next();
     }
     const i = item();
-    if (i.sep === 0 || i.sep > i.qtd) return;
-    if (i.sep < i.qtd) { openShort(i.sep); return; }
-    i.status = "ok"; save();
+    Object.assign(i, { sep: v, status: "ok", motivo: "" }); save();
     baixar(current.id, i);
     next();
   }
@@ -521,9 +514,9 @@ import {
   // falta
   let reason = "Endereço vazio";
   function openShort(qtd) {
-    const total = lote ? parada().total : item().qtd, lido = lote ? parada().lido : item().sep;
+    const total = solicitado();
     $("#shortDesc").textContent = `${lote ? parada().desc : item().desc} · solicitado ${total} un.${lote ? " · o que achar vai primeiro para a caixa A" : ""}`;
-    $("#shortQty").value = qtd ?? lido;
+    $("#shortQty").value = qtd ?? digitado() ?? 0;
     $("#shortQty").max = total - 1;
     openSheet("sheetShort");
   }

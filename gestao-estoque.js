@@ -7,8 +7,9 @@ import { qrSvg } from "./js/qr.js";
 import {
   lerEstoque, aoMudarEstoque, reiniciarDemonstracao, enderecoPorId, produtoPorCodigo, embalagensDoProduto,
   enderecosPadraoDoProduto, saldoDoEndereco, criarEndereco, criarEnderecos, desativarEndereco, reativarEndereco,
-  importarProdutosDoErp, salvarEmbalagem, excluirEmbalagem, removerAssociacao,
+  importarProdutosDoErp, salvarEmbalagem, excluirEmbalagem, removerAssociacao, definirCheckout,
 } from "./js/dados/estoque.js";
+import { exigeCheckout } from "./compartilhado/regras/produtos.js";
 import {
   TIPOS_ENDERECO, compararEnderecos, codigoEmUso, podeDesativar, partesDoEndereco, codigoDoEndereco, validarPartes,
   gerarLote, contarLote, andaresDoLote, aptosDoAndar,
@@ -317,6 +318,15 @@ function abrirProduto(codigo) {
           ${campo("Peso bruto", semInfo(p.pesoBruto))}${campo("Peso líquido", semInfo(p.pesoLiquido))}${campo("Shelflife", semInfo(p.shelflife))}
         </div>
       </section>
+      <section><p class="dr-h">Conferência</p>
+        ${(() => { const ck = exigeCheckout(p), alt = p.checkoutAlterado;
+          return `<div class="ge-ck ${ck ? "on" : ""}">
+            <button class="ge-sw ${ck ? "on" : ""}" data-checkout="${ck ? "0" : "1"}" role="switch" aria-checked="${ck}" title="${ck ? "Desligar" : "Ligar"} o checkout"><i></i></button>
+            <div><b>Conferência por checkout ${ck ? "ligada" : "desligada"}</b>
+              <span>${ck ? "O conferente bipa cada unidade. Não é permitido informar quantidade." : "Granel: o conferente lê o código e digita a quantidade."}</span>
+              <small>${alt ? `${alt.ligado ? "Ligado" : "Desligado"} por ${esc(alt.por)} em ${new Date(alt.quando).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}` : "Padrão do cadastro. Desligue só em produto sem código de barras (granel)."}</small></div>
+          </div>`; })()}
+      </section>
       <section>
         <div class="ge-sec-h"><p class="dr-h">Embalagens</p><button class="btn ghost ge-mini" data-novaemb>Adicionar embalagem</button></div>
         <table class="dr-items">
@@ -465,6 +475,12 @@ $("#drawer").addEventListener("click", (ev) => {
   const t = ev.target.closest("button"); if (!t) return;
   if (t.dataset.fechardr !== undefined) return fecharProduto();
   if (t.dataset.novaemb !== undefined) return abrirEmbalagem();
+  if (t.dataset.checkout) {
+    const ligar = t.dataset.checkout === "1";
+    const erro = definirCheckout(produtoAberto, ligar, sess.nome); if (erro) return toast(erro);
+    toast(ligar ? "Checkout ligado · o conferente bipa cada unidade" : "Checkout desligado · o conferente pode digitar a quantidade");
+    return render();
+  }
   if (t.dataset.editemb) return abrirEmbalagem(+t.dataset.editemb);
   if (t.dataset.delemb) return abrirModal(`<h2>Excluir embalagem</h2><p class="ge-msg">${MSG_EXCLUIR_EMBALAGEM}</p>
     <div class="m-act"><button class="btn ghost" data-fechar>Não</button><button class="btn primary" data-confdelemb="${t.dataset.delemb}">Sim, excluir</button></div>`);

@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=30">
+  <link rel="stylesheet" href="styles.css?v=31">
 </head>
 <body>
 
@@ -154,14 +154,13 @@
       <!-- lote: as caixas do carrinho nesta parada -->
       <div id="loteBox" class="lote-box" hidden></div>
 
-      <div class="qty">
-        <button id="qtyMinus" class="qty-btn" aria-label="Diminuir">−</button>
+      <!-- quantidade: digitada depois de confirmar endereço e produto (Enter confirma) -->
+      <form id="qtyForm" class="qty">
         <div class="qty-center">
-          <div class="qty-val"><span id="qtySep">0</span><span class="qty-of">/ <span id="qtyReq">0</span></span></div>
-          <span class="qty-l">unidades separadas</span>
+          <span class="qty-l">Quantidade separada</span>
+          <div class="qty-val"><input id="qtyInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Quantidade separada"><span class="qty-of">/ <span id="qtyReq">0</span></span></div>
         </div>
-        <button id="qtyPlus" class="qty-btn" aria-label="Aumentar">+</button>
-      </div>
+      </form>
 
       <form id="scanForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
@@ -448,6 +447,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=30"></script>
+  <script type="module" src="app.js?v=31"></script>
 </body>
 </html>

@@ -1,6 +1,8 @@
 // WMS Beach Bike — Conferência (desktop, leitor de código de barras tipo "caixa")
 import { SETORES, session, logout, setSetor } from "./js/sessao.js";
 import { find } from "./js/demo-dados.js";
+import { consultaDeCheckout } from "./js/dados/estoque.js";
+import { validarQuantidadeLida } from "./compartilhado/regras/produtos.js";
 import { VOL_TIPOS, obsTotal, obsErp, obsResumo } from "./compartilhado/regras/volumes.js";
 import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto } from "./js/dados/conferencia.js";
 import { Etiqueta } from "./etiqueta.js";
@@ -151,7 +153,7 @@ import { $, $$, esc } from "./js/util.js";
   }
 
   function renderItems(flashSku) {
-    const o = cur;
+    const o = cur, checkout = consultaDeCheckout();
     const rows = o.itens.map((i) => {
       const s = itemState(o, i), c = o.conf.itens[i.sku] || 0;
       const label = { ok: "Conferido", parcial: `Faltam ${i.sep - c}`, excesso: `Excesso +${c - i.sep}`, pendente: "Pendente" }[s];
@@ -159,7 +161,7 @@ import { $, $$, esc } from "./js/util.js";
       return `<tr class="${s} ${flashSku === i.sku ? "flash" : ""}" data-sku="${i.sku}">
         <td><span class="s-dot"></span></td>
         <td class="code"><b>${i.sku}</b>${i.ean}</td>
-        <td>${esc(i.desc)}${sepWarn}</td>
+        <td>${esc(i.desc)}${checkout(i.sku) ? `<span class="ck-tag">Checkout</span>` : `<span class="ck-tag granel">Granel · digite a quantidade</span>`}${sepWarn}</td>
         <td><span class="addr-chip">${i.end}</span></td>
         <td class="r">${i.qtd}</td><td class="r strong">${i.sep}</td>
         <td class="r conf">${c}</td>
@@ -199,6 +201,7 @@ import { $, $$, esc } from "./js/util.js";
     let q = Math.max(1, parseInt($("#mult").value, 10) || 1);
     const m = code.match(/^(\d{1,3})\*(.+)$/);
     if (m) { q = +m[1]; code = m[2].trim(); }
+    const informada = !!m || q > 1; // o conferente informou quantidade (F4 ou 5*código)?
     resetMult();
 
     // código de pedido?
@@ -216,6 +219,32 @@ import { $, $$, esc } from "./js/util.js";
     const p = find(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
 
+    // CHECKOUT (padrão): cada bipe é 1 unidade, quantidade informada é recusada.
+    // GRANEL (checkout desligado pelo gestor): sem quantidade informada, o sistema pede a quantidade.
+    const checkout = consultaDeCheckout()(p.sku);
+    const recusa = validarQuantidadeLida(checkout, q);
+    if (recusa) {
+      setMsg(recusa, "err"); beep(false);
+      setLast({ label: "Checkout: bipe cada unidade", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: cur.conf.itens[p.sku] || 0, exp: cur.itens.find((i) => i.sku === p.sku)?.sep ?? 0, kind: "err" });
+      return;
+    }
+    if (!checkout && !informada) return pedirQuantidade(p);
+    aplicar(p, q);
+  }
+
+  // produto a granel: o campo de quantidade abre com o que falta conferir; Enter lança
+  let granel = null;
+  function pedirQuantidade(p) {
+    granel = p;
+    const it = cur.itens.find((i) => i.sku === p.sku);
+    const falta = it ? Math.max(1, it.sep - (cur.conf.itens[p.sku] || 0)) : 1;
+    $("#mult").value = falta; $(".pos-mult").classList.add("on", "granel");
+    setLast({ label: "Granel: digite a quantidade", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: cur.conf.itens[p.sku] || 0, exp: it ? it.sep : 0, kind: "" });
+    setMsg(`Produto a granel: digite a quantidade de ${p.sku} e tecle Enter.`);
+    $("#mult").focus(); $("#mult").select();
+  }
+
+  function aplicar(p, q) {
     const it = cur.itens.find((i) => i.sku === p.sku);
     if (it) {
       cur.conf.itens[p.sku] = (cur.conf.itens[p.sku] || 0) + q;
@@ -245,9 +274,16 @@ import { $, $$, esc } from "./js/util.js";
   $("#scanForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("#scan").value; $("#scan").value = ""; handle(v); });
 
   // multiplicador (F4)
-  function resetMult() { $("#mult").value = 1; $(".pos-mult").classList.remove("on"); }
+  function resetMult() { $("#mult").value = 1; $(".pos-mult").classList.remove("on", "granel"); granel = null; }
   $("#mult").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); $(".pos-mult").classList.toggle("on", +$("#mult").value > 1); focusScan(); }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (granel) {
+      const p = granel, q = parseInt($("#mult").value, 10) || 0;
+      if (q < 1) { setMsg("Digite uma quantidade maior que zero.", "err"); beep(false); return; }
+      resetMult(); aplicar(p, q); focusScan(); return;
+    }
+    $(".pos-mult").classList.toggle("on", +$("#mult").value > 1); focusScan();
   });
 
   // estornar (F6)

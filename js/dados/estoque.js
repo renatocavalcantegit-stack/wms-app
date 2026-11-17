@@ -9,10 +9,11 @@ import {
 } from "../../compartilhado/regras/enderecos.js";
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
+import { exigeCheckout } from "../../compartilhado/regras/produtos.js";
 
-// v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
+// v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
-const CHAVE = "wms-bb-estoque-v6";
+const CHAVE = "wms-bb-estoque-v7";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
@@ -137,6 +138,22 @@ export function reativarEndereco(id, { rua, predio, andar, apto, tipo, deposito 
 }
 
 // ---------- produtos ----------
+// a Conferência pergunta aqui se o produto exige checkout (bipe por unidade)
+export const produtoExigeCheckout = (codigo) => exigeCheckout(produtoPorCodigo(lerEstoque(), codigo));
+// várias perguntas de uma vez (lê o estoque uma vez só): devolve uma função codigo → true/false
+export function consultaDeCheckout() {
+  const db = lerEstoque();
+  return (codigo) => exigeCheckout(produtoPorCodigo(db, codigo));
+}
+// só o gestor de estoque liga/desliga; fica registrado quem mudou e quando
+export function definirCheckout(codigo, ligado, usuario) {
+  const db = lerEstoque(), p = produtoPorCodigo(db, codigo);
+  if (!p) return "Produto não encontrado.";
+  p.checkout = !!ligado;
+  p.checkoutAlterado = { por: usuario, quando: Date.now(), ligado: !!ligado };
+  gravar(db);
+  return null;
+}
 // importação simulada do ERP: produto que já existe é bloqueado, sem alterar o que está no WMS
 export function importarProdutosDoErp() {
   const db = lerEstoque();

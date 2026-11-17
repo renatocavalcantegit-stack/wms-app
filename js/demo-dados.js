@@ -179,8 +179,9 @@ export const seedEmbarque = () => {
 // =====================================================================
 
 // dados que o ERP manda de cada produto (exemplo do documento do estoquista; integração ainda simulada)
+// todo produto que chega do ERP nasce com conferência por CHECKOUT (o gestor desliga depois, se for granel)
 const doErp = (p, i) => ({
-  codigo: p.sku, descricao: p.desc, un: p.un,
+  codigo: p.sku, descricao: p.desc, un: p.un, checkout: true,
   fornecedor: [8558, 8561, 8603, 8710][i % 4], grupo: { bike: 21, peca: 22, acess: 23 }[p.tipo], subgrupo: null,
   estoqueMin: null, estoqueMax: p.tipo === "bike" ? 40 : 100,
   controlaValidade: false, controlaLote: false, controlaSerie: false,
@@ -436,7 +437,8 @@ export function estoqueDeDemonstracao() {
   const inv = inventarioInicial(enderecos, inicial.associacoes, inicial.saldos);
   return {
     enderecos,
-    produtos: CATALOGO.map(doErp),
+    // demonstração: os produtos sem código de barras já vêm como granel (checkout desligado) para testar
+    produtos: CATALOGO.map((p, i) => ({ ...doErp(p, i), checkout: !!p.ean })),
     embalagens: embalagensDeDemonstracao(),
     ...inicial,
     notas: rec.notas, conferencias: rec.conferencias, volumes: rec.volumes,

@@ -406,3 +406,15 @@ a.btn { text-decoration: none; }
 .qty.locked { opacity: .45; }
 .qty.locked .qty-btn:disabled, #btnShort:disabled { cursor: not-allowed; }
 #btnShort:disabled { opacity: .5; }
+
+/* ===== Separação: quantidade digitada (sem + e −) ===== */
+#qtyInput { width: 3.2ch; min-width: 96px; border: 0; border-bottom: 3px solid var(--line); background: none; outline: none; text-align: center;
+  font: 900 44px Montserrat, Inter, sans-serif; color: var(--ink); font-variant-numeric: tabular-nums; padding: 0; }
+#qtyInput:focus { border-bottom-color: var(--red-brand); }
+#qtyInput::placeholder { color: #D4D4DA; }
+.qty.full #qtyInput { color: var(--ok); }
+.qty.over #qtyInput { color: var(--red); }
+.qty-center .qty-l { display: block; margin-bottom: 4px; }
+#pickCard .product { transition: box-shadow .2s; }
+#pickCard .product.wait { box-shadow: 0 0 0 3px var(--red-brand); }
+#pickCard .product.ok { box-shadow: 0 0 0 2px var(--ok); }
