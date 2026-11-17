@@ -11,6 +11,7 @@ import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, s
 import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
+import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";

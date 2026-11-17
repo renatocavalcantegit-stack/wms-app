@@ -168,6 +168,9 @@ input { font: inherit; color: inherit; }
 .scan:focus-within { border-color: var(--ink); }
 .scan-ico { width: 22px; height: 22px; fill: none; stroke: var(--ink-3); stroke-width: 1.8; stroke-linecap: round; flex-shrink: 0; }
 .scan input { flex: 1; border: 0; outline: 0; background: none; font-size: 16px; height: 100%; min-width: 0; }
+/* botão OK do campo de leitura: confirma o código digitado à mão; some com o campo vazio */
+.scan-ok { height: 44px; padding: 0 16px; border-radius: 12px; background: var(--red); color: #fff; font-weight: 800; font-size: 16px; flex: none; }
+.scan:has(input:placeholder-shown) .scan-ok { display: none; }
 .scan-cam { width: 44px; height: 44px; border-radius: 12px; background: var(--ink); display: grid; place-items: center; }
 .scan-cam svg { width: 22px; height: 22px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linejoin: round; }
 .scan.err { border-color: var(--red); animation: shake .35s; }
