@@ -476,10 +476,8 @@ a.btn { text-decoration: none; }
   .pick-foot .btn { height: 44px; font-size: 14px; border-radius: 12px; padding: 0 12px; }
   .sp-longo { display: none; }
   .sp-curto { display: inline; }
-  /* as teclas físicas do coletor aparecem nos botões (F1 falta · F2 lista · Enter confirma) */
+  /* a tecla física do coletor que confirma aparece no botão (Enter) */
   .pick-foot [data-tecla]::after { content: attr(data-tecla); font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: rgba(0,0,0,.1); }
-  .pick-bar [data-tecla] { position: relative; }
-  .pick-bar [data-tecla]::after { content: attr(data-tecla); position: absolute; right: -4px; bottom: -4px; font-size: 8.5px; font-weight: 700; padding: 0 3px; border-radius: 4px; background: var(--ink); color: #fff; }
   /* erro de leitura: faixa vermelha por cima de tudo */
   .sp-alerta { display: block; position: fixed; left: 0; right: 0; top: 0; z-index: 50; margin: 0; padding: calc(10px + var(--safe-t)) 12px 10px;
     background: var(--red); color: #fff; font-weight: 800; font-size: 14px; text-align: center; line-height: 1.25; overflow-wrap: anywhere; box-shadow: 0 4px 14px rgba(0,0,0,.25); }

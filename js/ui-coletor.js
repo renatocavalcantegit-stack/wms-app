@@ -64,6 +64,27 @@ document.addEventListener("click", (e) => {
 // voltou para o app (desbloqueou a tela, trocou de aplicativo)
 document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(focarLeitura, 60); });
 
+// ---------- teclado físico travado no modo Fn ----------
+// No coletor (ex.: Chainway C6000), com o modo Fn ligado as teclas de número viram F1…F9 — inclusive os
+// números que o LEITOR "digita": o código chega pela metade e o Chrome abre a ajuda (F1).
+// O app não usa teclas F nas telas do coletor; se chegar uma, é o Fn travado: avisa, tenta impedir o
+// efeito da tecla no navegador e descarta o bipe estragado.
+let fnQuando = 0, fnAviso = 0;
+document.addEventListener("keydown", (e) => {
+  if (!/^F([1-9]|1[0-2])$/.test(e.key)) return;
+  e.preventDefault();
+  fnQuando = Date.now();
+  const i = document.activeElement;
+  if (i && i.matches("input")) i.value = ""; // o que já entrou deste bipe está incompleto
+  if (Date.now() - fnAviso > 3000) { fnAviso = Date.now(); toast("TECLADO NO MODO Fn · aperte Num para voltar aos números e bipe de novo"); beep(false); vibrate([80, 50, 80]); }
+}, true);
+// o Enter do fim do bipe estragado não confirma nada (o campo já foi limpo e o aviso já apareceu)
+document.addEventListener("submit", (e) => {
+  if (Date.now() - fnQuando > 2000) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  e.target.querySelectorAll("input").forEach((i) => (i.value = ""));
+}, true);
+
 // ---------- teclado da tela só quando o usuário toca no campo ----------
 // O coletor tem teclado físico e leitor: quando o app coloca o foco num campo sozinho (bipe, quantidade),
 // o teclado da tela NÃO sobe (inputmode="none"), senão ele cobre metade da tela pequena.

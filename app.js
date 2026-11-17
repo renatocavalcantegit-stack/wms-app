@@ -639,14 +639,6 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     save(); closeSheets(); renderPick(true);
   });
 
-  // teclas físicas do coletor na separação: F1 registra falta, F2 abre a lista de itens (o Enter já confirma)
-  document.addEventListener("keydown", (e) => {
-    if ((e.key !== "F1" && e.key !== "F2") || $("#viewPick").hidden || !$("#scrim").hidden) return;
-    e.preventDefault();
-    if (e.key === "F1") { if (!$("#btnShort").disabled) $("#btnShort").click(); else erroLeitura("PRIMEIRO LEIA O QR DO ENDEREÇO."); }
-    else $("#pickListBtn").click();
-  });
-
   $("#pickBack").addEventListener("click", () => {
     current = null; lote = null; renderHome(); show("viewHome");
     toast("Separação pausada · continue quando quiser");

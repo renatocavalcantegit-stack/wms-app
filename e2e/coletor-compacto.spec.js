@@ -1,6 +1,6 @@
 // Coletor de tela pequena (Chainway C6000: 4", 480×800 → cerca de 320×453 no Chrome).
 // Na separação tudo tem que caber sem rolar, o campo de bipe já vem focado, o erro aparece
-// numa faixa no topo e as teclas físicas F1 (falta) e F2 (lista) funcionam.
+// numa faixa no topo e o teclado travado no modo Fn é avisado (o app não usa teclas F no coletor).
 import { test, expect } from "@playwright/test";
 import { entrar, separacao, abrirPedidoNoColetor, ler } from "./ajuda.js";
 
@@ -14,7 +14,7 @@ async function visivelSemRolar(page, seletor) {
   expect(caixa.y + caixa.height, `${seletor} termina dentro da tela`).toBeLessThanOrEqual(453);
 }
 
-test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo e teclas F1/F2", async ({ page }) => {
+test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo e aviso de Fn travado", async ({ page }) => {
   await entrar(page, "separador");
   await abrirPedidoNoColetor(page, "PV-10421");
   const item = (await separacao(page)).find((o) => o.id === "PV-10421").itens[0];
@@ -22,11 +22,6 @@ test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo 
   // o campo de bipe já vem focado: o gatilho do leitor "digita" direto nele
   await expect(page.locator("#scanInput")).toBeFocused();
   for (const s of ["#addrCard", ".product", "#qtyForm", "#scanForm", "#btnShort", "#btnConfirm"]) await visivelSemRolar(page, s);
-
-  // F1 antes de ler o endereço: não abre a falta, avisa no topo
-  await page.keyboard.press("F1");
-  await expect(page.locator("#sheetShort")).toBeHidden();
-  await expect(page.locator("#pickAlerta")).toBeVisible();
 
   // endereço errado: faixa vermelha no topo com o endereço certo
   await ler(page, "R999-P1-A0-AP1");
@@ -38,8 +33,8 @@ test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo 
   await expect(page.locator("#pickAlerta")).toBeHidden();
   await expect(page.locator("#scanInput")).toBeFocused();
 
-  // F2 abre a lista de itens; fechando, o foco volta para o campo de bipe
-  await page.keyboard.press("F2");
+  // a lista de itens abre pelo botão; fechando, o foco volta para o campo de bipe
+  await page.locator("#pickListBtn").click();
   await expect(page.locator("#sheetList")).toBeVisible();
   await page.locator("#scrim").click({ position: { x: 10, y: 10 } });
   await expect(page.locator("#scanInput")).toBeFocused();
@@ -54,7 +49,11 @@ test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo 
   await expect(page.locator("#qtyInput")).toBeFocused();
   await expect(page.locator("#qtyInput")).toHaveAttribute("inputmode", "none");
 
-  // F1 depois do endereço: abre o registro de falta
+  // teclado travado no modo Fn: o "1" do código chega como F1. O app avisa, não abre nada e descarta o bipe estragado.
   await page.keyboard.press("F1");
-  await expect(page.locator("#sheetShort")).toBeVisible();
+  await expect(page.locator("#toast")).toContainText("MODO Fn");
+  await expect(page.locator("#sheetShort")).toBeHidden();
+  await page.locator("#qtyInput").press("Enter");
+  await expect(page.locator("#viewPick")).toBeVisible(); // o Enter do bipe estragado não confirmou o item
+  await expect(page.locator("#pickStep")).toContainText("Item 1");
 });
