@@ -1128,15 +1128,24 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
   }
   $("#search").addEventListener("input", (e) => { query = e.target.value; applySearch(); lupaTexto(); });
 
-  // lupa do topo: fechada mostra só o ícone; abre ao clicar ou com a tecla "/" (fora de campos de texto)
+  // busca do topo: campo no espaço livre; com pouco espaço vira só a lupa, que abre ao clicar.
+  // A tecla "/" (fora de campos de texto) leva o cursor para a busca nos dois casos.
   const lupa = $("#lupa");
   const lupaTexto = () => lupa.classList.toggle("com-texto", !!query);
-  function abrirLupa() { lupa.classList.add("aberta"); $("#search").focus(); }
+  const LUPA_MIN = 200; // abaixo disso o texto de exemplo não cabe: melhor só a lupa
+  function medirLupa() {
+    const tools = lupa.parentElement, gap = parseFloat(getComputedStyle(tools).columnGap) || 0;
+    const outros = [...tools.children].filter((x) => x !== lupa).reduce((t, x) => t + x.offsetWidth + gap, 0);
+    const compacta = tools.clientWidth - outros < LUPA_MIN;
+    if (compacta !== lupa.classList.contains("compacta")) { lupa.classList.toggle("compacta", compacta); lupa.classList.remove("aberta"); }
+  }
+  new ResizeObserver(medirLupa).observe(lupa.parentElement);
+  function abrirLupa() { if (lupa.classList.contains("compacta")) lupa.classList.add("aberta"); $("#search").focus(); }
   function fecharLupa(limpar) {
     if (limpar && query) { $("#search").value = ""; query = ""; applySearch(); lupaTexto(); }
     lupa.classList.remove("aberta"); $("#search").blur();
   }
-  lupa.addEventListener("mousedown", (e) => { if (!lupa.classList.contains("aberta")) { e.preventDefault(); abrirLupa(); } });
+  lupa.addEventListener("mousedown", (e) => { if (lupa.classList.contains("compacta") && !lupa.classList.contains("aberta")) { e.preventDefault(); abrirLupa(); } });
   $("#search").addEventListener("blur", () => { if (!query) lupa.classList.remove("aberta"); });
   $("#search").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); fecharLupa(true); } });
   document.addEventListener("keydown", (e) => {
