@@ -13,7 +13,7 @@ import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.j
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
-import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK } from "./js/ui-coletor.js";
+import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK, focarLeitura } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";
 import { lerCodigoDoEndereco, acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import {
@@ -450,6 +450,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $(".qty").classList.toggle("locked", e !== "quantidade");
     $("#qtyInput").disabled = e !== "quantidade";
     $("#btnShort").disabled = !endOk; // falta (ex.: endereço vazio) só depois de confirmar o endereço
+    if (e !== "quantidade") setTimeout(focarLeitura, 30); // pronto para o próximo bipe (endereço ou produto)
   }
 
   function renderQty() {

@@ -41,7 +41,28 @@ export function show(id) {
   $$(".view").forEach((v) => (v.hidden = v.id !== id));
   window.scrollTo(0, 0);
   document.querySelector('meta[name="theme-color"]').content = id === "viewLogin" ? "#ffffff" : "#F5F5F7";
+  setTimeout(focarLeitura, 60);
 }
+
+// ---------- campo de bipe sempre pronto ----------
+// Nos coletores, o gatilho do leitor (botões laterais e de trás) "digita" o código no campo que está com o foco.
+// Por isso todo campo de bipe (marcado com data-leitura) já vem focado, e volta a ficar focado quando
+// a pessoa fecha um painel ou toca numa parte vazia da tela.
+export function focarLeitura() {
+  if (!$("#scrim").hidden) return; // painel aberto (falta, lista…): o foco é dele
+  const ativo = document.activeElement;
+  if (ativo && ativo.matches("input:not([data-leitura]), textarea, select") && !ativo.disabled && ativo.offsetParent !== null) return; // está digitando outra coisa (ex.: quantidade)
+  const tela = [...$$(".view")].find((v) => !v.hidden);
+  const campo = tela && [...tela.querySelectorAll("input[data-leitura]")].find((i) => !i.disabled && i.offsetParent !== null);
+  if (campo && campo !== ativo) campo.focus({ preventScroll: true });
+}
+// tocou numa parte vazia da tela (não em botão, campo ou link): o foco volta para o campo de bipe
+document.addEventListener("click", (e) => {
+  if (e.target.closest("input, textarea, select, button, a, label, .sheet")) return;
+  setTimeout(focarLeitura, 0);
+});
+// voltou para o app (desbloqueou a tela, trocou de aplicativo)
+document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(focarLeitura, 60); });
 
 // ---------- sheets (painéis que sobem do rodapé) ----------
 export function openSheet(id) {
@@ -51,6 +72,7 @@ export function openSheet(id) {
 export function closeSheets() {
   $$(".sheet").forEach((s) => (s.hidden = true));
   $("#scrim").hidden = true;
+  setTimeout(focarLeitura, 60);
 }
 $("#scrim").addEventListener("click", closeSheets);
 

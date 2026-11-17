@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=42">
+  <link rel="stylesheet" href="styles.css?v=43">
 </head>
 <body>
 
@@ -164,7 +164,7 @@
 
       <form id="scanForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
-        <input id="scanInput" type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off" placeholder="Bipe ou digite o EAN / SKU">
+        <input id="scanInput" data-leitura type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off" placeholder="Bipe ou digite o EAN / SKU">
         <!-- confirma o que foi DIGITADO (o leitor e a câmera já confirmam sozinhos); só aparece com texto no campo -->
         <button type="submit" id="scanOk" class="scan-ok">OK</button>
         <button type="button" id="camBtn" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
@@ -199,7 +199,7 @@
       </div>
       <form id="docaForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="docaInput" type="text" autocomplete="off" placeholder="Bipe o QR ou digite o ID da doca">
+        <input enterkeyhint="go" id="docaInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o QR ou digite o ID da doca">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" id="docaCam" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
           <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
@@ -301,7 +301,7 @@
 
       <form id="loadForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="loadInput" type="text" autocomplete="off" placeholder="Bipe ou digite a etiqueta">
+        <input enterkeyhint="go" id="loadInput" data-leitura type="text" autocomplete="off" placeholder="Bipe ou digite a etiqueta">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" id="loadCam" class="scan-cam cam-btn" aria-label="Ler com a câmera" hidden>
           <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
@@ -451,6 +451,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=42"></script>
+  <script type="module" src="app.js?v=43"></script>
 </body>
 </html>

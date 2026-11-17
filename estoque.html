@@ -17,9 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=42">
-  <link rel="stylesheet" href="estoque.css?v=42">
-  <link rel="stylesheet" href="etiqueta-recebimento.css?v=42">
+  <link rel="stylesheet" href="styles.css?v=43">
+  <link rel="stylesheet" href="estoque.css?v=43">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=43">
 </head>
 <body class="es">
 
@@ -99,7 +99,7 @@
     <main class="pick-main">
       <form id="cForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
-        <input enterkeyhint="go" id="cInput" type="text" autocomplete="off" placeholder="Bipe o código de barras ou digite o código">
+        <input enterkeyhint="go" id="cInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o código de barras ou digite o código">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="cInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -118,7 +118,7 @@
     <main class="pick-main">
       <form id="eForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input enterkeyhint="go" id="eInput" type="text" autocomplete="off" placeholder="Código interno ou descrição do produto">
+        <input enterkeyhint="go" id="eInput" data-leitura type="text" autocomplete="off" placeholder="Código interno ou descrição do produto">
         <button type="submit" class="scan-ok">OK</button>
       </form>
       <p id="eMsg" class="scan-msg"></p>
@@ -137,7 +137,7 @@
       <div id="aEnd"></div>
       <form id="aForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="aInput" type="text" autocomplete="off" placeholder="QR do endereço ou código (R3001-P1-A100-AP101)">
+        <input enterkeyhint="go" id="aInput" data-leitura type="text" autocomplete="off" placeholder="QR do endereço ou código (R3001-P1-A100-AP101)">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="aInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -161,7 +161,7 @@
       <div id="rcTopo"></div>
       <form id="rcForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
-        <input enterkeyhint="go" id="rcInput" type="text" autocomplete="off" placeholder="Número da nota">
+        <input enterkeyhint="go" id="rcInput" data-leitura type="text" autocomplete="off" placeholder="Número da nota">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="rcInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -185,7 +185,7 @@
       <div id="raTopo"></div>
       <form id="raForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="raInput" type="text" autocomplete="off" placeholder="Bipe o QR da doca ou digite o ID">
+        <input enterkeyhint="go" id="raInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o QR da doca ou digite o ID">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="raInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -204,7 +204,7 @@
     <main class="pick-main">
       <form id="rqForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input enterkeyhint="go" id="rqInput" type="text" autocomplete="off" placeholder="Número da nota ou fornecedor">
+        <input enterkeyhint="go" id="rqInput" data-leitura type="text" autocomplete="off" placeholder="Número da nota ou fornecedor">
         <button type="submit" class="scan-ok">OK</button>
       </form>
       <div id="rqRes" class="rc-res"></div>
@@ -222,7 +222,7 @@
       <div id="abTopo" class="mv-topo"></div>
       <form id="abForm" class="scan" hidden>
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="abInput" type="text" autocomplete="off" placeholder="Bipe o QR da origem">
+        <input enterkeyhint="go" id="abInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o QR da origem">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="abInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -246,7 +246,7 @@
       <div id="trTopo" class="mv-topo"></div>
       <form id="trForm" class="scan">
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="trInput" type="text" autocomplete="off" placeholder="Bipe o QR do endereço ou digite o ID">
+        <input enterkeyhint="go" id="trInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o QR do endereço ou digite o ID">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="trInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -266,7 +266,7 @@
       <div id="ivTopo" class="mv-topo"></div>
       <form id="ivForm" class="scan" hidden>
         <svg class="scan-ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8h3v3H7zM14 8h3v3h-3zM7 13h3v3H7zM14 14h3v2"/></svg>
-        <input enterkeyhint="go" id="ivInput" type="text" autocomplete="off" placeholder="Bipe o QR do endereço ou digite o ID">
+        <input enterkeyhint="go" id="ivInput" data-leitura type="text" autocomplete="off" placeholder="Bipe o QR do endereço ou digite o ID">
         <button type="submit" class="scan-ok">OK</button>
         <button type="button" class="scan-cam cam-btn" data-cam="ivInput" aria-label="Ler com a câmera" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
       </form>
@@ -333,7 +333,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=42"></script>
-  <script type="module" src="estoque.js?v=42"></script>
+  <script src="vendor/qrcode.js?v=43"></script>
+  <script type="module" src="estoque.js?v=43"></script>
 </body>
 </html>
