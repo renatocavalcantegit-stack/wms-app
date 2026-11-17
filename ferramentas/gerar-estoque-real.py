@@ -31,19 +31,19 @@ cab = [linhas[0].get(c, "").strip() for c in "ABCDEFGHIJ"]
 if not cab[0].startswith("Endere") or cab[6] != "Cod.Prod":
     sys.exit(f"cabeçalho inesperado: {cab}")
 
-# códigos de barras da célula: vários separados por "/". Célula SUJA (letras ou símbolos, como "ssss",
-# o prefixo "[C1" do leitor ou um apóstrofo) fica em branco: o produto entra sem código de barras e, por isso,
-# com o checkout desligado até o cadastro ser corrigido. Números de qualquer tamanho são mantidos
-# (há produto com o EAN e a referência do fabricante, ex.: "0789600815282 / 1050064").
+# códigos de barras da célula: vários separados por "/". Parte SUJA (letras ou símbolos, como "ssss",
+# o prefixo "[C1" do leitor ou um apóstrofo) é descartada e os códigos bons da mesma célula ficam
+# (ex.: "8019227210712 / ssss" → 8019227210712). Sem nenhuma parte boa, o produto entra sem código de
+# barras e, por isso, com o checkout desligado até o cadastro ser corrigido. Números de qualquer tamanho
+# são mantidos (há produto com o EAN e a referência do fabricante, ex.: "0789600815282 / 1050064").
 sujos = {}
 def codigos_de_barras(celula, produto):
     texto = (celula or "").strip()
     if not texto: return []
     partes = [x.strip() for x in texto.split("/")]
-    if any(not re.fullmatch(r"\d+", x) for x in partes):
-        sujos[produto] = texto
-        return []
-    return list(dict.fromkeys(partes))  # sem repetir
+    bons = [x for x in partes if re.fullmatch(r"\d+", x)]
+    if len(bons) < len(partes): sujos[produto] = texto
+    return list(dict.fromkeys(bons))  # sem repetir
 
 def numero(s):
     f = float(s)
@@ -90,5 +90,5 @@ export const SALDOS_REAIS = [
 ];
 """
 open(OUT, "w", encoding="utf-8", newline="\n").write(js)
-print("códigos de barras sujos (deixados em branco):", sujos)
+print("células com parte suja (descartada):", sujos)
 print(f"{len(enderecos)} endereços, {len(produtos)} produtos, {len(saldos)} saldos -> {os.path.relpath(OUT)}")

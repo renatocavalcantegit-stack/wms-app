@@ -31,7 +31,7 @@ test("separação: o que foi salvo é o que volta, e cada setor tem a sua fila",
 });
 
 test("separação: dado corrompido no aparelho volta para a demonstração em vez de travar", () => {
-  localStorage.setItem("wms-bb-sep-v6", "{corrompido");
+  localStorage.setItem("wms-bb-sep-v7", "{corrompido");
   assert.equal(carregarPedidos("exp").length, 9);
 });
 

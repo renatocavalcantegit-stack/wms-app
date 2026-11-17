@@ -23,9 +23,11 @@ test("demonstração: endereços no formato numérico, docas, inativos e saldo d
   // códigos de barras reais: nenhum repetido entre embalagens; produto sem código (ou com código sujo) é granel
   const cods = db.embalagens.map((e) => e.codigo).filter(Boolean);
   assert.equal(new Set(cods).size, cods.length);
-  const p176 = db.produtos.find((p) => p.codigo === "176"); // planilha: "8019227210712 / ssss"
-  assert.equal(p176.checkout, false);
-  assert.equal(db.embalagens.some((e) => e.produto === "176" && e.descricao === "Unidade"), false);
+  // planilha: "8019227210712 / ssss" → a parte suja sai, o EAN bom fica e o checkout continua ligado
+  assert.equal(db.produtos.find((p) => p.codigo === "176").checkout, true);
+  assert.deepEqual(db.embalagens.filter((e) => e.produto === "176" && e.descricao === "Unidade").map((e) => e.codigo), ["8019227210712"]);
+  // planilha: "[C17898502740547" → nenhuma parte boa: sem código, granel
+  assert.equal(db.produtos.find((p) => p.codigo === "1332").checkout, false);
   assert.equal(db.embalagens.filter((e) => e.produto === "20" && e.descricao === "Unidade").length, 2); // dois códigos
 });
 

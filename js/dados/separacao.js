@@ -6,8 +6,8 @@ import { seedSeparacao, seedSeparacaoMont, seedLotes } from "../demo-dados.js";
 
 // v4: doca de expedição, lotes e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v6" : "wms-bb-sep-v6");
-const chaveLotes = (setor) => (setor === "mont" ? "wms-bb-lotes-mont-v3" : "wms-bb-lotes-v3");
+const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v7" : "wms-bb-sep-v7");
+const chaveLotes = (setor) => (setor === "mont" ? "wms-bb-lotes-mont-v4" : "wms-bb-lotes-v4");
 
 // pedidos de demonstração do setor (usados no primeiro acesso e em "reiniciar demonstração")
 export const pedidosDeDemonstracao = (setor) => (setor === "mont" ? seedSeparacaoMont() : seedSeparacao());
