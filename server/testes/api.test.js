@@ -138,7 +138,8 @@ test("sincronizar grava as ações e diz quais entraram", async () => {
   const lote = [acao(), acao()];
   const r = await chamar("/api/sincronizar", token, { method: "POST", payload: { acoes: lote } });
   assert.equal(r.statusCode, 200);
-  assert.deepEqual(r.json(), { novas: lote.map((a) => a.id), repetidas: [] });
+  const { novas, repetidas } = r.json();
+  assert.deepEqual({ novas, repetidas }, { novas: lote.map((a) => a.id), repetidas: [] });
   const { rows } = await pool.query("SELECT login, tipo, dados FROM acoes_recebidas WHERE id = $1", [lote[0].id]);
   assert.equal(rows[0].login, separador.login);
   assert.deepEqual(rows[0].dados, lote[0].dados);
@@ -150,7 +151,8 @@ test("reenviar o mesmo lote (a rede caiu antes da resposta) não duplica nada", 
   await chamar("/api/sincronizar", token, { method: "POST", payload: { acoes: lote } });
   const novaAcao = acao();
   const r = await chamar("/api/sincronizar", token, { method: "POST", payload: { acoes: [...lote, novaAcao] } });
-  assert.deepEqual(r.json(), { novas: [novaAcao.id], repetidas: lote.map((a) => a.id) });
+  const { novas, repetidas } = r.json();
+  assert.deepEqual({ novas, repetidas }, { novas: [novaAcao.id], repetidas: lote.map((a) => a.id) });
   const { rows } = await pool.query("SELECT count(*)::int AS n FROM acoes_recebidas WHERE id = ANY($1)", [lote.map((a) => a.id)]);
   assert.equal(rows[0].n, 2);
 });

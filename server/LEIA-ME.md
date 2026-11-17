@@ -1,14 +1,16 @@
-# Servidor do WMS (Fase 0)
+# Servidor do WMS (Fase 1a)
 
 API em Node.js (Fastify) com banco PostgreSQL, em SQL puro.
-Nesta fase o app ainda não usa o servidor: ele continua com os dados no aparelho.
-A Fase 1 liga a Separação ao servidor, com fila de sincronização para funcionar sem rede.
+O app ainda não usa o servidor: ele continua com os dados no aparelho.
+- Fase 1a (esta): o servidor já APLICA as ações da Separação que chegam pelo `/api/sincronizar`.
+- Fase 1b: o coletor da Separação passa a mandar essas ações, com fila de envio para funcionar sem rede.
+- Fase 1c: a Gestão acompanha em tempo real e vê os conflitos.
 
 ## Estrutura
 
 ```
 db/migracoes/001_base.sql   todas as tabelas, comentadas (comece por aqui)
-db/migracoes/002_...sql     mudanças depois da 001 (ex.: quantidade quebrada nos itens do pedido)
+db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 003 resultado de cada ação
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
 
@@ -18,7 +20,8 @@ src/consultas/              TODO o SQL, separado por assunto
   sessoes.js                usuário, criar sessão de turno, quem é o dono do token
   produtos.js               produto pelo código de barras ou código interno
   pedidos.js                lista e detalhe dos pedidos da separação
-  acoes.js                  grava as ações sincronizadas sem repetir
+  acoes.js                  grava as ações sincronizadas sem repetir e aplica cada uma
+  aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
 src/tempo-real.js           canal SSE: avisa as telas conectadas na hora
 src/servidor.js             junta tudo e faz o controle de login
@@ -29,11 +32,12 @@ testes/                     testes contra um banco SÓ de teste (wms_teste), rec
 
 ## Ordem sugerida para ler
 
-1. `db/migracoes/001_base.sql`: o que o sistema guarda. Depois, a `002`, que muda o que veio depois.
+1. `db/migracoes/001_base.sql`: o que o sistema guarda. Depois, a `002` e a `003`, que mudam o que veio depois.
 2. `src/consultas/`: como lê e grava (cada função é um ou dois SQL comentados).
 3. `src/rotas-api/`: o que a API recebe e devolve.
 4. `src/servidor.js`: como o login protege as rotas.
 5. `testes/api.test.js`: exemplos de uso de cada rota.
+6. `../compartilhado/regras/acoes-separacao.js` e `testes/separacao.test.js`: o que cada ação da Separação faz.
 
 ## Primeira vez
 
@@ -79,12 +83,34 @@ npm test
 | `GET /api/produtos/:codigo` | sim | produto pelo código de barras ou código interno, com embalagens e endereços com saldo |
 | `GET /api/pedidos?setor=exp` | sim | pedidos do setor (`exp` ou `mont`), opcional `&status=pendente` |
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
-| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }] }` → `{ novas, repetidas }` |
+| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }] }` → `{ novas, repetidas, recusadas }` |
 | `GET /api/tempo-real?token=...` | sim | canal SSE; evento `acoes` quando chegam ações |
 
 Login: mande o token no cabeçalho `Authorization: Bearer <token>`.
 A sessão vale 14 horas (um turno).
 
-Na Fase 0 o `/api/sincronizar` só **registra** as ações em `acoes_recebidas`. Cada ação tem um ID criado no aparelho:
-se o aparelho reenviar o lote porque a rede caiu antes da resposta, a ação não é gravada de novo.
-**Aplicar** as ações (baixar saldo, concluir o pedido) é a Fase 1.
+## Sincronização: o que acontece com cada ação
+
+Cada ação tem um ID criado no aparelho. Se o aparelho reenviar o lote porque a rede caiu antes da resposta,
+a ação não é gravada nem aplicada de novo, e a resposta repete o resultado da primeira vez.
+
+As ações são aplicadas na ordem em que foram **feitas** no aparelho (`feitaEm`), não na ordem em que chegaram.
+
+| Tipo | `dados` | O que muda |
+|---|---|---|
+| `separacao.iniciar` | `{ pedido, lote?, posicao? }` | pedido fica `andamento`, com o login de quem começou e a hora |
+| `separacao.item` | `{ pedido, sequencia, qtdSeparada, status, motivo? }` | `status` = `ok` (completo) ou `falta` (com motivo); a quantidade pode ser quebrada |
+| `separacao.concluir` | `{ pedido, doca }` | pedido fica `concluido`, com a doca e a hora do fim |
+| `separacao.reabrir` | `{ pedido }` | separar novamente: volta para `andamento` com os itens zerados |
+
+Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
+- `aplicada`: mudou o pedido.
+- `conflito`: o pedido já está com outro separador. Nada é aplicado; o coordenador decide (tela na Fase 1c).
+- `recusada`: ação inválida (item que não existe, quantidade errada, perfil que não é separador...).
+- `desconhecida`: tipo que o servidor ainda não aplica. Fica guardada, sem mexer em nada.
+
+As três últimas voltam em `recusadas: [{ id, resultado, motivo }]`. Todas as ações, mesmo as recusadas,
+saem da fila do aparelho: elas já estão no servidor.
+
+Ainda não fazem parte: baixar o saldo do picking no servidor e conferir se a Conferência já começou
+antes de "separar novamente". Entram quando o Estoque e a Conferência passarem pelo servidor.
