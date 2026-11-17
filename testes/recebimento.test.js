@@ -97,3 +97,18 @@ test("notas do ERP: a mesma nota (número + fornecedor) não entra duas vezes", 
   assert.equal(r.importadas.length, 1);
   assert.deepEqual(r.bloqueadas.map((b) => b.msg), [MSG_NOTA_JA_IMPORTADA]);
 });
+
+test("quantidade quebrada no recebimento: conferência, pendente e armazenamento", () => {
+  const n = nota({ itens: [{ produto: "RAIO", qtd: 101.5 }] });
+  const cs = [conf(1, "RAIO", 0.1), conf(2, "RAIO", 0.2)];
+  assert.equal(pendenteDeConferir(n, "RAIO", cs), 101.2);
+  assert.equal(validarConferencia(n, { produto: "RAIO", qtd: "101,2", volumes: 1 }, cs), null);
+  assert.equal(validarConferencia(n, { produto: "RAIO", qtd: "101,21", volumes: 1 }, cs), "QUANTIDADE ACIMA DO PENDENTE DA NOTA. PENDENTE: 101,2.");
+  assert.match(validarConferencia(n, { produto: "RAIO", qtd: 1, volumes: 1.5 }, cs), /volumes/); // volumes continuam inteiros
+  assert.equal(resumoDoItem(n, n.itens[0], cs).conferido, 0.3);
+  assert.equal(pendenteNaDoca(cs, "RAIO", 9), 0.3);
+  assert.deepEqual(distribuirArmazenamento(cs, "0,25"), [{ id: 1, qtd: 0.1 }, { id: 2, qtd: 0.15 }]);
+  const destino = { id: 5, ativo: true };
+  assert.equal(validarArmazenamento({ qtd: "0,3", saldoOrigem: 0.3, pendente: 0.3, origemId: 9, destino }), null);
+  assert.equal(validarArmazenamento({ qtd: "0,31", saldoOrigem: 0.3, pendente: 1, origemId: 9, destino }), MSG_SALDO_ORIGEM);
+});

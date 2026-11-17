@@ -1,6 +1,7 @@
 // WMS Beach Bike — regras da MOVIMENTAÇÃO: abastecimento (aéreo → picking) e transferência entre endereços.
 // Funções puras: recebem os dados e devolvem a resposta, sem tela e sem armazenamento (testadas em testes/movimentacao.test.js).
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "./enderecos.js";
+import { lerQuantidade, quantidadeValida, quantidadePositiva, arredondarQtd, somarQtd, CASAS_DA_QUANTIDADE, MSG_QUANTIDADE } from "./quantidade.js";
 
 // ---------- mensagens ----------
 export const MSG_TAREFA_JA_ABERTA = "JÁ EXISTE TAREFA DE ABASTECIMENTO ABERTA PARA ESTE PRODUTO NESTE PICKING.";
@@ -24,15 +25,15 @@ export const tarefaPendente = (t) => t.status === "aberta" || t.status === "anda
 // ---------- mínimo e máximo do picking ----------
 // configurados pelo gestor para cada produto em cada endereço PICKING. Devolve a mensagem de erro ou null.
 export function validarLimite({ minimo, maximo }) {
-  const min = Number(minimo), max = Number(maximo);
-  if (!Number.isInteger(min) || min < 0) return "O mínimo tem que ser um número inteiro (0 ou mais).";
-  if (!Number.isInteger(max) || max < 1) return "O máximo tem que ser um número inteiro maior que zero.";
+  const min = lerQuantidade(minimo), max = lerQuantidade(maximo);
+  if (!quantidadeValida(min)) return `O mínimo tem que ser 0 ou mais (até ${CASAS_DA_QUANTIDADE} casas depois da vírgula).`;
+  if (!quantidadeValida(max) || max <= 0) return `O máximo tem que ser maior que zero (até ${CASAS_DA_QUANTIDADE} casas depois da vírgula).`;
   if (min >= max) return "O mínimo tem que ser menor que o máximo.";
   return null;
 }
 
 // necessidade de reposição = máximo configurado menos o saldo atual do picking (nunca negativa)
-export const necessidade = (saldoPicking, maximo) => Math.max(0, maximo - saldoPicking);
+export const necessidade = (saldoPicking, maximo) => Math.max(0, arredondarQtd(maximo - saldoPicking));
 // o abastecimento automático dispara quando o saldo atinge ou fica abaixo do mínimo
 export const precisaAbastecer = (saldoPicking, minimo) => saldoPicking <= minimo;
 
@@ -53,7 +54,7 @@ export function escolherOrigens(aereos, quantidade, picking) {
     if (falta <= 0) break;
     const qtd = Math.min(a.saldo, falta);
     origens.push({ enderecoId: a.endereco.id, qtd });
-    falta -= qtd;
+    falta = arredondarQtd(falta - qtd);
   }
   return origens;
 }
@@ -71,8 +72,8 @@ export const ordenarTarefas = (tarefas) =>
   [...tarefas].sort((a, b) => (b.prioridade === "urgente") - (a.prioridade === "urgente") || a.id - b.id);
 
 // quanto já foi feito e quanto falta numa tarefa
-export const planejadoDaTarefa = (t) => t.origens.reduce((s, o) => s + o.qtd, 0);
-export const abastecidoDaTarefa = (t) => t.origens.reduce((s, o) => s + o.feito, 0);
+export const planejadoDaTarefa = (t) => somarQtd(t.origens, (o) => o.qtd);
+export const abastecidoDaTarefa = (t) => somarQtd(t.origens, (o) => o.feito);
 // próxima origem com algo a retirar (null quando todas foram feitas)
 export const proximaOrigem = (t) => t.origens.find((o) => o.feito < o.qtd) || null;
 
@@ -81,9 +82,9 @@ export function validarAbastecimento(tarefa, { origemId, produto, qtd, destino, 
   const origem = tarefa.origens.find((o) => o.enderecoId === origemId);
   if (!origem) return MSG_ORIGEM_FORA_DA_TAREFA;
   if (produto !== tarefa.produto) return MSG_PRODUTO_DA_TAREFA;
-  const quantidade = Number(qtd);
-  if (!(quantidade > 0)) return "Informe a quantidade (maior que zero).";
-  if (quantidade > origem.qtd - origem.feito) return MSG_ACIMA_DO_PLANEJADO;
+  const quantidade = lerQuantidade(qtd); // "101,5" → 101.5
+  if (!quantidadePositiva(quantidade)) return MSG_QUANTIDADE;
+  if (quantidade > arredondarQtd(origem.qtd - origem.feito)) return MSG_ACIMA_DO_PLANEJADO;
   if (quantidade > saldoOrigem) return MSG_SALDO_ORIGEM;
   if (!destino) return MSG_ENDERECO_NAO_ENCONTRADO;
   if (!destino.ativo) return MSG_ENDERECO_INATIVO;
@@ -96,7 +97,7 @@ export const statusDepoisDoPasso = (t) => (proximaOrigem(t) ? "andamento" : "con
 
 // ---------- transferência ----------
 // "se a quantidade solicitada superar o saldo da origem, o sistema permite transferir somente o saldo disponível"
-export const quantidadePermitida = (qtd, saldoOrigem) => Math.min(Number(qtd), saldoOrigem);
+export const quantidadePermitida = (qtd, saldoOrigem) => Math.min(lerQuantidade(qtd), saldoOrigem);
 
 // origem e destino: qualquer endereço ATIVO (o QR de endereço inativo fica bloqueado no coletor).
 // Vale entre PICKING e AÉREO nos dois sentidos, e também tirar da doca.
@@ -104,8 +105,8 @@ export function validarTransferencia({ origem, destino, saldoOrigem, qtd }) {
   if (!origem) return MSG_ENDERECO_NAO_ENCONTRADO;
   if (!origem.ativo) return MSG_ENDERECO_INATIVO;
   if (!(saldoOrigem > 0)) return MSG_SEM_SALDO_NA_ORIGEM;
-  const quantidade = Number(qtd);
-  if (!(quantidade > 0)) return "Informe a quantidade (maior que zero).";
+  const quantidade = lerQuantidade(qtd); // "101,5" → 101.5
+  if (!quantidadePositiva(quantidade)) return MSG_QUANTIDADE;
   if (quantidade > saldoOrigem) return MSG_SALDO_ORIGEM;
   if (!destino) return MSG_ENDERECO_NAO_ENCONTRADO;
   if (!destino.ativo) return MSG_ENDERECO_INATIVO;

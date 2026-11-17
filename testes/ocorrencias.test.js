@@ -32,14 +32,16 @@ test("ocorrência exige motivo e referência do Sankhya", () => {
   assert.equal(validarOcorrencia({ motivo: "desistencia", referencia: "ALT-88" }), null);
 });
 
-test("nova quantidade: inteiro, de zero até menos do que o pedido", () => {
+test("nova quantidade: de zero (pode ser quebrada) até menos do que o pedido", () => {
   const item = { sku: "176", qtd: 20 };
   assert.equal(validarCorte(item, 0), null);
   assert.equal(validarCorte(item, 19), null);
   assert.match(validarCorte(item, 20), /menor que 20/);
-  assert.match(validarCorte(item, -1), /inteiro/);
-  assert.match(validarCorte(item, 2.5), /inteiro/);
-  assert.match(validarCorte(item, ""), /inteiro/);
+  assert.equal(validarCorte(item, 2.5), null); // quantidade quebrada vale
+  assert.equal(validarCorte(item, "19,5"), null);
+  assert.match(validarCorte(item, -1), /quantidade/);
+  assert.match(validarCorte(item, 1.2345), /quantidade/);
+  assert.match(validarCorte(item, ""), /quantidade/);
 });
 
 test("corte: o que não foi separado só diminui; o que sobrou na caixa vira a devolver", () => {

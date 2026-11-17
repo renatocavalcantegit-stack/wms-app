@@ -2,6 +2,7 @@
 // e pedido grande dividido entre separadores. Funções puras: não leem nem gravam nada.
 // Usadas pelo coletor (app.js), pela Conferência (junção das partes) e pelo painel do coordenador (gestao.js).
 import { compararEnderecos, MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "./enderecos.js";
+import { arredondarQtd, somarQtd } from "./quantidade.js";
 
 // =====================================================================
 // DOCA DE EXPEDIÇÃO (onde o separador deixa a mercadoria para o conferente)
@@ -56,7 +57,7 @@ export function montarParadas(pedidos, posicoes) {
     });
   }
   return [...mapa.values()]
-    .map((x) => ({ ...x, total: x.linhas.reduce((t, l) => t + l.qtd, 0), lido: x.linhas.reduce((t, l) => t + l.sep, 0) }))
+    .map((x) => ({ ...x, total: somarQtd(x.linhas, (l) => l.qtd), lido: somarQtd(x.linhas, (l) => l.sep) }))
     .sort((a, b) => compararEnderecos(a.end, b.end) || a.sku.localeCompare(b.sku));
 }
 export const paradaConcluida = (parada) => parada.linhas.every((l) => l.status !== "pendente");
@@ -66,10 +67,10 @@ export const destinoDaLeitura = (parada) => parada.linhas.find((l) => l.sep < l.
 // FALTA no lote: o que foi achado vai primeiro para a posição A (prioridade), depois B…
 // Devolve a quantidade de cada linha: [{ pedido, idx, sep, falta }]
 export function distribuirAchado(linhas, achado) {
-  let resta = Math.max(0, Math.floor(achado));
+  let resta = Math.max(0, arredondarQtd(achado)); // pode ser quebrado (101,5)
   return linhas.map((l) => {
     const sep = Math.min(l.qtd, resta);
-    resta -= sep;
+    resta = arredondarQtd(resta - sep);
     return { pedido: l.pedido, idx: l.idx, sep, falta: sep < l.qtd };
   });
 }

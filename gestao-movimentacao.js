@@ -125,7 +125,7 @@ function modalGerar(db, codigo = "") {
         `<button type="button" class="ge-link" data-escolherprod="${esc(x.codigo)}"><b>${esc(x.codigo)}</b> ${esc(x.descricao)}</button>`).join("")}</div>` : ""}
       ${p ? `<label class="field"><span>Picking</span><select name="picking">${pickings.map((e) => {
         const lim = limiteDe(db, p.codigo, e.id);
-        return `<option value="${e.id}">${e.codigo} · saldo ${num(saldoNoEndereco(db, e.id, p.codigo))}${lim ? ` · mín ${lim.minimo} / máx ${lim.maximo}` : " · sem mín/máx"}</option>`;
+        return `<option value="${e.id}">${e.codigo} · saldo ${num(saldoNoEndereco(db, e.id, p.codigo))}${lim ? ` · mín ${num(lim.minimo)} / máx ${num(lim.maximo)}` : " · sem mín/máx"}</option>`;
       }).join("")}</select></label>
       ${pickings.length ? "" : `<p class="ge-msg">PRODUTO SEM PICKING PADRÃO. ASSOCIE EM ENDEREÇAMENTO.</p>`}
       <label class="field"><span>Prioridade</span><select name="prioridade">${Object.entries(PRIORIDADES).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></label>` : ""}
@@ -170,8 +170,8 @@ function telaLimites(db, f, abas) {
           <td><span class="gaddr">${e.codigo}</span></td>
           <td><b class="mono">${esc(p.codigo)}</b> <span class="ge-desc">${esc(p.descricao)}</span></td>
           <td class="r ${baixo ? "ge-neg" : ""}">${num(saldo)}</td>
-          <td class="r"><input class="ge-num-in" type="number" min="0" step="1" name="minimo" value="${lim ? lim.minimo : ""}"></td>
-          <td class="r"><input class="ge-num-in" type="number" min="1" step="1" name="maximo" value="${lim ? lim.maximo : ""}"></td>
+          <td class="r"><input class="ge-num-in" type="number" min="0" step="any" inputmode="decimal" name="minimo" value="${lim ? lim.minimo : ""}"></td>
+          <td class="r"><input class="ge-num-in" type="number" min="0" step="any" inputmode="decimal" name="maximo" value="${lim ? lim.maximo : ""}"></td>
           <td class="r">${lim ? num(Math.max(0, lim.maximo - saldo)) : "—"}</td>
           <td class="r"><button class="ge-link" data-salvarlimite>Salvar</button></td>
         </tr>`;

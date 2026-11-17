@@ -20,6 +20,7 @@ import {
   validarDocaExpedicao, validarLote, posicoesDoLote, montarParadas, paradaConcluida, distribuirAchado, MAX_PEDIDOS_LOTE,
   podeSepararNovamente,
 } from "./compartilhado/regras/separacao.js";
+import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
 
 (() => {
   "use strict";
@@ -284,7 +285,7 @@ import {
     return `<button class="line ${cur ? "current" : ""}" ${idx != null ? `data-idx="${idx}"` : ""}>
       ${dot}<span class="line-addr">${i.end}</span>
       <span class="line-desc">${esc(i.desc)}<small>${i.sku}${i.status === "falta" ? " · " + esc(i.motivo) : ""}</small></span>
-      <span class="line-q">${i.status === "pendente" ? i.qtd : i.sep + "/" + i.qtd}</span>
+      <span class="line-q">${i.status === "pendente" ? fq(i.qtd) : fq(i.sep) + "/" + fq(i.qtd)}</span>
     </button>`;
   }
 
@@ -414,19 +415,24 @@ import {
   const etapa = () => (!enderecoOk() ? "endereco" : !produtoOk() ? "produto" : "quantidade");
   const solicitado = () => (lote ? parada().total : item().qtd);
   const ehDaVez = (code) => ehCodigoDoProduto(lote ? parada() : item(), code);
-  // quantidade digitada (null = ainda vazio)
-  const digitado = () => { const v = $("#qtyInput").value.trim(); return v === "" ? null : Math.max(0, parseInt(v, 10) || 0); };
+  // quantidade digitada: null = ainda vazio · NaN = inválida · pode ser quebrada ("101,5" → 101.5, até 3 casas)
+  const digitado = () => {
+    const v = $("#qtyInput").value.trim();
+    if (v === "") return null;
+    const n = lerQuantidade(v);
+    return quantidadeValida(n) ? n : NaN;
+  };
 
   // as caixas do carrinho nesta parada: quanto vai em cada uma. Com a quantidade digitada menor que o total,
   // mostra como o achado será distribuído (a caixa A primeiro) e quem fica com falta
   function desenharCaixas(p) {
     const v = digitado(), dist = v != null && v < p.total ? distribuirAchado(p.linhas, v) : null;
     $("#loteBox").hidden = false;
-    $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${p.total}</b> · coloque em cada caixa</p>` + p.linhas.map((l, k) => {
+    $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${fq(p.total)}</b> · coloque em cada caixa</p>` + p.linhas.map((l, k) => {
       const o = pedido(l.pedido), vai = dist ? dist[k].sep : l.qtd, falta = dist && dist[k].falta;
       return `<div class="caixa ${falta ? "falta" : ""} ${l.status === "ok" ? "cheia" : ""}">
-        <b class="cx-pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}${falta ? ` · falta ${l.qtd - vai}` : ""}</small></span>
-        <span class="caixa-q">${vai}<small>/${l.qtd}</small></span></div>`;
+        <b class="cx-pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}${falta ? ` · falta ${fq(arredondarQtd(l.qtd - vai))}` : ""}</small></span>
+        <span class="caixa-q">${fq(vai)}<small>/${fq(l.qtd)}</small></span></div>`;
     }).join("");
   }
 
@@ -448,15 +454,16 @@ import {
 
   function renderQty() {
     const total = solicitado(), v = digitado();
-    $("#qtyReq").textContent = total;
+    $("#qtyReq").textContent = fq(total);
 
     const q = $(".qty");
     q.classList.toggle("full", v === total);
     q.classList.toggle("over", v != null && v > total);
     const pronto = etapa() === "quantidade" && v != null && v <= total;
     $("#btnConfirm").disabled = !pronto;
-    $("#btnConfirm").textContent = pronto && v < total ? `Confirmar ${v} de ${total} · falta` : lote ? "Confirmar parada" : "Confirmar item";
-    if (v != null && v > total) setMsg(`Acima do solicitado (${total}). Confira a quantidade.`, "err");
+    $("#btnConfirm").textContent = pronto && v < total ? `Confirmar ${fq(v)} de ${fq(total)} · falta` : lote ? "Confirmar parada" : "Confirmar item";
+    if (v != null && v > total) setMsg(`Acima do solicitado (${fq(total)}). Confira a quantidade.`, "err");
+    if (Number.isNaN(v)) setMsg("Quantidade inválida. Use até 3 casas depois da vírgula (ex.: 101,5).", "err");
     if (lote) desenharCaixas(parada());
   }
 
@@ -501,25 +508,26 @@ import {
     dono().prodOk = chaveProduto(); save();
     beep(true); vibrate(30);
     renderEndereco(); renderQty();
-    setMsg(`Produto confirmado · digite a quantidade (solicitado ${solicitado()})`, "ok");
+    setMsg(`Produto confirmado · digite a quantidade (solicitado ${fq(solicitado())})`, "ok");
     focarQuantidade();
   }
   function focarQuantidade() { const i = $("#qtyInput"); i.value = ""; renderQty(); setTimeout(() => i.focus(), 30); }
   $("#scanForm").addEventListener("submit", (e) => { e.preventDefault(); handleCode($("#scanInput").value); });
 
   // quantidade: Enter confirma. Se o leitor "digitar" um código aqui (bipou o produto de novo), não vira quantidade.
+  // Código de barras = 5 ou mais dígitos sem vírgula. "101,5" tem vírgula, então é quantidade.
   $("#qtyInput").addEventListener("input", () => renderQty());
   $("#qtyForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("#qtyInput").value.trim().toUpperCase();
-    if (v.length > 4 || ehDaVez(v)) { $("#qtyInput").value = ""; renderQty(); setMsg("Produto já confirmado · digite a quantidade", "err"); beep(false); return; }
+    if (/^\d{5,}$/.test(v) || ehDaVez(v)) { $("#qtyInput").value = ""; renderQty(); setMsg("Produto já confirmado · digite a quantidade", "err"); beep(false); return; }
     confirmItem();
   });
 
   function confirmItem() {
     if (etapa() !== "quantidade") return;
     const v = digitado(), total = solicitado();
-    if (v == null || v > total) return;
+    if (v == null || Number.isNaN(v) || v > total) return;
     if (v < total) { openShort(v); return; }
     if (lote) {
       parada().linhas.forEach((l) => { const i = itemDaLinha(l); Object.assign(i, { sep: i.qtd, status: "ok", motivo: "" }); baixar(l.pedido, i); });
@@ -558,9 +566,8 @@ import {
   let reason = "Endereço vazio";
   function openShort(qtd) {
     const total = solicitado();
-    $("#shortDesc").textContent = `${lote ? parada().desc : item().desc} · solicitado ${total} un.${lote ? " · o que achar vai primeiro para a caixa A" : ""}`;
-    $("#shortQty").value = qtd ?? digitado() ?? 0;
-    $("#shortQty").max = total - 1;
+    $("#shortDesc").textContent = `${lote ? parada().desc : item().desc} · solicitado ${fq(total)} un.${lote ? " · o que achar vai primeiro para a caixa A" : ""}`;
+    $("#shortQty").value = fq(qtd ?? (Number.isNaN(digitado()) ? 0 : digitado() ?? 0));
     openSheet("sheetShort");
   }
   $("#btnShort").addEventListener("click", () => enderecoOk() && openShort());
@@ -569,10 +576,17 @@ import {
     reason = c.dataset.r;
     $$("#shortReasons .chip").forEach((x) => x.classList.toggle("active", x === c));
   });
+  // quanto achou na falta: de zero até menos que o solicitado (pode ser quebrado). null = inválido, avisa e não fecha.
+  function quantidadeDaFalta(total) {
+    const q = lerQuantidade($("#shortQty").value.trim() || "0");
+    if (quantidadeValida(q) && q < total) return q;
+    toast(`Informe de 0 até menos que ${fq(total)} (até 3 casas depois da vírgula).`);
+    return null;
+  }
   $("#shortGo").addEventListener("click", () => {
     if (lote) {
       const p = parada();
-      const q = Math.max(0, Math.min(p.total - 1, parseInt($("#shortQty").value, 10) || 0));
+      const q = quantidadeDaFalta(p.total); if (q == null) return;
       // o achado vai primeiro para a caixa A (prioridade), depois B… quem ficou sem completar fica com falta
       distribuirAchado(p.linhas, q).forEach((x) => {
         const i = pedido(x.pedido).itens[x.idx];
@@ -580,15 +594,15 @@ import {
         baixar(x.pedido, i);
       });
       save(); closeSheets(); vibrate(40);
-      toast(`Falta registrada · ${q}/${p.total}`);
+      toast(`Falta registrada · ${fq(q)}/${fq(p.total)}`);
       return next();
     }
     const i = item();
-    const q = Math.max(0, Math.min(i.qtd - 1, parseInt($("#shortQty").value, 10) || 0));
+    const q = quantidadeDaFalta(i.qtd); if (q == null) return;
     Object.assign(i, { sep: q, status: "falta", motivo: reason });
     save(); closeSheets(); vibrate(40);
     baixar(current.id, i);
-    toast(`Falta registrada · ${q}/${i.qtd}`);
+    toast(`Falta registrada · ${fq(q)}/${fq(i.qtd)}`);
     next();
   });
 
@@ -600,7 +614,7 @@ import {
         const st = paradaConcluida(p) ? (p.linhas.some((l) => l.status === "falta") ? "falta" : "ok") : "pendente";
         const dot = st === "ok" ? `<span class="dot ok">${CHECK}</span>` : st === "falta" ? `<span class="dot falta">!</span>` : `<span class="dot"></span>`;
         return `<button class="line ${k === lote.atual ? "current" : ""}" data-idx="${k}">${dot}<span class="line-addr">${p.end}</span>
-          <span class="line-desc">${esc(p.desc)}<small>${p.linhas.map((l) => `${l.pos} ${l.qtd}`).join(" · ")}</small></span><span class="line-q">${st === "pendente" ? p.total : p.lido + "/" + p.total}</span></button>`;
+          <span class="line-desc">${esc(p.desc)}<small>${p.linhas.map((l) => `${l.pos} ${fq(l.qtd)}`).join(" · ")}</small></span><span class="line-q">${st === "pendente" ? fq(p.total) : fq(p.lido) + "/" + fq(p.total)}</span></button>`;
       }).join("");
     } else {
       $("#listTitle").textContent = "Itens do pedido";

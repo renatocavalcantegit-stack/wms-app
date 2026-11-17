@@ -1,6 +1,7 @@
 // WMS Beach Bike — regras do INVENTÁRIO FÍSICO (Auditoria). Funções puras: não leem nem gravam nada.
 // A contagem não mexe no estoque. Divergência vai para o gestor aprovar ou rejeitar, e o saldo só muda na sincronização.
 import { MSG_ENDERECO_INATIVO } from "./enderecos.js";
+import { lerQuantidade, quantidadeValida, arredondarQtd } from "./quantidade.js";
 
 export const MSG_PRODUTO_FORA_DO_ENDERECO = "PRODUTO NÃO PERTENCE A ESTE ENDEREÇO.";
 export const MSG_ENDERECO_FORA_DO_INVENTARIO = "ENDEREÇO NÃO FAZ PARTE DESTE INVENTÁRIO.";
@@ -76,8 +77,8 @@ export function validarProdutoNaContagem(inv, itensDoEndereco, produto) {
   return null;
 }
 export function validarQuantidadeContada(qtd) {
-  const n = Number(qtd);
-  if (!Number.isInteger(n) || n < 0) return "Informe a quantidade contada (número inteiro, zero ou mais).";
+  // aceita quantidade quebrada (101,5), com até 3 casas depois da vírgula
+  if (!quantidadeValida(lerQuantidade(qtd))) return "Informe a quantidade contada (zero ou mais, até 3 casas depois da vírgula).";
   return null;
 }
 
@@ -86,7 +87,7 @@ export function validarQuantidadeContada(qtd) {
 // Devolve as contagens a gravar: [{ produto, qtd, novo }]
 export function fecharContagemDoEndereco(itensDoEndereco, incluidos) {
   const soma = {};
-  incluidos.forEach((x) => (soma[x.produto] = (soma[x.produto] || 0) + x.qtd));
+  incluidos.forEach((x) => (soma[x.produto] = arredondarQtd((soma[x.produto] || 0) + x.qtd)));
   const fora = [];
   itensDoEndereco.filter((i) => !itemEncerrado(i.contagens)).forEach((i) => fora.push({ produto: i.produto, qtd: soma[i.produto] || 0, novo: false }));
   Object.keys(soma).filter((p) => !itensDoEndereco.some((i) => i.produto === p)).forEach((p) => fora.push({ produto: p, qtd: soma[p], novo: true }));

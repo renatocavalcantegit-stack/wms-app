@@ -10,6 +10,7 @@ import { lerEstoque } from "./js/dados/estoque.js";
 import { acharEndereco } from "./compartilhado/regras/enderecos.js";
 import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, validarDocaDevolucao, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
+import { lerQuantidade, quantidadePositiva, arredondarQtd as arr, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
 import { $, $$, esc } from "./js/util.js";
 
 (() => {
@@ -73,8 +74,8 @@ import { $, $$, esc } from "./js/util.js";
     return {
       itensOk: st.filter((s) => s === "ok").length,
       itens: o.itens.length,
-      un: sum(o.itens, (i) => o.conf.itens[i.sku] || 0) + sum(o.conf.fora, (f) => f.q),
-      unT: sum(o.itens, (i) => i.sep),
+      un: arr(sum(o.itens, (i) => o.conf.itens[i.sku] || 0) + sum(o.conf.fora, (f) => f.q)),
+      unT: arr(sum(o.itens, (i) => i.sep)),
       div: st.filter((s) => s === "excesso").length + o.conf.fora.length,
       pend: st.filter((s) => s === "pendente" || s === "parcial").length,
     };
@@ -163,21 +164,21 @@ import { $, $$, esc } from "./js/util.js";
     const o = cur, checkout = consultaDeCheckout();
     const rows = o.itens.map((i) => {
       const s = itemState(o, i), c = o.conf.itens[i.sku] || 0;
-      const label = { ok: "Conferido", parcial: `Faltam ${i.sep - c}`, excesso: `Excesso +${c - i.sep}`, pendente: "Pendente" }[s];
+      const label = { ok: "Conferido", parcial: `Faltam ${fq(arr(i.sep - c))}`, excesso: `Excesso +${fq(arr(c - i.sep))}`, pendente: "Pendente" }[s];
       const sepWarn = (i.sep < i.qtd ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "")
-        + (i.devolver > 0 ? `<span class="sub-warn">sai da caixa: ${i.devolver} un. (devolução)</span>` : "");
+        + (i.devolver > 0 ? `<span class="sub-warn">sai da caixa: ${fq(i.devolver)} un. (devolução)</span>` : "");
       return `<tr class="${s} ${flashSku === i.sku ? "flash" : ""}" data-sku="${i.sku}">
         <td><span class="s-dot"></span></td>
         <td class="code"><b>${i.sku}</b>${i.ean}</td>
         <td>${esc(i.desc)}${checkout(i.sku) ? `<span class="ck-tag">Checkout</span>` : `<span class="ck-tag granel">Granel · digite a quantidade</span>`}${sepWarn}</td>
         <td><span class="addr-chip">${i.end}</span></td>
-        <td class="r">${i.qtd}</td><td class="r strong">${i.sep}</td>
-        <td class="r conf">${c}</td>
+        <td class="r">${fq(i.qtd)}</td><td class="r strong">${fq(i.sep)}</td>
+        <td class="r conf">${fq(c)}</td>
         <td>${s === "pendente" ? `<span class="tag">${label}</span>` : `<span class="tag ${s}">${label}</span>`}</td></tr>`;
     });
     const fora = o.conf.fora.map((f) => `<tr class="fora ${flashSku === f.sku ? "flash" : ""}">
         <td><span class="s-dot"></span></td><td class="code"><b>${f.sku}</b>${f.ean}</td><td>${esc(f.desc)}</td>
-        <td>—</td><td class="r">0</td><td class="r strong">0</td><td class="r conf">${f.q}</td>
+        <td>—</td><td class="r">0</td><td class="r strong">0</td><td class="r conf">${fq(f.q)}</td>
         <td><span class="tag fora">Fora do pedido</span></td></tr>`);
     $("#itemsBody").innerHTML = rows.concat(fora).join("");
     const fl = $("#itemsBody tr.flash"); if (fl) fl.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -207,10 +208,13 @@ import { $, $$, esc } from "./js/util.js";
   // ---------- leitura ----------
   function handle(raw) {
     let code = raw.trim(); if (!code) return;
-    let q = Math.max(1, parseInt($("#mult").value, 10) || 1);
-    const m = code.match(/^(\d{1,3})\*(.+)$/);
-    if (m) { q = +m[1]; code = m[2].trim(); }
-    const informada = !!m || q > 1; // o conferente informou quantidade (F4 ou 5*código)?
+    // quantidade informada pode ser quebrada (granel): F4 com 2,5 ou "2,5*código"
+    const mult = lerQuantidade($("#mult").value);
+    let q = quantidadePositiva(mult) ? mult : 1;
+    const m = code.match(/^(\d{1,3}(?:[.,]\d{1,3})?)\*(.+)$/);
+    if (m) { q = lerQuantidade(m[1]); code = m[2].trim(); }
+    if (!quantidadePositiva(q)) { setMsg("Quantidade inválida. Use até 3 casas depois da vírgula (ex.: 2,5).", "err"); beep(false); resetMult(); return; }
+    const informada = !!m || q !== 1; // o conferente informou quantidade (F4 ou 5*código)?
     resetMult();
     if (cur && devolvendo) return lerNaDevolucao(code, q);
 
@@ -247,8 +251,8 @@ import { $, $$, esc } from "./js/util.js";
   function pedirQuantidade(p) {
     granel = p;
     const it = cur.itens.find((i) => i.sku === p.sku);
-    const falta = it ? Math.max(1, it.sep - (cur.conf.itens[p.sku] || 0)) : 1;
-    $("#mult").value = falta; $(".pos-mult").classList.add("on", "granel");
+    const resta = it ? arr(it.sep - (cur.conf.itens[p.sku] || 0)) : 0;
+    $("#mult").value = fq(resta > 0 ? resta : 1); $(".pos-mult").classList.add("on", "granel");
     setLast({ label: "Granel: digite a quantidade", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: cur.conf.itens[p.sku] || 0, exp: it ? it.sep : 0, kind: "" });
     setMsg(`Produto a granel: digite a quantidade de ${p.sku} e tecle Enter.`);
     $("#mult").focus(); $("#mult").select();
@@ -257,20 +261,20 @@ import { $, $$, esc } from "./js/util.js";
   function aplicar(p, q) {
     const it = cur.itens.find((i) => i.sku === p.sku);
     if (it) {
-      cur.conf.itens[p.sku] = (cur.conf.itens[p.sku] || 0) + q;
+      cur.conf.itens[p.sku] = arr((cur.conf.itens[p.sku] || 0) + q);
       cur.conf.log.push({ sku: p.sku, q, fora: false });
       const c = cur.conf.itens[p.sku], s = itemState(cur, it);
       const okish = s === "ok" || s === "parcial";
       setLast({
-        label: s === "ok" ? "Item completo ✓" : s === "excesso" ? "Excesso — retire do volume" : `Lido +${q}`,
+        label: s === "ok" ? "Item completo ✓" : s === "excesso" ? "Excesso — retire do volume" : `Lido +${fq(q)}`,
         desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: c, exp: it.sep, kind: okish ? "ok" : "err",
       });
-      setMsg(s === "excesso" ? `Excesso de ${c - it.sep} un. em ${p.sku}` : s === "ok" ? "Item conferido" : `Faltam ${it.sep - c} un.`, okish ? "ok" : "err");
+      setMsg(s === "excesso" ? `Excesso de ${fq(arr(c - it.sep))} un. em ${p.sku}` : s === "ok" ? "Item conferido" : `Faltam ${fq(arr(it.sep - c))} un.`, okish ? "ok" : "err");
       beep(okish);
     } else {
       let f = cur.conf.fora.find((x) => x.sku === p.sku);
       if (!f) cur.conf.fora.push((f = { sku: p.sku, ean: p.ean, desc: p.desc, q: 0 }));
-      f.q += q;
+      f.q = arr(f.q + q);
       cur.conf.log.push({ sku: p.sku, q, fora: true });
       setLast({ label: "Produto fora do pedido", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: f.q, exp: 0, kind: "err" });
       setMsg("Este produto não pertence ao pedido — separe para devolução.", "err");
@@ -289,11 +293,11 @@ import { $, $$, esc } from "./js/util.js";
     if (e.key !== "Enter") return;
     e.preventDefault();
     if (granel) {
-      const p = granel, q = parseInt($("#mult").value, 10) || 0;
-      if (q < 1) { setMsg("Digite uma quantidade maior que zero.", "err"); beep(false); return; }
+      const p = granel, q = lerQuantidade($("#mult").value); // "2,5" → 2.5
+      if (!quantidadePositiva(q)) { setMsg("Digite uma quantidade maior que zero (até 3 casas depois da vírgula).", "err"); beep(false); return; }
       resetMult(); aplicar(p, q); focusScan(); return;
     }
-    $(".pos-mult").classList.toggle("on", +$("#mult").value > 1); focusScan();
+    $(".pos-mult").classList.toggle("on", lerQuantidade($("#mult").value) !== 1); focusScan();
   });
 
   // estornar (F6)
@@ -302,12 +306,12 @@ import { $, $$, esc } from "./js/util.js";
     const l = cur.conf.log.pop();
     if (l.fora) {
       const f = cur.conf.fora.find((x) => x.sku === l.sku);
-      f.q -= l.q; if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
-    } else cur.conf.itens[l.sku] = Math.max(0, cur.conf.itens[l.sku] - l.q);
+      f.q = arr(f.q - l.q); if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
+    } else cur.conf.itens[l.sku] = Math.max(0, arr(cur.conf.itens[l.sku] - l.q));
     save(); renderItems(); renderTotals();
     const p = find(l.sku);
-    setLast({ label: `Estornado −${l.q}`, desc: p.desc, code: p.sku, conf: l.fora ? "—" : cur.conf.itens[l.sku], exp: l.fora ? 0 : cur.itens.find((i) => i.sku === l.sku).sep });
-    setMsg(`Última leitura estornada (${l.sku} −${l.q})`);
+    setLast({ label: `Estornado −${fq(l.q)}`, desc: p.desc, code: p.sku, conf: l.fora ? "—" : cur.conf.itens[l.sku], exp: l.fora ? 0 : cur.itens.find((i) => i.sku === l.sku).sep });
+    setMsg(`Última leitura estornada (${l.sku} −${fq(l.q)})`);
   }
 
   // ---------- devolução (item cortado ou pedido cancelado pelo gestor) ----------
@@ -352,15 +356,15 @@ import { $, $$, esc } from "./js/util.js";
     const it = cur.itens.find((i) => i.sku === p.sku);
     const r = lerDevolucao(it, tirado(cur, p.sku), q);
     if (!r.ok) { setMsg(r.msg, "err"); beep(false); return; }
-    cur.conf.devolvido = { ...(cur.conf.devolvido || {}), [p.sku]: tirado(cur, p.sku) + r.qtd };
+    cur.conf.devolvido = { ...(cur.conf.devolvido || {}), [p.sku]: arr(tirado(cur, p.sku) + r.qtd) };
     // a unidade que sai já tinha sido contada como "na caixa"? então desconta da contagem
-    const sobra = (cur.conf.itens[p.sku] || 0) - it.sep;
-    if (sobra > 0) cur.conf.itens[p.sku] -= Math.min(sobra, r.qtd);
+    const sobra = arr((cur.conf.itens[p.sku] || 0) - it.sep);
+    if (sobra > 0) cur.conf.itens[p.sku] = arr(cur.conf.itens[p.sku] - Math.min(sobra, r.qtd));
     save(); renderItems(p.sku); renderTotals();
     const falta = faltaTirar(it, tirado(cur, p.sku));
-    setLast({ label: `Saiu da caixa −${r.qtd}`, desc: p.desc, code: p.sku, conf: tirado(cur, p.sku), exp: it.devolver, kind: "ok" });
+    setLast({ label: `Saiu da caixa −${fq(r.qtd)}`, desc: p.desc, code: p.sku, conf: tirado(cur, p.sku), exp: it.devolver, kind: "ok" });
     const tudo = cur.itens.every((i) => faltaTirar(i, tirado(cur, i.sku)) === 0);
-    setMsg(tudo ? "Tudo separado · leia o QR da doca de devolução" : falta ? `Faltam ${falta} un. de ${p.sku} para tirar` : `${p.sku} completo`, "ok");
+    setMsg(tudo ? "Tudo separado · leia o QR da doca de devolução" : falta ? `Faltam ${fq(falta)} un. de ${p.sku} para tirar` : `${p.sku} completo`, "ok");
     beep(true);
   }
 
@@ -422,12 +426,12 @@ import { $, $$, esc } from "./js/util.js";
     cur.itens.forEach((i) => {
       const c = cur.conf.itens[i.sku] || 0, st = itemState(cur, i);
       if (st === "ok") return;
-      rows.push(`<div class="f-row"><span class="tag ${st === "pendente" ? "parcial" : st}">${st === "excesso" ? "Excesso" : "Falta"}</span><span>${esc(i.desc)}</span><b>${c}/${i.sep}</b></div>`);
+      rows.push(`<div class="f-row"><span class="tag ${st === "pendente" ? "parcial" : st}">${st === "excesso" ? "Excesso" : "Falta"}</span><span>${esc(i.desc)}</span><b>${fq(c)}/${fq(i.sep)}</b></div>`);
     });
-    cur.conf.fora.forEach((f) => rows.push(`<div class="f-row"><span class="tag fora">Fora</span><span>${esc(f.desc)}</span><b>+${f.q}</b></div>`));
+    cur.conf.fora.forEach((f) => rows.push(`<div class="f-row"><span class="tag fora">Fora</span><span>${esc(f.desc)}</span><b>+${fq(f.q)}</b></div>`));
     const div = rows.length > 0;
     $("#fTitle").textContent = div ? "Finalizar com divergência?" : "Finalizar conferência";
-    $("#fSub").textContent = `${cur.id} · ${cur.cliente} · ${s.un} de ${s.unT} unidades conferidas${MONT ? " · segue para a montagem" : ""}`;
+    $("#fSub").textContent = `${cur.id} · ${cur.cliente} · ${fq(s.un)} de ${fq(s.unT)} unidades conferidas${MONT ? " · segue para a montagem" : ""}`;
     $("#fVolF").hidden = MONT;
     $("#fDiv").innerHTML = rows.join("");
     $("#fGo").className = "btn " + (div ? "danger" : "primary");

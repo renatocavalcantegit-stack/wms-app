@@ -54,7 +54,7 @@ test("previstos: saldo maior que zero ou associação; só picking e aéreo ativ
   assert.equal(enderecoInventariavel({ ativo: true, tipo: "aereo" }), true);
 });
 
-test("coletor: rotativo só aceita o previsto; completo aceita produto novo; quantidade inteira ≥ 0", () => {
+test("coletor: rotativo só aceita o previsto; completo aceita produto novo; quantidade ≥ 0, quebrada até 3 casas", () => {
   const itens = [{ produto: "A", contagens: [] }, { produto: "B", contagens: cs(2, 2) }];
   assert.equal(validarProdutoNaContagem({ tipo: "rotativo", status: "aberto" }, itens, "X"), MSG_PRODUTO_FORA_DO_ENDERECO);
   assert.equal(validarProdutoNaContagem({ tipo: "rotativo", status: "aberto" }, itens, "A"), null);
@@ -63,7 +63,10 @@ test("coletor: rotativo só aceita o previsto; completo aceita produto novo; qua
   assert.equal(validarProdutoNaContagem({ tipo: "completo", status: "finalizado" }, itens, "A"), MSG_INVENTARIO_FECHADO);
   assert.equal(validarQuantidadeContada(0), null);
   assert.ok(validarQuantidadeContada(-1));
-  assert.ok(validarQuantidadeContada(1.5));
+  assert.equal(validarQuantidadeContada(1.5), null); // quantidade quebrada vale
+  assert.equal(validarQuantidadeContada("101,5"), null); // digitada com vírgula
+  assert.ok(validarQuantidadeContada(1.2345)); // mais de 3 casas
+  assert.ok(validarQuantidadeContada(""));
 });
 
 test("finalizar contagem: soma os incluídos, previsto não bipado conta zero, produto novo entra", () => {
@@ -118,4 +121,9 @@ test("indicadores do painel", () => {
   assert.equal(k.concluidos, 2); assert.equal(k.pendentes, 2); assert.equal(k.pct, 50);
   assert.equal(k.contados, 2); assert.equal(k.naoContados, 2); assert.equal(k.contagens, 5);
   assert.equal(k.aprovados, 1); assert.equal(k.aguardando, 0); assert.equal(k.divergencias, 1);
+});
+
+test("finalizar contagem com quantidade quebrada: soma sem erro de vírgula", () => {
+  const r = fecharContagemDoEndereco([{ produto: "A", contagens: [] }], [{ produto: "A", qtd: 0.1 }, { produto: "A", qtd: 0.2 }]);
+  assert.deepEqual(r, [{ produto: "A", qtd: 0.3, novo: false }]);
 });

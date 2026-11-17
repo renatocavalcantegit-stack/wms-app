@@ -10,6 +10,7 @@ import {
 import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/embalagens.js";
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 import { exigeCheckout } from "../../compartilhado/regras/produtos.js";
+import { arredondarQtd, somarQtd } from "../../compartilhado/regras/quantidade.js";
 
 // v11: doca de devolução e divergências de saldo da separação; v10: código bom de célula suja é mantido (ex.: câmara 176); v9: códigos de barras reais (embalagens) e granel = sem código; v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
@@ -57,13 +58,13 @@ export function saldosDoProduto(db, codigo) {
 
 // saldo de um produto num endereço
 export const saldoNoEndereco = (db, enderecoId, produto) =>
-  db.saldos.filter((s) => s.enderecoId === enderecoId && s.produto === produto).reduce((t, s) => t + s.qtd, 0);
+  db.saldos.filter((s) => s.enderecoId === enderecoId && s.produto === produto).reduce((t, s) => arredondarQtd(t + s.qtd), 0);
 
 // soma (ou tira, com delta negativo) saldo de um produto num endereço. Quem chama já conferiu que não fica negativo.
 export function somarSaldo(db, enderecoId, produto, delta) {
   let s = db.saldos.find((x) => x.enderecoId === enderecoId && x.produto === produto);
   if (!s) { s = { enderecoId, produto, qtd: 0 }; db.saldos.push(s); }
-  s.qtd += delta;
+  s.qtd = arredondarQtd(s.qtd + delta); // 101,5 − 0,5 = 101 (sem erro de vírgula)
   // saldo zerado sai da lista (a consulta só mostra endereços com saldo)
   if (s.qtd === 0) db.saldos = db.saldos.filter((x) => x !== s);
 }

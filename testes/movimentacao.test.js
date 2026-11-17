@@ -12,13 +12,15 @@ import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../compartilh
 const end = (id, rua, predio, andar, apto, extra = {}) => ({ id, rua, predio, andar, apto, ativo: true, ...extra });
 const picking = end(1, 3001, 1, 100, 103, { tipo: "picking" });
 
-test("mínimo e máximo: inteiros, mínimo menor que o máximo", () => {
+test("mínimo e máximo: até 3 casas, mínimo menor que o máximo", () => {
   assert.equal(validarLimite({ minimo: 5, maximo: 20 }), null);
   assert.equal(validarLimite({ minimo: 0, maximo: 1 }), null);
   assert.match(validarLimite({ minimo: 20, maximo: 20 }), /menor/);
   assert.match(validarLimite({ minimo: -1, maximo: 20 }), /mínimo/);
   assert.match(validarLimite({ minimo: 2, maximo: 0 }), /máximo/);
-  assert.match(validarLimite({ minimo: 1.5, maximo: 10 }), /mínimo/);
+  assert.equal(validarLimite({ minimo: 1.5, maximo: 10.25 }), null); // quantidade quebrada vale
+  assert.equal(validarLimite({ minimo: "0,5", maximo: "2,5" }), null);
+  assert.match(validarLimite({ minimo: 1.2345, maximo: 10 }), /mínimo/);
 });
 
 test("necessidade = máximo − saldo; dispara no mínimo ou abaixo", () => {
@@ -104,4 +106,16 @@ test("estorno da separação: soma o que o pedido baixou por endereço, menos o 
     { tipo: "estorno-separacao", pedido: "PV-1", destino: 11, produto: "176", qtd: 4 });
   assert.deepEqual(baixadoPorPedido(movs, "PV-1"), []);
   assert.deepEqual(baixadoPorPedido([], "PV-1"), []);
+});
+
+test("quantidade quebrada no abastecimento: origens, planejado e o passo aceitam valor quebrado", () => {
+  const aereos = [{ endereco: end(10, 3001, 2, 100, 101), saldo: 0.7 }, { endereco: end(11, 3001, 3, 100, 101), saldo: 50 }];
+  assert.deepEqual(escolherOrigens(aereos, 1, picking), [{ enderecoId: 10, qtd: 0.7 }, { enderecoId: 11, qtd: 0.3 }]);
+  const t = { produto: "176", pickingId: 1, origens: [{ enderecoId: 10, qtd: 0.7, feito: 0.1 }, { enderecoId: 11, qtd: 0.3, feito: 0.2 }] };
+  assert.equal(planejadoDaTarefa(t), 1);
+  assert.equal(abastecidoDaTarefa(t), 0.3);
+  const ok = { origemId: 10, produto: "176", qtd: "0,6", destino: picking, saldoOrigem: 0.7 };
+  assert.equal(validarAbastecimento(t, ok), null);
+  assert.equal(validarAbastecimento(t, { ...ok, qtd: "0,61" }), MSG_ACIMA_DO_PLANEJADO);
+  assert.match(validarAbastecimento(t, { ...ok, qtd: "0,0001" }), /quantidade/);
 });

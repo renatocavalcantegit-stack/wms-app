@@ -15,8 +15,8 @@ const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FR
 
 test("migrar de novo não aplica nada (cada arquivo roda uma vez só)", async () => {
   assert.deepEqual(await migrar(pool), []);
-  const { rows } = await pool.query("SELECT nome FROM migracoes");
-  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql"]);
+  const { rows } = await pool.query("SELECT nome FROM migracoes ORDER BY nome");
+  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql"]);
 });
 
 test("a demonstração do banco é a mesma do app", async () => {
@@ -49,6 +49,21 @@ test("saldo fracionado da base real é guardado sem arredondar e volta como núm
   const s = fracionados[0];
   const { rows } = await pool.query("SELECT qtd FROM saldos WHERE endereco_id = $1 AND produto = $2", [s.enderecoId, s.produto]);
   assert.equal(rows[0].qtd, s.qtd);
+});
+
+test("item de pedido aceita quantidade quebrada (até 3 casas) e volta como número", async () => {
+  await pool.query("INSERT INTO itens_pedido (pedido_id, sequencia, produto, endereco_codigo, qtd, qtd_separada) VALUES ('PV-10421', 98, '122', 'R1', 101.5, 20.935)");
+  try {
+    const { rows } = await pool.query("SELECT qtd, qtd_separada FROM itens_pedido WHERE pedido_id = 'PV-10421' AND sequencia = 98");
+    assert.deepEqual(rows[0], { qtd: 101.5, qtd_separada: 20.935 });
+    // mais de 3 casas: o banco arredonda para 3 (a regra do front já recusa antes de chegar aqui)
+    await pool.query("UPDATE itens_pedido SET qtd_separada = 1.23456 WHERE pedido_id = 'PV-10421' AND sequencia = 98");
+    assert.equal((await pool.query("SELECT qtd_separada FROM itens_pedido WHERE pedido_id = 'PV-10421' AND sequencia = 98")).rows[0].qtd_separada, 1.235);
+    // zero ou negativo continua recusado
+    await assert.rejects(pool.query("UPDATE itens_pedido SET qtd = 0 WHERE pedido_id = 'PV-10421' AND sequencia = 98"));
+  } finally {
+    await pool.query("DELETE FROM itens_pedido WHERE pedido_id = 'PV-10421' AND sequencia = 98");
+  }
 });
 
 test("pedido dividido guarda de quem é a parte", async () => {

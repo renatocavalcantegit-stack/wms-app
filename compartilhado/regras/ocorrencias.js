@@ -11,6 +11,7 @@
 //   devolver = quanto, já separado, tem que SAIR da caixa e voltar ao estoque (pela doca de devolução)
 // O que ainda não foi separado só diminui a quantidade: não há o que devolver.
 // O que já foi separado e passou a sobrar vira "a devolver" e é tirado na conferência (bipando).
+import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd } from "./quantidade.js";
 
 export const MOTIVOS_OCORRENCIA = {
   desistencia: "Cliente desistiu",
@@ -61,24 +62,24 @@ export function validarOcorrencia({ motivo, referencia }) {
   return null;
 }
 
-// nova quantidade de um item: número inteiro, de zero até menos do que o cliente quer hoje
+// nova quantidade de um item (pode ser quebrada, até 3 casas): de zero até menos do que o cliente quer hoje
 export function validarCorte(item, novaQtd) {
-  const n = Number(novaQtd);
-  if (String(novaQtd).trim() === "" || !Number.isInteger(n) || n < 0) return `${item.sku}: informe um número inteiro (zero ou mais).`;
-  if (n >= item.qtd) return `${item.sku}: a nova quantidade tem que ser menor que ${item.qtd}.`;
+  const n = lerQuantidade(novaQtd); // "19,5" → 19.5
+  if (!quantidadeValida(n)) return `${item.sku}: informe a nova quantidade (zero ou mais, até 3 casas depois da vírgula).`;
+  if (n >= item.qtd) return `${item.sku}: a nova quantidade tem que ser menor que ${formatarQtd(item.qtd)}.`;
   return null;
 }
 
 // aplica o corte: o que estava na caixa e passou do novo total vira "a devolver"
 export function aplicarCorte({ qtd, mantido, devolver = 0 }, novaQtd) {
   const novoMantido = Math.min(mantido, novaQtd);
-  return { qtd: novaQtd, mantido: novoMantido, devolver: devolver + (mantido - novoMantido) };
+  return { qtd: novaQtd, mantido: novoMantido, devolver: arredondarQtd(devolver + (mantido - novoMantido)) };
 }
 
 // ---------- devolução na Conferência ----------
 // devolvido: unidades que o conferente já tirou da caixa (bipando) · postado: já entrou na doca de devolução
-export const faltaTirar = (item, devolvido = 0) => Math.max(0, (item.devolver || 0) - devolvido);
-export const faltaPostar = (devolvido = 0, postado = 0) => Math.max(0, devolvido - postado);
+export const faltaTirar = (item, devolvido = 0) => Math.max(0, arredondarQtd((item.devolver || 0) - devolvido));
+export const faltaPostar = (devolvido = 0, postado = 0) => Math.max(0, arredondarQtd(devolvido - postado));
 
 // o pedido só finaliza depois que tudo o que tinha que sair saiu E entrou na doca de devolução
 export function devolucaoPendente(itens, postados = {}) {

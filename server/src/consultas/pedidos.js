@@ -7,7 +7,7 @@ export async function listarPedidos(pool, { setor, status = null }) {
     `SELECT p.id, p.cliente, p.cidade, p.prioridade, p.chegada, p.status, p.separador, p.inicio, p.fim,
             p.doca, p.lote, p.posicao_lote, p.pedido_pai, p.parte_numero, p.partes_total,
             count(i.*)::int        AS itens,
-            coalesce(sum(i.qtd), 0)::int AS unidades
+            coalesce(sum(i.qtd), 0) AS unidades -- numeric: pode ser quebrado (101,5)
        FROM pedidos p
        LEFT JOIN itens_pedido i ON i.pedido_id = p.id
       WHERE p.setor = $1

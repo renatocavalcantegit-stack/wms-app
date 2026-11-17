@@ -82,7 +82,7 @@ export async function semear(pool) {
 
     // os itens já vêm na ordem da rota de separação; a posição na lista vira a sequência
     await inserirLista(c, "itens_pedido",
-      ["pedido_id text", "sequencia integer", "produto text", "endereco_codigo text", "qtd integer", "qtd_separada integer", "status text", "motivo text"],
+      ["pedido_id text", "sequencia integer", "produto text", "endereco_codigo text", "qtd numeric", "qtd_separada numeric", "status text", "motivo text"],
       pedidos.flatMap((o) => o.itens.map((i, n) => ({
         pedido_id: o.id, sequencia: n + 1, produto: i.sku, endereco_codigo: i.end, qtd: i.qtd,
         qtd_separada: i.sep || 0, status: i.status, motivo: i.motivo || "",
