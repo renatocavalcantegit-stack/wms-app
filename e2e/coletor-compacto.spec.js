@@ -23,6 +23,10 @@ test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo 
   await expect(page.locator("#scanInput")).toBeFocused();
   for (const s of ["#addrCard", ".product", "#qtyForm", "#scanForm", "#btnShort", "#btnConfirm"]) await visivelSemRolar(page, s);
 
+  // o gatilho SCAN do C6000 envia F9 antes de cada código: não é o Fn travado, o bipe segue normal
+  await page.keyboard.press("F9");
+  await expect(page.locator("#toast")).toBeHidden();
+
   // endereço errado: faixa vermelha no topo com o endereço certo
   await ler(page, "R999-P1-A0-AP1");
   await expect(page.locator("#pickAlerta")).toContainText(`VÁ PARA ${item.end}`);

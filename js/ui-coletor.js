@@ -65,13 +65,14 @@ document.addEventListener("click", (e) => {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(focarLeitura, 60); });
 
 // ---------- teclado físico travado no modo Fn ----------
-// No coletor (ex.: Chainway C6000), com o modo Fn ligado as teclas de número viram F1…F9 — inclusive os
+// No coletor (ex.: Chainway C6000), com o modo Fn ligado as teclas 1 a 6 viram F1…F6 — inclusive os
 // números que o LEITOR "digita": o código chega pela metade e o Chrome abre a ajuda (F1).
-// O app não usa teclas F nas telas do coletor; se chegar uma, é o Fn travado: avisa, tenta impedir o
-// efeito da tecla no navegador e descarta o bipe estragado.
+// Só F1…F6 indicam o Fn travado (o teclado do C6000 só tem essas). As outras teclas F são ignoradas:
+// o próprio gatilho SCAN envia F9 (KeyCode 139 no app do leitor) antes de cada código.
+// Com F1…F6: avisa, tenta impedir o efeito da tecla no navegador e descarta o bipe estragado.
 let fnQuando = 0, fnAviso = 0;
 document.addEventListener("keydown", (e) => {
-  if (!/^F([1-9]|1[0-2])$/.test(e.key)) return;
+  if (!/^F[1-6]$/.test(e.key)) return;
   e.preventDefault();
   fnQuando = Date.now();
   const i = document.activeElement;
