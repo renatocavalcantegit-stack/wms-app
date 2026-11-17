@@ -371,8 +371,9 @@ a.btn { text-decoration: none; }
 .order-cb svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 3; }
 .lote-peds { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: var(--ink-2); }
 .lote-peds span { display: inline-flex; align-items: center; gap: 6px; }
-.pos { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 6px; background: #1A56DB; color: #fff; font: 800 12px Montserrat, Inter, sans-serif; }
-.pos.big { min-width: 32px; height: 32px; font-size: 16px; border-radius: 9px; flex: none; }
+/* letra da caixa do carrinho no lote ("cx-pos": não confundir com body.pos, o modo posto da Conferência) */
+.cx-pos { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 6px; background: #1A56DB; color: #fff; font: 800 12px Montserrat, Inter, sans-serif; }
+.cx-pos.big { min-width: 32px; height: 32px; font-size: 16px; border-radius: 9px; flex: none; }
 .lote-bar { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .lote-bar .btn { align-self: flex-start; padding: 9px 14px; font-size: 14px; }
 .lote-bar .btn.on { border-color: var(--red); color: var(--red); }
@@ -383,7 +384,7 @@ a.btn { text-decoration: none; }
 .caixa { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--card); border: 2px solid var(--line); }
 .caixa.atual { border-color: #1A56DB; background: #F3F7FF; }
 .caixa.cheia { border-color: var(--ok); }
-.caixa.cheia .pos { background: var(--ok); }
+.caixa.cheia .cx-pos { background: var(--ok); }
 .caixa.falta { border-color: var(--warn); }
 .caixa-ped { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; }
 .caixa-ped small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -169,7 +169,7 @@ import {
         <div class="grow"><p class="order-id">${l.id} · ${ps.length} pedidos</p>
         <p class="order-client">${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma viagem só</p></div>${tag}
       </div>
-      <div class="lote-peds">${ps.map((o) => `<span><b class="pos">${l.posicoes[o.id]}</b>${esc(o.id)}</span>`).join("")}</div>
+      <div class="lote-peds">${ps.map((o) => `<span><b class="cx-pos">${l.posicoes[o.id]}</b>${esc(o.id)}</span>`).join("")}</div>
       <div class="order-meta"><span><b>${itens}</b> itens</span><span><b>${un}</b> un.</span></div>
       ${l.status === "andamento" ? `<div class="order-bar"><i style="width:${Math.round((feitos / itens) * 100)}%"></i></div>` : ""}
     </button>`;
@@ -204,7 +204,7 @@ import {
     const go = $("#startGo"); go.textContent = "Criar lote e iniciar"; go.dataset.id = ""; go.dataset.lote = ""; go.dataset.novo = "1";
     openSheet("sheetStart");
   });
-  const posLine = (pos, o) => `<div class="line"><b class="pos big">${pos}</b><span class="line-desc">${esc(o.id)} · ${esc(o.cliente)}<small>${o.itens.length} itens · ${units(o)} un.${o.prio === "alta" ? " · prioridade" : ""}</small></span></div>`;
+  const posLine = (pos, o) => `<div class="line"><b class="cx-pos big">${pos}</b><span class="line-desc">${esc(o.id)} · ${esc(o.cliente)}<small>${o.itens.length} itens · ${units(o)} un.${o.prio === "alta" ? " · prioridade" : ""}</small></span></div>`;
 
   $("#orderList").addEventListener("click", (e) => {
     const lc = e.target.closest("[data-lote]");
@@ -382,7 +382,7 @@ import {
     $("#loteBox").innerHTML = `<p class="lote-h">Total desta parada: <b>${p.total}</b> · coloque em cada caixa</p>` + p.linhas.map((l, k) => {
       const o = pedido(l.pedido), vai = dist ? dist[k].sep : l.qtd, falta = dist && dist[k].falta;
       return `<div class="caixa ${falta ? "falta" : ""} ${l.status === "ok" ? "cheia" : ""}">
-        <b class="pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}${falta ? ` · falta ${l.qtd - vai}` : ""}</small></span>
+        <b class="cx-pos big">${l.pos}</b><span class="caixa-ped">${esc(l.pedido)}<small>${esc(o.cliente)}${falta ? ` · falta ${l.qtd - vai}` : ""}</small></span>
         <span class="caixa-q">${vai}<small>/${l.qtd}</small></span></div>`;
     }).join("");
   }
