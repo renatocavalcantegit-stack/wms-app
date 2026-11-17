@@ -446,7 +446,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $("#pickCard .product").classList.toggle("wait", e === "produto");
     $("#scanForm").hidden = e === "quantidade";
     $("#scanInput").placeholder = e === "endereco" ? "Bipe o QR ou digite o ID" : "Bipe ou digite EAN / SKU";
-    $("#scanInput").inputMode = "text";
+    $("#scanInput").dataset.teclado = "text"; // tipo de teclado quando a pessoa toca no campo (o foco automático não abre teclado)
     $(".qty").classList.toggle("locked", e !== "quantidade");
     $("#qtyInput").disabled = e !== "quantidade";
     $("#btnShort").disabled = !endOk; // falta (ex.: endereço vazio) só depois de confirmar o endereço

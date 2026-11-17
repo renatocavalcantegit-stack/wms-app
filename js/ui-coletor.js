@@ -64,6 +64,29 @@ document.addEventListener("click", (e) => {
 // voltou para o app (desbloqueou a tela, trocou de aplicativo)
 document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(focarLeitura, 60); });
 
+// ---------- teclado da tela só quando o usuário toca no campo ----------
+// O coletor tem teclado físico e leitor: quando o app coloca o foco num campo sozinho (bipe, quantidade),
+// o teclado da tela NÃO sobe (inputmode="none"), senão ele cobre metade da tela pequena.
+// Se a pessoa TOCA no campo, o teclado volta (com o tipo certo: números ou texto).
+let toqueEm = null, toqueQuando = 0;
+const tecladoDe = (i) => i.dataset.teclado ?? (i.dataset.teclado = i.getAttribute("inputmode") || "");
+function semTeclado(i) { tecladoDe(i); i.inputMode = "none"; }
+function comTeclado(i) { const t = tecladoDe(i); if (t) i.inputMode = t; else i.removeAttribute("inputmode"); }
+const ehCampo = (el) => el && el.matches && el.matches("input:not([type=checkbox]):not([type=radio]), textarea");
+document.addEventListener("pointerdown", (e) => { toqueEm = e.target; toqueQuando = Date.now(); }, true);
+document.addEventListener("focusin", (e) => {
+  const i = e.target;
+  if (!ehCampo(i)) return;
+  const tocou = toqueEm === i && Date.now() - toqueQuando < 1500;
+  if (tocou) comTeclado(i); else semTeclado(i);
+}, true);
+// tocou no campo que já estava focado (sem teclado): abre o teclado agora
+document.addEventListener("click", (e) => {
+  const i = e.target;
+  if (!ehCampo(i) || document.activeElement !== i || i.inputMode !== "none") return;
+  comTeclado(i); i.blur(); i.focus();
+}, true);
+
 // ---------- sheets (painéis que sobem do rodapé) ----------
 export function openSheet(id) {
   $$(".sheet").forEach((s) => (s.hidden = s.id !== id));

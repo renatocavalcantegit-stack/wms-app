@@ -44,6 +44,16 @@ test("separação no coletor pequeno: tudo à vista, campo focado, erro no topo 
   await page.locator("#scrim").click({ position: { x: 10, y: 10 } });
   await expect(page.locator("#scanInput")).toBeFocused();
 
+  // foco automático NÃO sobe o teclado da tela; tocar no campo sobe (com teclado de texto)
+  await expect(page.locator("#scanInput")).toHaveAttribute("inputmode", "none");
+  await page.locator("#scanInput").click();
+  await expect(page.locator("#scanInput")).toBeFocused();
+  await expect(page.locator("#scanInput")).toHaveAttribute("inputmode", "text");
+  // o próximo foco automático (quantidade, depois de bipar o produto) volta a ser sem teclado
+  await ler(page, item.ean || item.sku);
+  await expect(page.locator("#qtyInput")).toBeFocused();
+  await expect(page.locator("#qtyInput")).toHaveAttribute("inputmode", "none");
+
   // F1 depois do endereço: abre o registro de falta
   await page.keyboard.press("F1");
   await expect(page.locator("#sheetShort")).toBeVisible();
