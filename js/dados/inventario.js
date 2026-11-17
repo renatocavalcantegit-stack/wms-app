@@ -152,3 +152,27 @@ export function sincronizar(invId, usuario) {
   gravarEstoque(db);
   return { ok: true, ajustes: plano.ajustes.length, novosPadrao: inv.novosPadrao.length };
 }
+
+// ---------- divergências de saldo da separação ----------
+// o separador confirmou mais do que o sistema tinha no endereço; o gestor abre um inventário rotativo
+// só daquele produto naquele endereço (a contagem corrige o saldo pelo caminho de sempre)
+export function inventariarDivergencia(divergenciaId, usuario) {
+  const d = lerEstoque().divergencias.find((x) => x.id === divergenciaId);
+  if (!d || d.status !== "aberta") return { ok: false, msg: "DIVERGÊNCIA JÁ TRATADA." };
+  const r = criarInventario({ tipo: "rotativo", descricao: `Divergência ${d.id} · ${d.produto}${d.pedido ? ` · ${d.pedido}` : ""}`,
+    pares: [{ enderecoId: d.enderecoId, produto: d.produto }], usuario });
+  if (!r.ok) return r;
+  const db = lerEstoque();
+  Object.assign(db.divergencias.find((x) => x.id === divergenciaId), { status: "inventario", inventario: r.inventario.id, tratadaPor: usuario, tratadaEm: agora() });
+  gravarEstoque(db);
+  return r;
+}
+// encerrar sem inventário (ex.: o gestor já sabe a causa); fica registrado quem encerrou
+export function encerrarDivergencia(divergenciaId, usuario) {
+  const db = lerEstoque();
+  const d = db.divergencias.find((x) => x.id === divergenciaId);
+  if (!d || d.status !== "aberta") return { ok: false, msg: "DIVERGÊNCIA JÁ TRATADA." };
+  Object.assign(d, { status: "encerrada", tratadaPor: usuario, tratadaEm: agora() });
+  gravarEstoque(db);
+  return { ok: true };
+}

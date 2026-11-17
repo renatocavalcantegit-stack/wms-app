@@ -7,7 +7,7 @@
 // Assim o sistema sabe que ele está na prateleira certa com o produto certo, e a falta "endereço vazio" é confiável.
 // As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
-import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao } from "./js/dados/separacao.js";
+import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos } from "./js/dados/separacao.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -86,6 +86,34 @@ import {
     renderHome(); show("viewHome");
   }
 
+  // ---------- o gestor mudou o pedido em outra tela (corte de item ou cancelamento) ----------
+  // Recarrega os pedidos e redesenha o que está aberto. O item cortado é pulado; pedido cancelado
+  // sem nada separado some; com algo separado, o separador termina e leva para a doca (a conferência devolve).
+  const visivel = (v) => !$("#" + v).hidden;
+  function recarregarPorOutraTela() {
+    if (!sess || sess.perfil !== "sep" || !sess.setor) return;
+    const id = current?.id, loteId = lote?.id;
+    load();
+    if (id) {
+      current = pedido(id);
+      if (!current || current.status === "cancelado") {
+        current = null; renderHome(); show("viewHome"); toast("PEDIDO CANCELADO PELO GESTOR"); beep(false); return;
+      }
+      if (!visivel("viewPick")) return;
+      if (current.cancelado) toast("PEDIDO CANCELADO PELO GESTOR · leve o que já separou para a doca");
+      return item().status === "pendente" ? renderPick() : next();
+    }
+    if (loteId) {
+      lote = lotes.find((l) => l.id === loteId) || null;
+      if (!lote) { renderHome(); show("viewHome"); return; }
+      if (!visivel("viewPick")) return;
+      const p = paradas()[lote.atual];
+      return p && !paradaConcluida(p) ? renderPick() : proximaParada(true);
+    }
+    if (visivel("viewHome")) renderHome();
+  }
+  ["exp", "mont"].forEach((s) => aoMudarPedidos(s, () => s === setor() && recarregarPorOutraTela()));
+
   // ---------- setor (Expedição / Montagem) ----------
   function openSetor(canBack) {
     $("#sxHello").textContent = `Olá, ${user}`;
@@ -119,7 +147,7 @@ import {
 
     // pedido de um lote em aberto aparece dentro do cartão do lote (não sozinho)
     const noLoteAtivo = new Set(lotes.filter(loteAtivo).flatMap((l) => l.pedidos));
-    const avulsos = orders.filter((o) => !noLoteAtivo.has(o.id))
+    const avulsos = orders.filter((o) => !noLoteAtivo.has(o.id) && o.status !== "cancelado") // cancelado pelo gestor sai da lista
       .filter((o) => filter === "todos" || (filter === "concluido" ? o.status === "concluido" : o.status !== "concluido"))
       .map((o) => ({ r: rank(o), html: orderCard(o) }));
     const deLote = selecionando || filter === "concluido" ? [] : lotes.filter(loteAtivo).map((l) => ({ r: rankLote(l), html: loteCard(l) }));
@@ -144,7 +172,8 @@ import {
   function orderCard(o) {
     const pct = Math.round((doneCount(o) / o.itens.length) * 100);
     const sel = selecionando && podeSelecionar(o), marcado = selecionados.has(o.id);
-    const tag = o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
+    const tag = o.cancelado ? `<span class="tag alta">Cancelado</span>`
+      : o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
       : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
     const extra = o.parte ? `<p class="order-note">Pedido dividido pelo coordenador · ${esc(o.parte.ruas || "")}</p>` : "";
@@ -247,6 +276,9 @@ import {
   }
 
   function lineHtml(i, idx, cur) {
+    // item zerado pelo gestor antes de separar: aparece riscado e não pode ser escolhido
+    if (i.status === "cortado") return `<div class="line sp-cortado"><span class="dot"></span><span class="line-addr">${i.end}</span>
+      <span class="line-desc">${esc(i.desc)}<small>${i.sku} · cortado pelo gestor</small></span><span class="line-q">0</span></div>`;
     const dot = i.status === "ok" ? `<span class="dot ok">${CHECK}</span>`
       : i.status === "falta" ? `<span class="dot falta">!</span>` : `<span class="dot"></span>`;
     return `<button class="line ${cur ? "current" : ""}" ${idx != null ? `data-idx="${idx}"` : ""}>
@@ -276,10 +308,12 @@ import {
       if (erro) { closeSheets(); toast(erro); beep(false); return; }
       estornarSeparacao({ pedido: o.id, usuario: sess?.login });
       retirarDaConferencia(setor(), idNaConferencia);
-      o.itens.forEach((i) => Object.assign(i, { sep: 0, status: "pendente", motivo: "" }));
+      o.itens.forEach((i) => Object.assign(i, { sep: 0, status: i.qtd === 0 ? "cortado" : "pendente", motivo: "", devolver: 0 }));
       Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null, prodOk: null });
     }
     if (o.status === "pendente") { o.status = "andamento"; o.inicio = Date.now(); o.operador = user; }
+    // começa no primeiro item ainda a separar (pula o que o gestor cortou)
+    if (o.itens[o.atual || 0]?.status !== "pendente") o.atual = Math.max(0, o.itens.findIndex((i) => i.status === "pendente"));
     current = o; lote = null; save(); closeSheets();
     // todos os itens já resolvidos (saiu do app na hora de ler a doca): vai direto para a doca
     if (!o.itens.some((i) => i.status === "pendente")) return abrirDoca({ pedidos: [o.id], lote: null });
@@ -575,7 +609,7 @@ import {
     openSheet("sheetList");
   });
   $("#pickItems").addEventListener("click", (e) => {
-    const l = e.target.closest(".line"); if (!l) return;
+    const l = e.target.closest(".line[data-idx]"); if (!l) return;
     if (lote) lote.atual = +l.dataset.idx; else current.atual = +l.dataset.idx;
     save(); closeSheets(); renderPick(true);
   });
@@ -639,7 +673,8 @@ import {
   });
 
   function concluir(doca) {
-    const fim = Date.now(), ps = docaAlvo.pedidos.map(pedido);
+    // pedido de lote cancelado pelo gestor sem nada separado não vai para a doca
+    const fim = Date.now(), ps = docaAlvo.pedidos.map(pedido).filter((o) => o.status !== "cancelado");
     ps.forEach((o) => Object.assign(o, { status: "concluido", fim, doca: { ...doca, quando: fim, por: user } }));
     const l = docaAlvo.lote ? lotes.find((x) => x.id === docaAlvo.lote) : null;
     if (l) Object.assign(l, { status: "concluido", fim, doca });

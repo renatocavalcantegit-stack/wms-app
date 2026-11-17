@@ -84,7 +84,8 @@ export async function lerDoca(page, codigo = "R9002-P1-A100-AP101") {
 export async function separarPedido(page, id, doca, setor = "exp") {
   await abrirPedidoNoColetor(page, id);
   const pedido = (await separacao(page, setor)).find((o) => o.id === id);
-  for (const item of pedido.itens) await separarItem(page, item);
+  // item que o gestor cortou antes de separar é pulado pelo coletor
+  for (const item of pedido.itens.filter((i) => i.status !== "cortado")) await separarItem(page, item);
   await lerDoca(page, doca);
 }
 
@@ -106,4 +107,21 @@ export async function finalizarConferencia(page, volumes = 1) {
   await page.locator("#oGo").click();
   await expect(page.locator("#mDone")).toBeVisible();
   await page.locator("#dGo").click();
+}
+
+// confere item por item: produto com checkout = um bipe por unidade; granel = bipe + quantidade
+export async function conferirTudo(page, id) {
+  const o = (await conferencia(page)).find((x) => x.id === id);
+  const db = await estoque(page);
+  for (const i of o.itens) {
+    if (!i.sep) continue; // nada na caixa (ex.: cortado pelo gestor)
+    const granel = db.produtos.find((p) => p.codigo === i.sku)?.checkout === false;
+    if (granel) {
+      await bipar(page, i.sku);
+      await page.locator("#mult").fill(String(i.sep));
+      await page.locator("#mult").press("Enter");
+    } else {
+      for (let k = 0; k < i.sep; k++) await bipar(page, i.ean || i.sku);
+    }
+  }
 }

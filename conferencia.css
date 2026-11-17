@@ -69,6 +69,17 @@ tr.excesso .s-dot, tr.fora .s-dot { background: var(--red); }
 .tag.ok { background: var(--ok-soft); color: var(--ok); }
 .sub-warn { display: block; font-size: 11.5px; color: var(--warn); font-weight: 600; margin-top: 2px; }
 
+/* devolução: o que o gestor cortou ou cancelou e tem que sair da caixa */
+.cf-dev { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: #F3E8FF; border: 1px solid #D8B4FE; color: #581C87; font-size: 13px; }
+.cf-dev.feito { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.cf-dev-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cf-dev-top > span { color: inherit; opacity: .8; }
+.cf-dev-top .lb-btn { margin-left: auto; }
+.cf-dev-ok { margin-left: auto; font-weight: 700; }
+.cf-dev-row { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; padding: 6px 0 0; }
+/* modo devolução ligado: o campo de leitura fica roxo para o conferente não confundir */
+body.cf-devolvendo .pos-scan { outline: 3px solid #A855F7; border-radius: 12px; }
+
 /* ---------- cabeçalho do pedido ---------- */
 .ord-head { display: flex; align-items: center; gap: 20px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 20px; }
 .ord-id { display: flex; flex-direction: column; padding-right: 20px; border-right: 1px solid var(--line); }

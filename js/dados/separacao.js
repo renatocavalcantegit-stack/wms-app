@@ -23,6 +23,11 @@ export function salvarPedidos(setor, pedidos) {
   localStorage.setItem(chave(setor), JSON.stringify(pedidos));
 }
 
+// avisa a tela quando OUTRA aba/janela mudou os pedidos (ex.: o gestor cortou um item ou cancelou um pedido)
+export function aoMudarPedidos(setor, fn) {
+  window.addEventListener("storage", (e) => { if (e.key === chave(setor)) fn(); });
+}
+
 // só o que já foi gravado (sem demonstração); a Conferência usa para buscar os pedidos concluídos
 export function lerPedidosSalvos(setor) {
   try {

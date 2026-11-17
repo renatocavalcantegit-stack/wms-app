@@ -8,6 +8,7 @@ import {
   validarLote, posicoesDoLote, montarParadas, MAX_PEDIDOS_LOTE, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, MIN_PARTES, MAX_PARTES,
 } from "./compartilhado/regras/separacao.js";
 import { CLIENTES } from "./js/demo-clientes.js";
+import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
 
 (() => {
   "use strict";
@@ -730,6 +731,16 @@ import { CLIENTES } from "./js/demo-clientes.js";
   // ---------- render ----------
   function render(reset = false) {
     if (dragId) { pendingRender = true; return; }
+    // aba Ocorrências: pedidos de verdade, fora da simulação. Só redesenha ao entrar nela
+    // (a simulação redesenha o quadro a cada passo e apagaria o que o gestor está digitando).
+    if (board === "ocorr") {
+      const b = $("#board");
+      if (reset || !b.querySelector(".oc-wrap")) {
+        b.classList.add("list");
+        b.innerHTML = telaOcorrencias(SETOR, { usuario: sess.nome, toast });
+      }
+      renderTop(); return;
+    }
     [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
     [...selSep].forEach((id) => { if (!db.sep.inbox.includes(id)) selSep.delete(id); });
     const b = $("#board");
@@ -1805,6 +1816,8 @@ import { CLIENTES } from "./js/demo-clientes.js";
     board = b.dataset.board; localStorage.setItem(BKEY, board);
     closePop(); render(true);
   });
+
+  ligarOcorrencias($("#board"));
 
   // ---------- início ----------
   load();

@@ -11,15 +11,15 @@ import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 import { exigeCheckout } from "../../compartilhado/regras/produtos.js";
 
-// v10: código bom de célula suja é mantido (ex.: câmara 176); v9: códigos de barras reais (embalagens) e granel = sem código; v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
+// v11: doca de devolução e divergências de saldo da separação; v10: código bom de célula suja é mantido (ex.: câmara 176); v9: códigos de barras reais (embalagens) e granel = sem código; v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
-const CHAVE = "wms-bb-estoque-v10";
+const CHAVE = "wms-bb-estoque-v11";
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
   try {
     const d = JSON.parse(localStorage.getItem(CHAVE));
-    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas) && Array.isArray(d.tarefas) && Array.isArray(d.inventarios)) return d;
+    if (d && Array.isArray(d.enderecos) && Array.isArray(d.produtos) && Array.isArray(d.notas) && Array.isArray(d.tarefas) && Array.isArray(d.inventarios) && Array.isArray(d.divergencias)) return d;
   } catch {}
   return estoqueDeDemonstracao();
 }

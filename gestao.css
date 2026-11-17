@@ -392,3 +392,37 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 .dv-tab tr.dv-p3 td:first-child { box-shadow: inset 4px 0 0 #16A34A; }
 .dv-tab tr.dv-p4 td:first-child { box-shadow: inset 4px 0 0 #7C3AED; }
 .gx-modal p.dv-erro { color: var(--red); font-weight: 600; min-height: 1em; }
+
+/* ===== aba Ocorrências (corte de item e cancelamento do pedido) ===== */
+.oc-wrap { max-width: 1100px; margin: 0 auto; padding: 8px 0 40px; }
+.oc-head h1 { font-family: Montserrat, Inter, sans-serif; font-size: 22px; font-weight: 800; }
+.oc-head p { color: var(--ink-3); font-size: 13.5px; margin-top: 4px; max-width: 760px; }
+.oc-busca { display: flex; gap: 8px; margin: 16px 0 10px; }
+.oc-busca input { flex: 0 1 320px; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); }
+.oc-msg { margin: 8px 0; font-weight: 600; font-size: 13.5px; }
+.oc-msg.ok { color: var(--ok); }
+.oc-msg.err { color: var(--red); }
+.oc-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 10px 0 24px; }
+.oc-card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.oc-id { font-family: Montserrat, Inter, sans-serif; font-size: 20px; font-weight: 800; }
+.oc-cli { color: var(--ink-2); margin-left: 8px; }
+.oc-etapa { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: #EDEDF0; color: var(--ink-2); }
+.oc-etapa.conferido, .oc-etapa.conferencia { background: #E8F0FE; color: #1A56DB; }
+.oc-etapa.cancelado, .oc-etapa.carregamento { background: var(--red-soft); color: var(--red); }
+.oc-efeito { color: var(--ink-2); font-size: 13px; margin: 10px 0; }
+.oc-tab { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.oc-tab th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--ink-3); padding: 8px; border-bottom: 1px solid var(--line); }
+.oc-tab td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.oc-tab .r { text-align: right; }
+.oc-tab .mono { font-family: "JetBrains Mono", monospace; font-weight: 700; }
+.oc-dev { color: #7E22CE; font-weight: 800; }
+.oc-qtd { width: 90px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; text-align: right; font-size: 14px; }
+.oc-campos { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.oc-campos label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.oc-campos select, .oc-campos input { height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; min-width: 240px; background: var(--card); }
+.oc-acoes { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 14px; }
+.oc-perigo { color: var(--red); border-color: var(--red); margin-right: auto; }
+.oc-pergunta { margin-right: auto; font-weight: 700; color: var(--red); }
+.oc-h2 { font-size: 15px; font-weight: 800; margin: 8px 0; }
+.oc-hist { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.oc-vazio { text-align: center; color: var(--ink-3); padding: 18px !important; }

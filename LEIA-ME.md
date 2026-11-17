@@ -18,6 +18,7 @@ compartilhado/regras/    regras de negócio puras (sem tela, sem armazenamento)
   movimentacao.js        mínimo/máximo, origens do abastecimento (menor saldo, mais perto), passos da tarefa, transferência
   inventario.js          contagens C1 a C5, situação do item e do endereço, decisão, sincronização atômica
   separacao.js           doca de expedição, lote (2 a 6 pedidos numa viagem, caixas A–F), pedido dividido entre separadores (2 a 4 partes)
+  ocorrencias.js         corte de item e cancelamento do pedido (o que diminui, o que volta pela doca de devolução, o que bloqueia)
 
 js/
   sessao.js              login de demonstração e sessão guardada no aparelho
@@ -30,7 +31,9 @@ js/
   dados/estoque.js       camada de dados do Estoque: endereços, produtos, embalagens, endereço padrão e saldos
   dados/recebimento.js   camada de dados do Recebimento: notas, conferências, volumes, armazenamento, notas do ERP
   dados/movimentacao.js  camada de dados da Movimentação: tarefas de abastecimento, limites, transferência, baixa da separação
-  dados/inventario.js    camada de dados do Inventário: criar, incluir, finalizar contagem, decidir, finalizar e sincronizar
+  dados/inventario.js    camada de dados do Inventário: criar, incluir, finalizar contagem, decidir, finalizar e sincronizar; divergências de saldo
+  dados/ocorrencias.js   corte e cancelamento do pedido: mexe na Separação, na Conferência e no Embarque ao mesmo tempo, com histórico
+  dados/embarque.js      consulta às cargas do Embarque (pedido em carregamento) e retirada de pedido cancelado
   qr.js                  desenho do QR Code em SVG
   etiqueta-produto.js    desenho da etiqueta de produto (QR em SVG, linhas de 3)
   etiqueta-recebimento.js   etiqueta do volume do recebimento (80 × 60 mm, QR com o código do volume)
@@ -51,6 +54,7 @@ estoque-movimentacao.js  coletor do Estoquista, Movimentação: abastecimento (a
 gestao-movimentacao.js   Gestão de Estoque (WEB), aba Movimentação: tarefas de abastecimento e mínimo/máximo do picking
 estoque-inventario.js    coletor do Estoquista, Auditoria: contagem do inventário (endereço → produto → quantidade → INCLUIR)
 gestao-inventario.js     Gestão de Estoque (WEB), aba Inventário: criar, acompanhar, aprovar divergências, finalizar, sincronizar, histórico
+gestao-ocorrencias.js    Gestão de Expedição (WEB), aba Ocorrências: corte de item e cancelamento do pedido, com motivo e referência do Sankhya
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
 testes/                  testes automatizados das regras e dados (rodam no Node, sem instalar nada)

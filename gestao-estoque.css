@@ -42,6 +42,7 @@ body.ge { background: #F1F1F4; min-height: 100vh; }
 .ge-tipo.aereo { background: var(--ink); color: #fff; }
 .ge-tipo.doca { background: var(--warn-soft); color: var(--warn); }
 .ge-tipo.expedicao { background: #E8F0FE; color: #1A56DB; }
+.ge-tipo.devolucao { background: #F3E8FF; color: #7E22CE; }
 .ge-sit { font-size: 12px; font-weight: 700; }
 .ge-sit.ok { color: var(--ok); }
 .ge-sit.off { color: var(--ink-3); text-transform: uppercase; letter-spacing: .5px; font-size: 11px; }
@@ -120,6 +121,8 @@ body.ge { background: #F1F1F4; min-height: 100vh; }
 .ge-subabas { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
 .ge-subabas button { padding: 9px 14px; font-size: 13.5px; font-weight: 600; color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .ge-subabas button.on { color: var(--ink); border-bottom-color: var(--red); }
+/* contador de divergências abertas na sub-aba */
+.gm-conta { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .ge-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 240px; color: var(--ink-2); font-size: 12px; line-height: 1.3; }
 .ge-origs { display: flex; flex-direction: column; gap: 3px; }
 .ge-orig { font-size: 12px; color: var(--ink-2); white-space: nowrap; }

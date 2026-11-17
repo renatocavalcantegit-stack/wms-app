@@ -220,6 +220,8 @@ function enderecosDeDemonstracao() {
   // dois endereços já desativados, para mostrar o filtro de INATIVOS
   lista.find((e) => e.codigo === "R3004-P6-A500-AP503").ativo = false;
   lista.find((e) => e.codigo === "R3004-P6-A300-AP306").ativo = false;
+  // doca de devolução (rua 9003), no fim da lista para não mudar o ID dos endereços acima
+  add(9003, 1, 100, 101, "devolucao");
   return lista;
 }
 
@@ -467,7 +469,9 @@ export function estoqueDeDemonstracao() {
     limites: mov.limites, tarefas: mov.tarefas,
     inventarios: inv.inventarios,
     movimentos: [],
-    proximoId: { endereco: Math.max(...enderecos.map((e) => e.id)) + 1, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa, inventario: inv.proximoInventario },
+    // separação que confirmou mais do que o sistema tinha no endereço (o gestor de estoque investiga)
+    divergencias: [],
+    proximoId: { endereco: Math.max(...enderecos.map((e) => e.id)) + 1, embalagem: 100, ...rec.proximos, tarefa: mov.proximaTarefa, inventario: inv.proximoInventario, divergencia: 1 },
   };
 }
 

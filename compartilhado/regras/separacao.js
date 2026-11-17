@@ -49,6 +49,7 @@ export function montarParadas(pedidos, posicoes) {
   const ordem = [...pedidos].sort((a, b) => posicoes[a.id].localeCompare(posicoes[b.id]));
   for (const p of ordem) {
     p.itens.forEach((i, idx) => {
+      if (i.status === "cortado") return; // o gestor zerou antes de separar: não vira parada
       const chave = `${i.end}|${i.sku}`;
       if (!mapa.has(chave)) mapa.set(chave, { end: i.end, sku: i.sku, ean: i.ean, eans: i.eans, desc: i.desc, tipo: i.tipo, linhas: [] });
       mapa.get(chave).linhas.push({ pedido: p.id, pos: posicoes[p.id], idx, qtd: i.qtd, sep: i.sep, status: i.status });

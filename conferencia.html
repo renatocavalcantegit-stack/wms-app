@@ -15,9 +15,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=37">
-  <link rel="stylesheet" href="conferencia.css?v=37">
-  <link rel="stylesheet" href="etiqueta.css?v=37">
+  <link rel="stylesheet" href="styles.css?v=38">
+  <link rel="stylesheet" href="conferencia.css?v=38">
+  <link rel="stylesheet" href="etiqueta.css?v=38">
 </head>
 <body class="pos">
 
@@ -82,6 +82,8 @@
             <button id="aRestart" class="ord-act" title="Recomeçar pedido (F8)"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>Recomeçar</span></button>
           </div>
         </div>
+        <!-- devolução: o que o gestor cortou/cancelou e tem que sair da caixa -->
+        <div id="cfDev" class="cf-dev" hidden></div>
         <div class="tbl-wrap">
           <table class="tbl items">
             <thead><tr><th></th><th>Código</th><th>Descrição</th><th>Endereço</th><th class="r">Pedido</th><th class="r">Separado</th><th class="r">Conferido</th><th>Situação</th></tr></thead>
@@ -132,6 +134,7 @@
     <span><kbd>F4</kbd> Quantidade</span>
     <span><kbd>F6</kbd> Estornar última leitura</span>
     <span><kbd>F8</kbd> Recomeçar pedido</span>
+    <span><kbd>F9</kbd> Devolução</span>
     <span><kbd>F10</kbd> Finalizar</span>
     <span><kbd>Esc</kbd> Limpar</span>
     <span class="pos-keys-tip">Dica: digite <code>5*7891000200018</code> para lançar 5 unidades</span>
@@ -261,7 +264,7 @@
 
   <div id="printArea"></div>
 
-  <script src="vendor/qrcode.js?v=37"></script>
-  <script type="module" src="conferencia.js?v=37"></script>
+  <script src="vendor/qrcode.js?v=38"></script>
+  <script type="module" src="conferencia.js?v=38"></script>
 </body>
 </html>

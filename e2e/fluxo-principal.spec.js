@@ -2,26 +2,10 @@
 // Separação (coletor) → saldo do picking baixa → Conferência (notebook) → Embarque (coletor).
 import { test, expect } from "@playwright/test";
 import {
-  entrar, estoque, separacao, conferencia, saldo, separarPedido, abrirNaConferencia, bipar, finalizarConferencia,
+  entrar, estoque, separacao, conferencia, saldo, separarPedido, abrirNaConferencia, finalizarConferencia, conferirTudo,
 } from "./ajuda.js";
 
 const PEDIDO = "PV-10421";
-
-// confere item por item: produto com checkout = um bipe por unidade; granel = bipe + quantidade
-export async function conferirTudo(page, id) {
-  const o = (await conferencia(page)).find((x) => x.id === id);
-  const db = await estoque(page);
-  for (const i of o.itens) {
-    const granel = db.produtos.find((p) => p.codigo === i.sku)?.checkout === false;
-    if (granel) {
-      await bipar(page, i.sku);
-      await page.locator("#mult").fill(String(i.sep));
-      await page.locator("#mult").press("Enter");
-    } else {
-      for (let k = 0; k < i.sep; k++) await bipar(page, i.ean || i.sku);
-    }
-  }
-}
 
 test("pedido separado baixa o picking, chega na conferência com a doca e embarca", async ({ page }) => {
   await entrar(page, "separador");

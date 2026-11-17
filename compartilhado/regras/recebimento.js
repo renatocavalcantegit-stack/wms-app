@@ -70,6 +70,15 @@ export function validarDoca(endereco) {
   return null;
 }
 
+// armazenamento: sai de uma doca de recebimento OU da doca de devolução (o fluxo do estoquista é o mesmo)
+export const MSG_NAO_E_DOCA_ARMAZENAR = "ENDEREÇO NÃO É DOCA DE RECEBIMENTO NEM DE DEVOLUÇÃO. LEIA O QR DA DOCA.";
+export function validarDocaDeArmazenamento(endereco) {
+  if (!endereco) return MSG_ENDERECO_NAO_ENCONTRADO;
+  if (!endereco.ativo) return MSG_ENDERECO_INATIVO;
+  if (endereco.tipo !== "doca" && endereco.tipo !== "devolucao") return MSG_NAO_E_DOCA_ARMAZENAR;
+  return null;
+}
+
 // bipar a caixa conta a quantidade dela: 2 caixas de 12 = 24 unidades
 export const quantidadeEmUnidades = (embalagem, quantasEmbalagens) => (embalagem ? embalagem.qtd : 1) * Number(quantasEmbalagens);
 

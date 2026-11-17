@@ -5,6 +5,7 @@ import { esc } from "./js/util.js";
 import { session } from "./js/sessao.js";
 import { enderecoPorId, produtoPorCodigo, saldoNoEndereco, enderecosPadraoDoProduto } from "./js/dados/estoque.js";
 import { tarefaPorId, limiteDe, criarTarefa, cancelarTarefa, alterarPrioridade, salvarLimite } from "./js/dados/movimentacao.js";
+import { inventariarDivergencia, encerrarDivergencia } from "./js/dados/inventario.js";
 import { compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos } from "./compartilhado/regras/embalagens.js";
 import { PRIORIDADES, STATUS_TAREFA, tarefaPendente, planejadoDaTarefa, abastecidoDaTarefa, precisaAbastecer } from "./compartilhado/regras/movimentacao.js";
@@ -24,7 +25,9 @@ const pilulaPrioridade = (p) => pilula(p === "urgente" ? "r" : "g", PRIORIDADES[
 export function telaMovimentacao(db, f) {
   const abas = `<div class="ge-subabas">
     <button class="${f.sub === "tarefas" ? "on" : ""}" data-sub="tarefas">Tarefas de abastecimento</button>
-    <button class="${f.sub === "limites" ? "on" : ""}" data-sub="limites">Mínimo e máximo</button></div>`;
+    <button class="${f.sub === "limites" ? "on" : ""}" data-sub="limites">Mínimo e máximo</button>
+    <button class="${f.sub === "divergencias" ? "on" : ""}" data-sub="divergencias">Divergências de saldo${abertas(db) ? ` <b class="gm-conta">${abertas(db)}</b>` : ""}</button></div>`;
+  if (f.sub === "divergencias") return telaDivergencias(db, f, abas);
   return f.sub === "limites" ? telaLimites(db, f, abas) : telaTarefas(db, f, abas);
 }
 
@@ -179,6 +182,44 @@ function telaLimites(db, f, abas) {
 }
 
 // =====================================================================
+// DIVERGÊNCIAS DE SALDO (a separação confirmou mais do que o sistema tinha no endereço)
+// =====================================================================
+const abertas = (db) => db.divergencias.filter((d) => d.status === "aberta").length;
+const STATUS_DIVERGENCIA = { aberta: ["r", "Aberta"], inventario: ["b", "Em inventário"], encerrada: ["x", "Encerrada"] };
+
+function telaDivergencias(db, f, abas) {
+  const lista = [...db.divergencias].filter((d) => casaBusca(db, d.produto, f.busca))
+    .sort((a, b) => (b.status === "aberta") - (a.status === "aberta") || b.id - a.id); // abertas primeiro, mais novas no topo
+  const { itens, rodape } = tela.paginar(lista, "movimentacao");
+  return `
+  <div class="ge-head">
+    <div><h1>Movimentação</h1><p class="ge-sub">O separador confirmou mais do que o sistema tinha no endereço. O saldo parou em zero; a diferença está aqui para investigar. O caminho sugerido é um inventário rotativo do endereço.</p></div>
+  </div>
+  ${abas}
+  <div class="ge-filtros">
+    <label class="gx-search ge-busca-larga"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input data-f="busca" value="${esc(f.busca)}" placeholder="Produto (código ou descrição)" autocomplete="off"></label>
+  </div>
+  <div class="ge-card">
+    <table class="ge-tab">
+      <thead><tr><th class="r">Nº</th><th>Quando</th><th>Endereço</th><th>Produto</th><th>Pedido</th><th class="r">Sistema</th><th class="r">Separado</th><th class="r">Diferença</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${itens.map((d) => {
+        const p = produtoPorCodigo(db, d.produto), e = enderecoPorId(db, d.enderecoId), [cor, rotulo] = STATUS_DIVERGENCIA[d.status];
+        const acao = d.status === "aberta"
+          ? `<button class="ge-link" data-invdiverg="${d.id}">Inventário rotativo</button> <button class="ge-link" data-encdiverg="${d.id}">Encerrar</button>`
+          : d.inventario ? `Inventário ${d.inventario}` : "";
+        return `<tr data-divergencia="${d.id}">
+          <td class="r">${d.id}</td><td>${hora(d.quando)}</td><td><span class="gaddr">${e ? e.codigo : d.enderecoId}</span></td>
+          <td><b class="mono">${esc(d.produto)}</b> <span class="ge-desc">${esc(p ? p.descricao : "")}</span></td>
+          <td>${esc(d.pedido || "—")}</td><td class="r">${num(d.sistema)}</td><td class="r">${num(d.separado)}</td>
+          <td class="r ge-neg">${num(d.diferenca)}</td><td>${pilula(cor, rotulo)}</td><td class="r">${acao}</td></tr>`;
+      }).join("") || `<tr><td colspan="10" class="ge-vazio">Nenhuma divergência de saldo.</td></tr>`}</tbody>
+    </table>
+    ${rodape}
+  </div>`;
+}
+
+// =====================================================================
 // cliques e formulários (chamados por gestao-estoque.js); devolvem true quando trataram
 // =====================================================================
 export function cliqueMovimentacao(t, db, f) {
@@ -195,6 +236,16 @@ export function cliqueMovimentacao(t, db, f) {
     tela.abrirModal(`<h2>Cancelar tarefa ${t.dataset.canceltarefa}</h2><p class="ge-msg">DESEJA REALMENTE CANCELAR ESTA TAREFA?</p>
       <p>O que já foi abastecido continua no picking.</p>
       <div class="m-act"><button class="btn ghost" data-fechar>Não</button><button class="btn primary" data-confcanceltarefa="${t.dataset.canceltarefa}">Sim, cancelar</button></div>`);
+    return true;
+  }
+  if (t.dataset.invdiverg) {
+    const r = inventariarDivergencia(+t.dataset.invdiverg, session().nome);
+    tela.render(); tela.toast(r.ok ? `Inventário ${r.inventario.id} criado · conte no coletor` : r.msg);
+    return true;
+  }
+  if (t.dataset.encdiverg) {
+    const r = encerrarDivergencia(+t.dataset.encdiverg, session().nome);
+    tela.render(); tela.toast(r.ok ? "Divergência encerrada" : r.msg);
     return true;
   }
   if (t.dataset.salvarlimite !== undefined) {

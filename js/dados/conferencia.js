@@ -13,8 +13,11 @@ const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v7" : "wms-bb-con
 const CHAVE_POSTO = "wms-bb-posto";
 
 // prepara um pedido separado para ser conferido (zera as contagens da conferência)
+// (conferir de novo mantém o que já foi devolvido: essa mercadoria já saiu da caixa e entrou na doca de devolução)
 export function prepararParaConferencia(o) {
-  o.conf = { status: "aguardando", itens: {}, fora: [], log: [], inicio: null, fim: null, volumes: 0, conferente: null };
+  const antes = o.conf || {};
+  o.conf = { status: "aguardando", itens: {}, fora: [], log: [], inicio: null, fim: null, volumes: 0, conferente: null,
+    devolvido: antes.devolvido || {}, postado: antes.postado || {}, reaberto: antes.reaberto || null };
   o.itens.forEach((i) => (o.conf.itens[i.sku] = 0));
   return o;
 }
@@ -29,6 +32,11 @@ export function carregarConferencia(setor) {
   }
   importarConcluidosDaSeparacao(d, setor);
   return d;
+}
+
+// avisa a tela quando OUTRA aba/janela mudou a fila (ex.: o gestor cortou um item ou reabriu um pedido)
+export function aoMudarConferencia(setor, fn) {
+  window.addEventListener("storage", (e) => { if (e.key === chave(setor)) fn(); });
 }
 
 export function salvarConferencia(setor, db) {
@@ -71,7 +79,10 @@ function importarConcluidosDaSeparacao(d, setor) {
   prontos.forEach((o) => {
     const ex = d.orders.find((x) => x.id === o.id);
     if (ex && ex.fim === o.fim) return;
-    const copy = prepararParaConferencia(JSON.parse(JSON.stringify(o)));
+    const copy = JSON.parse(JSON.stringify(o));
+    // item cortado depois de separado: na conferência, "sep" é o que fica na caixa e "devolver" o que sai dela
+    copy.itens.forEach((i) => { if (i.devolver > 0) i.sep -= i.devolver; });
+    prepararParaConferencia(copy);
     if (ex) d.orders[d.orders.indexOf(ex)] = copy; else d.orders.unshift(copy);
   });
 }

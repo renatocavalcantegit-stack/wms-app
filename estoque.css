@@ -28,6 +28,7 @@
 .es-tipo.aereo { background: var(--ink); color: #fff; }
 .es-tipo.doca { background: var(--warn-soft); color: var(--warn); }
 .es-tipo.expedicao { background: #E8F0FE; color: #1A56DB; }
+.es-tipo.devolucao { background: #F3E8FF; color: #7E22CE; }
 .es-qtd { font-weight: 700; color: var(--ink-2); margin-left: 4px; }
 .es-mini { height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 12.5px; font-weight: 600; color: var(--ink-2); background: var(--card); flex-shrink: 0; }
 .es-mini.red { color: var(--red); }

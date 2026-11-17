@@ -41,6 +41,9 @@ export const Embarque = (() => {
       p.obs = k.obs;
       if (!p.lidos.length && k.volumes) p.volumes = k.volumes;
     }));
+    // pedido cancelado pelo gestor sai da carga (enquanto nenhum volume dele foi bipado)
+    const cancelados = new Set(conf.filter((o) => o.conf.status === "cancelado" || o.cancelado).map((o) => o.id));
+    d.forEach((c) => (c.pedidos = c.pedidos.filter((p) => !(cancelados.has(p.id) && !p.lidos.length))));
     const novos = conf.filter((o) => (o.conf.status === "conferido" || o.conf.status === "divergente") && !inCarga.has(o.id));
     if (!novos.length) return;
     let av = d.find((c) => c.id === "CG-AVULSA" && c.status !== "embarcada" && c.status !== "parcial");

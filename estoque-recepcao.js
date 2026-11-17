@@ -9,7 +9,7 @@ import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
-  statusDaNota, resumoDaNota, validarDoca, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
+  statusDaNota, resumoDaNota, validarDoca, validarDocaDeArmazenamento, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
   STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA,
 } from "./compartilhado/regras/recebimento.js";
 
@@ -320,7 +320,7 @@ function desenharPendentes() {
 }
 
 function usarDoca(endereco) {
-  const erro = validarDoca(endereco);
+  const erro = validarDocaDeArmazenamento(endereco);
   if (erro) return msg($("#raMsg"), erro, "err");
   if (!db.conferencias.some((c) => c.docaId === endereco.id && pendenteDaConferencia(c) > 0)) return msg($("#raMsg"), "NADA PENDENTE DE ARMAZENAR NESTA DOCA.", "err");
   arm.docaId = endereco.id;

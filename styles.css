@@ -209,6 +209,9 @@ input { font: inherit; color: inherit; }
 
 .line { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); text-align: left; width: 100%; }
 .line:last-child { border-bottom: 0; }
+/* Separação: item que o gestor zerou antes de separar */
+.line.sp-cortado { opacity: .5; }
+.line.sp-cortado .line-desc { text-decoration: line-through; }
 .line-addr { font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 12px; background: var(--bg); padding: 6px 8px; border-radius: 8px; white-space: nowrap; }
 .line-desc { flex: 1; min-width: 0; font-size: 14px; }
 .line-desc small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }

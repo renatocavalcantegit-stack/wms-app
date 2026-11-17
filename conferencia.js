@@ -4,7 +4,11 @@ import { find } from "./js/demo-dados.js";
 import { consultaDeCheckout } from "./js/dados/estoque.js";
 import { validarQuantidadeLida } from "./compartilhado/regras/produtos.js";
 import { VOL_TIPOS, obsTotal, obsErp, obsResumo } from "./compartilhado/regras/volumes.js";
-import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto } from "./js/dados/conferencia.js";
+import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto, aoMudarConferencia } from "./js/dados/conferencia.js";
+import { registrarDevolucao } from "./js/dados/movimentacao.js";
+import { lerEstoque } from "./js/dados/estoque.js";
+import { acharEndereco } from "./compartilhado/regras/enderecos.js";
+import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, validarDocaDevolucao, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
 import { $, $$, esc } from "./js/util.js";
 
@@ -92,7 +96,9 @@ import { $, $$, esc } from "./js/util.js";
 
     $("#queueBody").innerHTML = list.map((o) => {
       const faltaSep = o.itens.some((i) => i.status === "falta");
-      const tag = o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência</span>`
+      const tag = o.cancelado ? `<span class="tag div">Cancelado · devolver</span>`
+        : o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">Reaberto pelo gestor</span>`
+        : o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência</span>`
         : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
         : o.conf.status === "divergente" ? `<span class="tag div">Com divergência${MONT ? "" : ` · ${o.conf.volumes} vol.`}</span>`
         : faltaSep ? `<span class="tag parcial">Falta na separação</span>`
@@ -120,7 +126,7 @@ import { $, $$, esc } from "./js/util.js";
   });
 
   function showQueue() {
-    cur = null;
+    cur = null; devolvendo = false; document.body.classList.remove("cf-devolvendo");
     $("#queue").hidden = false; $("#order").hidden = true;
     $("#scan").placeholder = "Bipe o pedido…";
     setLast({ label: "Aguardando leitura", desc: "Bipe o código do pedido para começar", code: " ", conf: "—", exp: "—" });
@@ -137,7 +143,7 @@ import { $, $$, esc } from "./js/util.js";
       Object.assign(o, prepararParaConferencia(o));
     }
     if (o.conf.status === "aguardando") { o.conf.status = "andamento"; o.conf.inicio = Date.now(); o.conf.conferente = user; save(); }
-    cur = o;
+    cur = o; devolvendo = false; document.body.classList.remove("cf-devolvendo");
     $("#queue").hidden = true; $("#order").hidden = false;
     $("#oId").textContent = o.id;
     $("#oClient").textContent = o.cliente;
@@ -147,7 +153,8 @@ import { $, $$, esc } from "./js/util.js";
     t.textContent = o.prio === "alta" ? "Prioridade" : "Normal";
     $("#scan").placeholder = "Bipe o produto…";
     setLast({ label: "Pedido aberto", desc: `${o.cliente}`, code: o.id, conf: "—", exp: "—" });
-    setMsg(`Pedido ${o.id} carregado · bipe os produtos`, "ok");
+    const dev = devolucaoPendente(o.itens, o.conf.postado);
+    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : `Pedido ${o.id} carregado · bipe os produtos`, dev ? "err" : "ok");
     beep(true);
     renderItems(); renderTotals(); focusScan();
   }
@@ -157,7 +164,8 @@ import { $, $$, esc } from "./js/util.js";
     const rows = o.itens.map((i) => {
       const s = itemState(o, i), c = o.conf.itens[i.sku] || 0;
       const label = { ok: "Conferido", parcial: `Faltam ${i.sep - c}`, excesso: `Excesso +${c - i.sep}`, pendente: "Pendente" }[s];
-      const sepWarn = i.sep < i.qtd ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "";
+      const sepWarn = (i.sep < i.qtd ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "")
+        + (i.devolver > 0 ? `<span class="sub-warn">sai da caixa: ${i.devolver} un. (devolução)</span>` : "");
       return `<tr class="${s} ${flashSku === i.sku ? "flash" : ""}" data-sku="${i.sku}">
         <td><span class="s-dot"></span></td>
         <td class="code"><b>${i.sku}</b>${i.ean}</td>
@@ -173,6 +181,7 @@ import { $, $$, esc } from "./js/util.js";
         <td><span class="tag fora">Fora do pedido</span></td></tr>`);
     $("#itemsBody").innerHTML = rows.concat(fora).join("");
     const fl = $("#itemsBody tr.flash"); if (fl) fl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    renderDevolucao();
   }
 
   function renderTotals() {
@@ -203,6 +212,7 @@ import { $, $$, esc } from "./js/util.js";
     if (m) { q = +m[1]; code = m[2].trim(); }
     const informada = !!m || q > 1; // o conferente informou quantidade (F4 ou 5*código)?
     resetMult();
+    if (cur && devolvendo) return lerNaDevolucao(code, q);
 
     // código de pedido?
     const num = (x) => x.trim().toUpperCase().replace(/^(PV|OP)-?/, "");
@@ -300,6 +310,96 @@ import { $, $$, esc } from "./js/util.js";
     setMsg(`Última leitura estornada (${l.sku} −${l.q})`);
   }
 
+  // ---------- devolução (item cortado ou pedido cancelado pelo gestor) ----------
+  // F9 liga o modo devolução: cada bipe é uma unidade que SAI da caixa. Depois, o QR da doca de devolução
+  // registra a entrada no estoque (o estoquista armazena pelo Armazenamento, como uma nota).
+  let devolvendo = false;
+  const temDevolucao = (o) => o.itens.some((i) => (i.devolver || 0) > 0);
+  const tirado = (o, sku) => (o.conf.devolvido || {})[sku] || 0;
+  const postado = (o, sku) => (o.conf.postado || {})[sku] || 0;
+
+  function renderDevolucao() {
+    const box = $("#cfDev");
+    if (!cur || !temDevolucao(cur)) { box.hidden = true; return; }
+    const ocorr = cur.cancelado || cur.conf.reaberto;
+    const motivo = ocorr ? `${MOTIVOS_OCORRENCIA[ocorr.motivo] || ""} · Sankhya ${esc(ocorr.referencia)}` : "";
+    const pend = devolucaoPendente(cur.itens, cur.conf.postado);
+    box.hidden = false;
+    box.className = "cf-dev" + (pend ? "" : " feito");
+    box.innerHTML = `<div class="cf-dev-top"><b>${cur.cancelado ? "Pedido cancelado · tudo sai da caixa" : "Sai da caixa (corte do gestor)"}</b>
+      <span>${motivo}</span>
+      ${pend ? `<button id="btnDevolver" class="lb-btn">${devolvendo ? "Sair da devolução" : "Devolver"} <kbd>F9</kbd></button>` : `<span class="cf-dev-ok">Devolução registrada</span>`}</div>
+      ${cur.itens.filter((i) => i.devolver > 0).map((i) => `<div class="cf-dev-row"><b>${i.sku}</b><span>${esc(i.desc)}</span>
+        <span>tirar <b>${i.devolver}</b> · tirado <b>${tirado(cur, i.sku)}</b> · na doca <b>${postado(cur, i.sku)}</b></span></div>`).join("")}`;
+  }
+  $("#cfDev").addEventListener("click", (e) => { if (e.target.closest("#btnDevolver")) alternarDevolucao(); });
+
+  function alternarDevolucao() {
+    if (!cur || !devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Este pedido não tem nada a devolver.", "err"); beep(false); return; }
+    devolvendo = !devolvendo;
+    document.body.classList.toggle("cf-devolvendo", devolvendo);
+    $("#scan").placeholder = devolvendo ? "Bipe o que SAI da caixa… depois o QR da doca de devolução" : "Bipe o produto…";
+    setMsg(devolvendo ? "Modo devolução: bipe cada unidade que sai da caixa" : "Modo conferência", devolvendo ? "err" : "ok");
+    renderDevolucao(); focusScan();
+  }
+
+  function lerNaDevolucao(code, q) {
+    // QR da doca de devolução (ID ou código R…): o que já saiu da caixa entra no estoque
+    const end = /^\d{5,}$/.test(code) || /^R\d+-P/i.test(code) ? acharEndereco(lerEstoque().enderecos, code) : null;
+    if (end) return levarParaDoca(end);
+    const p = find(code);
+    if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
+    const it = cur.itens.find((i) => i.sku === p.sku);
+    const r = lerDevolucao(it, tirado(cur, p.sku), q);
+    if (!r.ok) { setMsg(r.msg, "err"); beep(false); return; }
+    cur.conf.devolvido = { ...(cur.conf.devolvido || {}), [p.sku]: tirado(cur, p.sku) + r.qtd };
+    // a unidade que sai já tinha sido contada como "na caixa"? então desconta da contagem
+    const sobra = (cur.conf.itens[p.sku] || 0) - it.sep;
+    if (sobra > 0) cur.conf.itens[p.sku] -= Math.min(sobra, r.qtd);
+    save(); renderItems(p.sku); renderTotals();
+    const falta = faltaTirar(it, tirado(cur, p.sku));
+    setLast({ label: `Saiu da caixa −${r.qtd}`, desc: p.desc, code: p.sku, conf: tirado(cur, p.sku), exp: it.devolver, kind: "ok" });
+    const tudo = cur.itens.every((i) => faltaTirar(i, tirado(cur, i.sku)) === 0);
+    setMsg(tudo ? "Tudo separado · leia o QR da doca de devolução" : falta ? `Faltam ${falta} un. de ${p.sku} para tirar` : `${p.sku} completo`, "ok");
+    beep(true);
+  }
+
+  function levarParaDoca(end) {
+    const erro = validarDocaDevolucao(end);
+    if (erro) { setMsg(erro, "err"); beep(false); return; }
+    const itens = cur.itens.map((i) => ({ produto: i.sku, qtd: faltaPostar(tirado(cur, i.sku), postado(cur, i.sku)) })).filter((i) => i.qtd > 0);
+    if (!itens.length) { setMsg("Nada tirado da caixa ainda. Bipe o que sai antes da doca.", "err"); beep(false); return; }
+    const r = registrarDevolucao({ pedido: cur.id, itens, docaId: end.id, usuario: user });
+    if (!r.ok) { setMsg(r.msg, "err"); beep(false); return; }
+    cur.conf.postado = { ...(cur.conf.postado || {}) };
+    itens.forEach((i) => (cur.conf.postado[i.produto] = (cur.conf.postado[i.produto] || 0) + i.qtd));
+    save();
+    const pend = devolucaoPendente(cur.itens, cur.conf.postado);
+    if (!pend) { devolvendo = false; document.body.classList.remove("cf-devolvendo"); $("#scan").placeholder = "Bipe o produto…"; }
+    renderItems(); renderTotals();
+    setMsg(`${itens.reduce((t, i) => t + i.qtd, 0)} un. na ${end.codigo}${pend ? " · ainda falta devolver" : cur.cancelado ? " · finalize para encerrar o pedido (F10)" : " · continue a conferência"}`, "ok");
+    beep(true);
+  }
+
+  // pedido cancelado: depois da devolução, encerra sem volumes nem etiquetas (não vai para o embarque)
+  function encerrarCancelado() {
+    Object.assign(cur.conf, { status: "cancelado", fim: Date.now(), conferente: user });
+    const id = cur.id;
+    save(); showQueue(); toast(`${id} encerrado como cancelado`);
+  }
+
+  // o gestor mudou o pedido em outra tela: recarrega a fila e o pedido aberto
+  aoMudarConferencia(SETOR, () => {
+    const id = cur?.id;
+    db = load();
+    if (!id) return renderQueue();
+    const o = db.orders.find((x) => x.id === id);
+    if (!o || o.conf.status === "cancelado") { showQueue(); toast(`${id} cancelado pelo gestor`); return; }
+    cur = o;
+    renderItems(); renderTotals();
+    setMsg("O gestor alterou este pedido", "err"); beep(false);
+  });
+
   function restart() {
     if (!cur || !confirm(`Zerar todas as leituras de ${cur.id}?`)) return focusScan();
     const keep = { ...cur.conf, itens: {}, fora: [], log: [] };
@@ -313,6 +413,9 @@ import { $, $$, esc } from "./js/util.js";
   let fin = null;
   function openFinish() {
     if (!cur) return;
+    // o que o gestor cortou tem que sair da caixa e entrar na doca de devolução antes de fechar
+    if (devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Faça a devolução antes de finalizar (F9).", "err"); beep(false); return; }
+    if (cur.cancelado) return encerrarCancelado();
     fin = { o: cur, fix: false, vol: 0 };
     const s = stats(cur);
     const rows = [];
@@ -579,6 +682,7 @@ import { $, $$, esc } from "./js/util.js";
       case "F4": e.preventDefault(); $("#mult").select(); $("#mult").focus(); break;
       case "F6": e.preventDefault(); undo(); break;
       case "F8": e.preventDefault(); restart(); break;
+      case "F9": e.preventDefault(); alternarDevolucao(); break;
       case "F10": e.preventDefault(); openFinish(); break;
       case "Escape": $("#scan").value = ""; resetMult(); focusScan(); break;
       default:

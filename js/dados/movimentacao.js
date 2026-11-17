@@ -4,6 +4,7 @@
 import { lerEstoque, gravarEstoque, enderecoPorId, saldoNoEndereco, somarSaldo, registrarMovimento } from "./estoque.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../../compartilhado/regras/enderecos.js";
 import { pendenteNaDoca } from "../../compartilhado/regras/recebimento.js";
+import { validarDocaDevolucao } from "../../compartilhado/regras/ocorrencias.js";
 import {
   validarLimite, necessidade, precisaAbastecer, escolherOrigens, tarefaDuplicada, tarefaPendente, ordenarTarefas,
   validarAbastecimento, statusDepoisDoPasso, abastecidoDaTarefa, validarTransferencia, baixadoPorPedido,
@@ -160,11 +161,17 @@ export function baixarPorSeparacao({ endereco, produto, qtd, usuario, pedido }) 
   const db = lerEstoque();
   const e = db.enderecos.find((x) => x.codigo === endereco && x.ativo);
   if (!e) return;
-  const tirar = Math.min(quantidade, saldoNoEndereco(db, e.id, produto));
+  const antes = saldoNoEndereco(db, e.id, produto);
+  const tirar = Math.min(quantidade, antes);
   if (tirar > 0) {
-    const antes = saldoNoEndereco(db, e.id, produto);
     somarSaldo(db, e.id, produto, -tirar);
     registrarMovimento(db, { tipo: "separacao", produto, qtd: tirar, origem: e.id, usuario, pedido, saldoOrigemAntes: antes, saldoOrigemDepois: antes - tirar });
+  }
+  // o separador confirmou mais do que o sistema tinha: o saldo para em zero (é o que o sistema sabe) e a
+  // diferença vira uma divergência para o gestor de estoque investigar (sugestão: inventário rotativo do endereço)
+  if (quantidade > antes) {
+    db.divergencias.push({ id: db.proximoId.divergencia++, enderecoId: e.id, produto, pedido, usuario, quando: new Date().toISOString(),
+      sistema: antes, separado: quantidade, diferenca: quantidade - antes, status: "aberta", inventario: null });
   }
   if (e.tipo === "picking") verificarAutomatico(db, produto, e.id);
   gravarEstoque(db);
@@ -183,6 +190,25 @@ export function estornarSeparacao({ pedido, usuario }) {
   }
   if (devolver.length) gravarEstoque(db);
   return devolver;
+}
+
+// devolução de pedido cortado/cancelado: o conferente tirou as unidades da caixa e leu o QR da doca de devolução.
+// O saldo entra na doca e fica pendente de armazenar (o estoquista guarda pelo Armazenamento, como uma nota).
+// itens: [{ produto, qtd }]
+export function registrarDevolucao({ pedido, itens, docaId, usuario }) {
+  const db = lerEstoque();
+  const erro = validarDocaDevolucao(enderecoPorId(db, docaId));
+  if (erro) return { ok: false, msg: erro };
+  const dia = new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD, como no recebimento
+  for (const { produto, qtd } of itens.filter((i) => i.qtd > 0)) {
+    const antes = saldoNoEndereco(db, docaId, produto);
+    somarSaldo(db, docaId, produto, qtd);
+    registrarMovimento(db, { tipo: "devolucao", produto, qtd, destino: docaId, usuario, pedido, saldoDestinoAntes: antes, saldoDestinoDepois: antes + qtd });
+    // mesma pendência de armazenar que a conferência de uma nota cria (sem nota: vem do pedido)
+    db.conferencias.push({ id: db.proximoId.conferencia++, notaId: null, devolucao: pedido, produto, qtd, docaId, dia, armazenado: 0, cancelado: 0, volumes: [] });
+  }
+  gravarEstoque(db);
+  return { ok: true };
 }
 
 // tira da origem, põe no destino e registra o movimento com os saldos de antes e depois (base dos relatórios)
