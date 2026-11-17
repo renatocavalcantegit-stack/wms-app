@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WMS · Teste do leitor</title>
+<!--
+  Página de diagnóstico do leitor do coletor (não faz parte do fluxo do WMS e não aparece em nenhum menu).
+  Pergunta que ela responde: quando o APP coloca o foco no campo sozinho (sem a pessoa tocar),
+  o código lido pelo gatilho SCAN chega ao campo? Testa 3 jeitos de focar:
+    1. Atual (v45): inputmode="none" — o teclado da tela não sobe;
+    2. Opção B: virtualkeyboardpolicy="manual" — recurso do Chrome que também esconde o teclado,
+       mas mantém o campo "de verdade" para o teclado do sistema;
+    3. Normal: o teclado da tela sobe junto com o foco (como era na v44).
+  O foco automático acontece ao CARREGAR a página (?campo=1, 2 ou 3), sem toque, igual ao app.
+  A página também anota quais eventos chegam (tecla, texto), para sabermos COMO o leitor entrega o código.
+-->
+<style>
+  body { margin: 0; font: 14px/1.35 system-ui, sans-serif; background: #F5F5F7; color: #111; }
+  .tl-top { padding: 8px 10px; background: #111; color: #fff; }
+  .tl-top b { font-size: 15px; }
+  .tl-top small { display: block; color: #aaa; font-size: 11px; word-break: break-all; }
+  .tl-campos { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .tl-campo { background: #fff; border-radius: 12px; padding: 8px 10px; border: 2px solid #ddd; }
+  .tl-campo.ativo { border-color: #E5161D; }
+  .tl-campo.ok { border-color: #12A150; background: #EDFBF2; }
+  .tl-cab { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .tl-cab b { font-size: 13px; }
+  .tl-cab a { font-size: 12px; font-weight: 700; color: #fff; background: #E5161D; padding: 5px 9px; border-radius: 8px; text-decoration: none; white-space: nowrap; }
+  .tl-campo input { width: 100%; box-sizing: border-box; margin-top: 6px; height: 38px; font-size: 15px; border: 1px solid #ccc; border-radius: 8px; padding: 0 8px; }
+  .tl-res { margin: 4px 0 0; font-size: 12px; color: #555; min-height: 16px; word-break: break-all; }
+  .tl-campo.ok .tl-res { color: #0B7A3B; font-weight: 700; }
+  .tl-log { margin: 0 10px 12px; background: #fff; border-radius: 12px; padding: 6px 10px; font: 11px/1.35 ui-monospace, monospace; max-height: 160px; overflow: auto; }
+  .tl-log p { margin: 0; border-bottom: 1px solid #eee; padding: 2px 0; }
+  .tl-h { margin: 4px 10px; font-size: 11px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: .5px; }
+</style>
+</head>
+<body>
+  <div class="tl-top">
+    <b>Teste do leitor</b>
+    <small id="tlInfo"></small>
+  </div>
+
+  <div class="tl-campos">
+    <form class="tl-campo" data-n="1">
+      <div class="tl-cab"><b>1 · Atual (v45): sem teclado</b><a href="?campo=1">Focar sozinho</a></div>
+      <input id="c1" inputmode="none" autocomplete="off" placeholder="Bipe aqui">
+      <p class="tl-res"></p>
+    </form>
+    <form class="tl-campo" data-n="2">
+      <div class="tl-cab"><b>2 · Opção B: teclado manual</b><a href="?campo=2">Focar sozinho</a></div>
+      <input id="c2" virtualkeyboardpolicy="manual" autocomplete="off" placeholder="Bipe aqui">
+      <p class="tl-res"></p>
+    </form>
+    <form class="tl-campo" data-n="3">
+      <div class="tl-cab"><b>3 · Normal: teclado sobe</b><a href="?campo=3">Focar sozinho</a></div>
+      <input id="c3" autocomplete="off" placeholder="Bipe aqui">
+      <p class="tl-res"></p>
+    </form>
+  </div>
+
+  <p class="tl-h">O que chegou (mais recente em cima)</p>
+  <div id="tlLog" class="tl-log"></div>
+
+<script>
+  // informações do aparelho: ajudam a entender o resultado (versão do Android/Chrome e se existe a opção B)
+  const vk = "virtualKeyboard" in navigator;
+  document.getElementById("tlInfo").textContent =
+    `Opção B disponível: ${vk ? "sim" : "NÃO"} · tela ${innerWidth}×${innerHeight} · ${navigator.userAgent}`;
+
+  const log = (txt) => {
+    const p = document.createElement("p");
+    p.textContent = `${new Date().toLocaleTimeString("pt-BR")} ${txt}`;
+    const box = document.getElementById("tlLog");
+    box.prepend(p);
+    while (box.children.length > 40) box.lastChild.remove();
+  };
+  const nomeDe = (el) => (el && el.id ? `campo ${el.id.slice(1)}` : el === document.body ? "nenhum campo" : el ? el.tagName.toLowerCase() : "?");
+
+  // eventos de tecla e de texto, em qualquer lugar da página
+  document.addEventListener("keydown", (e) => log(`tecla "${e.key}" (código ${e.keyCode}) em ${nomeDe(e.target)}`), true);
+  document.addEventListener("beforeinput", (e) => log(`texto ${e.inputType} "${e.data ?? ""}" em ${nomeDe(e.target)}`), true);
+  document.addEventListener("paste", (e) => log(`colado em ${nomeDe(e.target)}`), true);
+  document.addEventListener("focusin", (e) => log(`foco no ${nomeDe(e.target)}`), true);
+
+  // Enter no campo (o leitor com sufixo Enter) = código recebido
+  document.querySelectorAll(".tl-campo").forEach((f) => {
+    const inp = f.querySelector("input"), res = f.querySelector(".tl-res");
+    f.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = inp.value.trim();
+      if (!v) return;
+      f.classList.add("ok");
+      res.textContent = `RECEBEU: ${v}`;
+      log(`>>> campo ${f.dataset.n} recebeu "${v}"`);
+      inp.value = "";
+    });
+    // sem sufixo Enter: mostra o que está no campo mesmo assim
+    inp.addEventListener("input", () => { if (inp.value) res.textContent = `no campo: ${inp.value}`; });
+  });
+
+  // foco automático ao carregar, sem toque (como o app faz): ?campo=1, 2 ou 3
+  const n = new URLSearchParams(location.search).get("campo");
+  const alvo = n && document.getElementById("c" + n);
+  if (alvo) {
+    alvo.closest(".tl-campo").classList.add("ativo");
+    setTimeout(() => {
+      alvo.focus();
+      if (n === "2" && vk) navigator.virtualKeyboard.hide();
+      log(`foco automático no campo ${n} · agora aperte SCAN`);
+    }, 300);
+  }
+  // opção B: tocar no campo 2 mostra o teclado (como faríamos no app)
+  document.getElementById("c2").addEventListener("click", () => { if (vk) navigator.virtualKeyboard.show(); });
+</script>
+</body>
+</html>
