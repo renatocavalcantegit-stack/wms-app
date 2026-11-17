@@ -1,7 +1,7 @@
 // Catálogo: busca de produto pelo código lido e ordem de separação pelo endereço.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { routeSort, exigeCheckout, validarQuantidadeLida, MSG_CHECKOUT, ehCodigoDoProduto } from "../compartilhado/regras/produtos.js";
+import { routeSort, exigeCheckout, validarQuantidadeLida, MSG_CHECKOUT, ehCodigoDoProduto, normalizarCodigo } from "../compartilhado/regras/produtos.js";
 import { find } from "../js/demo-dados.js";
 
 test("find: acha o produto pelo EAN ou pelo código interno, ignorando espaços", () => {
@@ -44,4 +44,9 @@ test("checkout: é o padrão; só o produto marcado como granel aceita quantidad
   assert.equal(validarQuantidadeLida(true, 1), null);
   assert.equal(validarQuantidadeLida(true, 5), MSG_CHECKOUT);    // F4 / 5*código recusados
   assert.equal(validarQuantidadeLida(false, 40), null);
+});
+
+test("normalizarCodigo: tira os espaços das pontas e passa para maiúsculas (o servidor usa a mesma regra)", () => {
+  assert.equal(normalizarCodigo("  bk-29-alu  "), "BK-29-ALU");
+  assert.equal(normalizarCodigo(7908005911280), "7908005911280");
 });

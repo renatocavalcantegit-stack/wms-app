@@ -7,9 +7,12 @@ import { compararEnderecos } from "./enderecos.js";
 export const ehCodigoDoProduto = (p, codigo) =>
   !!codigo && (p.ean === codigo || (p.eans || []).includes(codigo) || p.sku.toUpperCase() === codigo);
 
+// código lido como o WMS compara: sem espaços nas pontas e em maiúsculas (o servidor usa a mesma regra)
+export const normalizarCodigo = (codigo) => String(codigo).trim().toUpperCase();
+
 // acha o produto pelo código lido (EAN ou SKU), ignorando espaços e maiúsculas/minúsculas
 export const acharProduto = (catalogo, codigo) => {
-  const c = String(codigo).trim().toUpperCase();
+  const c = normalizarCodigo(codigo);
   return catalogo.find((p) => ehCodigoDoProduto(p, c)) || null;
 };
 
