@@ -5,6 +5,7 @@ import { lerEstoque, gravarEstoque, enderecoPorId, saldoNoEndereco, somarSaldo, 
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../../compartilhado/regras/enderecos.js";
 import { pendenteNaDoca } from "../../compartilhado/regras/recebimento.js";
 import { validarDocaDevolucao } from "../../compartilhado/regras/ocorrencias.js";
+import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   validarLimite, necessidade, precisaAbastecer, escolherOrigens, tarefaDuplicada, tarefaPendente, ordenarTarefas,
   validarAbastecimento, statusDepoisDoPasso, abastecidoDaTarefa, validarTransferencia, baixadoPorPedido,
@@ -22,7 +23,7 @@ export const tarefasPendentes = (db) => ordenarTarefas(db.tarefas.filter(tarefaP
 // aéreos com saldo do produto, descontando o que outras tarefas pendentes já reservaram ali
 function aereosDisponiveis(db, produto) {
   const reservado = (enderecoId) => db.tarefas.filter((t) => tarefaPendente(t) && t.produto === produto)
-    .flatMap((t) => t.origens).filter((o) => o.enderecoId === enderecoId).reduce((s, o) => s + o.qtd - o.feito, 0);
+    .flatMap((t) => t.origens).filter((o) => o.enderecoId === enderecoId).reduce((s, o) => arredondarQtd(s + o.qtd - o.feito), 0);
   return db.saldos.filter((s) => s.produto === produto && s.qtd > 0)
     .map((s) => ({ endereco: enderecoPorId(db, s.enderecoId), saldo: s.qtd - reservado(s.enderecoId) }))
     .filter((a) => a.endereco && a.endereco.tipo === "aereo");
@@ -75,9 +76,10 @@ export function abastecer(tarefaId, { origemId, produto, qtd, destinoId, usuario
   const destino = enderecoPorId(db, destinoId);
   const erro = validarAbastecimento(t, { origemId, produto, qtd, destino, saldoOrigem: saldoNoEndereco(db, origemId, produto) });
   if (erro) return { ok: false, msg: erro };
-  const quantidade = Number(qtd);
+  const quantidade = lerQuantidade(qtd);
   mover(db, { tipo: "abastecimento", produto, qtd: quantidade, origemId, destinoId, usuario, tarefa: t.id });
-  t.origens.find((o) => o.enderecoId === origemId).feito += quantidade;
+  const origem = t.origens.find((o) => o.enderecoId === origemId);
+  origem.feito = arredondarQtd(origem.feito + quantidade);
   t.status = statusDepoisDoPasso(t);
   if (t.status === "concluida") t.fim = agora();
   t.usuario = usuario || t.usuario;
@@ -122,8 +124,8 @@ export function salvarLimite(produto, enderecoId, { minimo, maximo }) {
   if (erro) return { ok: false, msg: erro };
   const db = lerEstoque();
   const l = limiteDe(db, produto, enderecoId);
-  if (l) Object.assign(l, { minimo: Number(minimo), maximo: Number(maximo) });
-  else db.limites.push({ produto, enderecoId, minimo: Number(minimo), maximo: Number(maximo) });
+  if (l) Object.assign(l, { minimo: lerQuantidade(minimo), maximo: lerQuantidade(maximo) });
+  else db.limites.push({ produto, enderecoId, minimo: lerQuantidade(minimo), maximo: lerQuantidade(maximo) });
   const antes = db.tarefas.length;
   verificarAutomatico(db, produto, enderecoId);
   gravarEstoque(db);
@@ -146,7 +148,7 @@ export function transferir({ origemId, produto, qtd, destinoId, usuario }) {
   const origem = enderecoPorId(db, origemId), destino = enderecoPorId(db, destinoId);
   const erro = validarTransferencia({ origem, destino, saldoOrigem: saldoTransferivel(db, origemId, produto), qtd });
   if (erro) return { ok: false, msg: erro };
-  mover(db, { tipo: "transferencia", produto, qtd: Number(qtd), origemId, destinoId, usuario });
+  mover(db, { tipo: "transferencia", produto, qtd: lerQuantidade(qtd), origemId, destinoId, usuario });
   if (origem.tipo === "picking") verificarAutomatico(db, produto, origemId);
   gravarEstoque(db);
   return { ok: true };
@@ -156,7 +158,7 @@ export function transferir({ origemId, produto, qtd, destinoId, usuario }) {
 // o separador confirmou o item: o saldo do picking diminui (nunca fica negativo).
 // O item da separação traz o código do endereço (R3001-P1-A100-AP101) e o código do produto.
 export function baixarPorSeparacao({ endereco, produto, qtd, usuario, pedido }) {
-  const quantidade = Number(qtd);
+  const quantidade = lerQuantidade(qtd);
   if (!(quantidade > 0)) return;
   const db = lerEstoque();
   const e = db.enderecos.find((x) => x.codigo === endereco && x.ativo);
@@ -203,7 +205,7 @@ export function registrarDevolucao({ pedido, itens, docaId, usuario }) {
   for (const { produto, qtd } of itens.filter((i) => i.qtd > 0)) {
     const antes = saldoNoEndereco(db, docaId, produto);
     somarSaldo(db, docaId, produto, qtd);
-    registrarMovimento(db, { tipo: "devolucao", produto, qtd, destino: docaId, usuario, pedido, saldoDestinoAntes: antes, saldoDestinoDepois: antes + qtd });
+    registrarMovimento(db, { tipo: "devolucao", produto, qtd, destino: docaId, usuario, pedido, saldoDestinoAntes: antes, saldoDestinoDepois: arredondarQtd(antes + qtd) });
     // mesma pendência de armazenar que a conferência de uma nota cria (sem nota: vem do pedido)
     db.conferencias.push({ id: db.proximoId.conferencia++, notaId: null, devolucao: pedido, produto, qtd, docaId, dia, armazenado: 0, cancelado: 0, volumes: [] });
   }
@@ -217,5 +219,5 @@ function mover(db, { tipo, produto, qtd, origemId, destinoId, usuario, tarefa })
   somarSaldo(db, origemId, produto, -qtd);
   somarSaldo(db, destinoId, produto, qtd);
   registrarMovimento(db, { tipo, produto, qtd, origem: origemId, destino: destinoId, usuario, tarefa,
-    saldoOrigemAntes: oAntes, saldoOrigemDepois: oAntes - qtd, saldoDestinoAntes: dAntes, saldoDestinoDepois: dAntes + qtd });
+    saldoOrigemAntes: oAntes, saldoOrigemDepois: arredondarQtd(oAntes - qtd), saldoDestinoAntes: dAntes, saldoDestinoDepois: arredondarQtd(dAntes + qtd) });
 }

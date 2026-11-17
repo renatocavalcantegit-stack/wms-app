@@ -139,7 +139,7 @@ function desenharContagem() {
   if (!iv.produto) { $("#ivRes").innerHTML = lista; setTimeout(() => $("#ivInput").focus(), 50); return; }
   $("#ivRes").innerHTML = cartaoProduto(produtoPorCodigo(db, iv.produto)) + `
     <form id="ivQtdForm" class="es-form">
-      <label class="field"><span>Quantidade contada</span><input name="qtd" type="number" inputmode="numeric" min="0" step="1" required></label>
+      <label class="field"><span>Quantidade contada</span><input name="qtd" type="number" inputmode="decimal" min="0" step="any" required></label>
       <button class="btn primary">Incluir</button>
     </form>` + lista;
   setTimeout(() => $("#ivQtdForm")?.qtd.focus(), 50);

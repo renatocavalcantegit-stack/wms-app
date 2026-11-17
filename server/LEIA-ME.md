@@ -8,6 +8,7 @@ A Fase 1 liga a Separação ao servidor, com fila de sincronização para funcio
 
 ```
 db/migracoes/001_base.sql   todas as tabelas, comentadas (comece por aqui)
+db/migracoes/002_...sql     mudanças depois da 001 (ex.: quantidade quebrada nos itens do pedido)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
 
@@ -28,7 +29,7 @@ testes/                     testes contra um banco SÓ de teste (wms_teste), rec
 
 ## Ordem sugerida para ler
 
-1. `db/migracoes/001_base.sql`: o que o sistema guarda.
+1. `db/migracoes/001_base.sql`: o que o sistema guarda. Depois, a `002`, que muda o que veio depois.
 2. `src/consultas/`: como lê e grava (cada função é um ou dois SQL comentados).
 3. `src/rotas-api/`: o que a API recebe e devolve.
 4. `src/servidor.js`: como o login protege as rotas.

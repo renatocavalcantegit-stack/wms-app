@@ -6,6 +6,7 @@
 import { esc } from "./js/util.js";
 import { abrirPedido, registrarOcorrencia, lerOcorrencias } from "./js/dados/ocorrencias.js";
 import { ETAPAS_PEDIDO, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
+import { formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
 
 // estado da aba: pedido aberto, mensagem e se o gestor está confirmando um cancelamento
 const estado = { pedido: null, msg: "", erro: false, confirmarCancelamento: false };
@@ -54,9 +55,9 @@ function cartaoDoPedido(p) {
     <table class="oc-tab">
       <thead><tr><th>Código</th><th>Descrição</th><th class="r">Cliente quer</th><th class="r">Na caixa</th><th class="r">A devolver</th><th class="r">Nova quantidade</th></tr></thead>
       <tbody>${p.itens.map((i) => `<tr>
-        <td class="mono">${esc(i.sku)}</td><td>${esc(i.desc)}</td><td class="r">${i.qtd}</td><td class="r">${i.mantido}</td>
-        <td class="r ${i.devolver ? "oc-dev" : ""}">${i.devolver || "—"}</td>
-        <td class="r">${pode && i.qtd > 0 ? `<input class="oc-qtd" name="q-${esc(i.sku)}" type="number" min="0" max="${i.qtd - 1}" step="1" inputmode="numeric" placeholder="${i.qtd}">` : ""}</td>
+        <td class="mono">${esc(i.sku)}</td><td>${esc(i.desc)}</td><td class="r">${fq(i.qtd)}</td><td class="r">${fq(i.mantido)}</td>
+        <td class="r ${i.devolver ? "oc-dev" : ""}">${i.devolver ? fq(i.devolver) : "—"}</td>
+        <td class="r">${pode && i.qtd > 0 ? `<input class="oc-qtd" name="q-${esc(i.sku)}" type="number" min="0" step="any" inputmode="decimal" placeholder="${fq(i.qtd)}">` : ""}</td>
       </tr>`).join("")}</tbody>
     </table>
     ${pode ? `<div class="oc-campos">
@@ -82,7 +83,7 @@ function historico() {
     <tbody>${lista.map((o) => `<tr>
       <td>${hora(o.quando)}</td><td class="mono">${esc(o.pedido)}</td><td>${o.tipo === "cancelamento" ? "Cancelamento" : "Corte"}</td>
       <td>${ETAPAS_PEDIDO[o.etapa] || ""}</td>
-      <td>${o.itens.map((i) => `${esc(i.sku)}: ${i.de}→${i.para}${i.devolver ? ` (devolver ${i.devolver})` : ""}`).join("<br>")}</td>
+      <td>${o.itens.map((i) => `${esc(i.sku)}: ${fq(i.de)}→${fq(i.para)}${i.devolver ? ` (devolver ${fq(i.devolver)})` : ""}`).join("<br>")}</td>
       <td>${MOTIVOS_OCORRENCIA[o.motivo] || ""}</td><td>${esc(o.referencia)}</td><td>${esc(o.usuario || "")}</td></tr>`).join("")
       || `<tr><td colspan="8" class="oc-vazio">Nenhuma ocorrência registrada.</td></tr>`}</tbody>
   </table>`;
@@ -114,7 +115,7 @@ function registrar(form, tipo) {
   if (!r.ok) { avisar(r.msg, true); redesenhar(); return; }
   estado.pedido = r.pedido;
   const devolver = r.ocorrencia.itens.reduce((t, i) => t + (i.devolver || 0), 0);
-  avisar(`${tipo === "cancelamento" ? "Pedido cancelado" : "Corte registrado"}${devolver ? ` · ${devolver} un. voltam ao estoque pela conferência` : ""}.`);
+  avisar(`${tipo === "cancelamento" ? "Pedido cancelado" : "Corte registrado"}${devolver ? ` · ${fq(devolver)} un. voltam ao estoque pela conferência` : ""}.`);
   ctx.toast(tipo === "cancelamento" ? `${r.ocorrencia.pedido} cancelado` : `Corte registrado em ${r.ocorrencia.pedido}`);
   redesenhar();
 }

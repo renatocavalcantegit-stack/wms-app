@@ -3,6 +3,7 @@
 // o saldo só muda em sincronizar(), de uma vez e só com os ajustes aprovados.
 import { lerEstoque, gravarEstoque, enderecoPorId, saldoNoEndereco, somarSaldo, registrarMovimento } from "./estoque.js";
 import { podeAssociar } from "../../compartilhado/regras/enderecos.js";
+import { lerQuantidade } from "../../compartilhado/regras/quantidade.js";
 import {
   enderecoInventariavel, previstosDoEndereco, validarNovoInventario, validarProdutoNaContagem, validarQuantidadeContada,
   fecharContagemDoEndereco, itemEncerrado, quantidadeConsiderada, podeDecidir, planejarSincronizacao, statusDoEndereco,
@@ -63,7 +64,7 @@ export function incluir(invId, enderecoId, { produto, qtd, operador }) {
   const inv = inventarioPorId(db, invId);
   const erro = validarEnderecoDaContagem(inv, enderecoId) || validarProdutoNaContagem(inv, itensDoEndereco(inv, enderecoId), produto) || validarQuantidadeContada(qtd);
   if (erro) return { ok: false, msg: erro };
-  (inv.rascunhos[enderecoId] ||= []).push({ produto, qtd: Number(qtd), operador, quando: agora() });
+  (inv.rascunhos[enderecoId] ||= []).push({ produto, qtd: lerQuantidade(qtd), operador, quando: agora() });
   gravarEstoque(db);
   return { ok: true };
 }

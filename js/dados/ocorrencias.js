@@ -6,6 +6,7 @@
 import { carregarPedidos, salvarPedidos } from "./separacao.js";
 import { carregarConferencia, salvarConferencia } from "./conferencia.js";
 import { pedidoEmCarregamento, retirarDasCargas } from "./embarque.js";
+import { lerQuantidade } from "../../compartilhado/regras/quantidade.js";
 import {
   etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, aplicarCorte, MSG_SEM_CORTE,
 } from "../../compartilhado/regras/ocorrencias.js";
@@ -55,7 +56,7 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   // o que muda em cada item, visto ANTES de mexer (vai para o histórico)
   const resumo = Object.entries(novas).map(([sku, nova]) => {
     const i = ped.itens.find((x) => x.sku === sku);
-    return { sku, desc: i.desc, de: i.qtd, para: Number(nova), devolver: aplicarCorte(i, Number(nova)).devolver };
+    return { sku, desc: i.desc, de: i.qtd, para: lerQuantidade(nova), devolver: aplicarCorte(i, lerQuantidade(nova)).devolver };
   });
   // a fila da conferência é lida ANTES de gravar a separação: senão ela importaria o pedido já cortado e cortaria de novo
   const confDb = carregarConferencia(setor);
@@ -65,7 +66,7 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   for (const [sku, nova] of Object.entries(novas)) {
     for (const p of partes) {
       const i = p.itens.find((x) => x.sku === sku); if (!i) continue;
-      const r = aplicarCorte({ qtd: i.qtd, mantido: i.sep - (i.devolver || 0), devolver: i.devolver || 0 }, Number(nova));
+      const r = aplicarCorte({ qtd: i.qtd, mantido: i.sep - (i.devolver || 0), devolver: i.devolver || 0 }, lerQuantidade(nova));
       Object.assign(i, { qtd: r.qtd, devolver: r.devolver });
       // ainda não separado e zerado: o separador pula; falta que o corte cobriu deixa de ser falta
       if (i.status === "pendente" && r.qtd === 0) i.status = "cortado";
@@ -86,7 +87,7 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   if (conf) {
     for (const [sku, nova] of Object.entries(novas)) {
       const i = conf.itens.find((x) => x.sku === sku); if (!i) continue;
-      const r = aplicarCorte({ qtd: i.qtd, mantido: i.sep, devolver: i.devolver || 0 }, Number(nova));
+      const r = aplicarCorte({ qtd: i.qtd, mantido: i.sep, devolver: i.devolver || 0 }, lerQuantidade(nova));
       Object.assign(i, { qtd: r.qtd, sep: r.mantido, devolver: r.devolver });
     }
     if (tipo === "cancelamento") conf.cancelado = registro;

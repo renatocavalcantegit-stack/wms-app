@@ -3,6 +3,7 @@
 // põe o saldo na doca e gera os volumes. O armazenamento leva o saldo da doca para um endereço.
 // Os três status da nota (conferência, divergência e armazenamento) são independentes.
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "./enderecos.js";
+import { lerQuantidade, quantidadePositiva, arredondarQtd, somarQtd, formatarQtd, MSG_QUANTIDADE } from "./quantidade.js";
 
 export const MSG_NOTA_FINALIZADA = "NOTA FINALIZADA. NÃO RECEBE NOVAS CONFERÊNCIAS.";
 export const MSG_PRODUTO_FORA_DA_NOTA = "PRODUTO NÃO PERTENCE A ESTA NOTA.";
@@ -12,7 +13,7 @@ export const MSG_ACIMA_DO_PENDENTE = "QUANTIDADE MAIOR QUE O PENDENTE DE ARMAZEN
 export const MSG_DESTINO_IGUAL = "O DESTINO NÃO PODE SER A PRÓPRIA DOCA DE ORIGEM.";
 export const MSG_NOTA_JA_IMPORTADA = "NOTA JÁ IMPORTADA.";
 // a conferência não deixa passar do que está na nota (o excedente é bloqueado)
-export const msgAcimaDaNota = (pendente) => `QUANTIDADE ACIMA DO PENDENTE DA NOTA. PENDENTE: ${pendente}.`;
+export const msgAcimaDaNota = (pendente) => `QUANTIDADE ACIMA DO PENDENTE DA NOTA. PENDENTE: ${formatarQtd(pendente)}.`;
 
 // limite de volumes numa confirmação (evita imprimir centenas de etiquetas por engano)
 export const MAXIMO_VOLUMES = 99;
@@ -21,14 +22,14 @@ export const STATUS_CONFERENCIA = { aguardando: "Aguardando", aberta: "Em aberto
 export const STATUS_DIVERGENCIA = { sem: "Sem divergência", com: "Com divergência" };
 export const STATUS_ARMAZENAMENTO = { pendente: "Pendente", parcial: "Parcial", armazenado: "Armazenado" };
 
-const soma = (lista, campo) => lista.reduce((t, x) => t + x[campo], 0);
+const soma = (lista, campo) => somarQtd(lista, (x) => x[campo]);
 
 // as conferências de um produto de uma nota
 const conferenciasDoItem = (conferencias, notaId, produto) =>
   conferencias.filter((c) => c.notaId === notaId && c.produto === produto);
 
 // o que ainda está na doca esperando ser armazenado, de uma conferência
-export const pendenteDaConferencia = (c) => c.qtd - c.armazenado - c.cancelado;
+export const pendenteDaConferencia = (c) => arredondarQtd(c.qtd - c.armazenado - c.cancelado);
 
 // ---------- detalhe da nota ----------
 // os números de cada produto da nota: o que a nota pede, o que foi conferido, a diferença,
@@ -39,9 +40,9 @@ export function resumoDoItem(nota, item, conferencias) {
   const armazenado = soma(lista, "armazenado");
   return {
     produto: item.produto, qtdNota: item.qtd, conferido,
-    divergencia: conferido - item.qtd,
+    divergencia: arredondarQtd(conferido - item.qtd),
     armazenado,
-    pendenteArmazenar: conferido - armazenado - soma(lista, "cancelado"),
+    pendenteArmazenar: arredondarQtd(conferido - armazenado - soma(lista, "cancelado")),
     volumes: lista.reduce((t, c) => t + c.volumes.length, 0),
   };
 }
@@ -80,12 +81,12 @@ export function validarDocaDeArmazenamento(endereco) {
 }
 
 // bipar a caixa conta a quantidade dela: 2 caixas de 12 = 24 unidades
-export const quantidadeEmUnidades = (embalagem, quantasEmbalagens) => (embalagem ? embalagem.qtd : 1) * Number(quantasEmbalagens);
+export const quantidadeEmUnidades = (embalagem, quantasEmbalagens) => arredondarQtd((embalagem ? embalagem.qtd : 1) * lerQuantidade(quantasEmbalagens));
 
 // quanto ainda falta conferir de um produto da nota
 export function pendenteDeConferir(nota, produto, conferencias) {
   const item = nota.itens.find((i) => i.produto === produto);
-  return item ? item.qtd - soma(conferenciasDoItem(conferencias, nota.id, produto), "qtd") : 0;
+  return item ? arredondarQtd(item.qtd - soma(conferenciasDoItem(conferencias, nota.id, produto), "qtd")) : 0;
 }
 
 // confere uma confirmação antes de gravar. Não trava o produto para outro coletor:
@@ -93,8 +94,8 @@ export function pendenteDeConferir(nota, produto, conferencias) {
 export function validarConferencia(nota, { produto, qtd, volumes }, conferencias) {
   if (nota.finalizada) return MSG_NOTA_FINALIZADA;
   if (!nota.itens.some((i) => i.produto === produto)) return MSG_PRODUTO_FORA_DA_NOTA;
-  const quantidade = Number(qtd);
-  if (!(quantidade > 0)) return "Informe a quantidade (maior que zero).";
+  const quantidade = lerQuantidade(qtd); // "101,5" → 101.5
+  if (!quantidadePositiva(quantidade)) return MSG_QUANTIDADE;
   const pendente = pendenteDeConferir(nota, produto, conferencias);
   if (quantidade > pendente) return msgAcimaDaNota(pendente);
   const n = Number(volumes);
@@ -115,7 +116,7 @@ export function pendentesPorData(conferencias) {
     const p = pendenteDaConferencia(c);
     if (p <= 0) continue;
     const dia = porDia.get(c.dia) || new Map();
-    dia.set(c.produto, (dia.get(c.produto) || 0) + p);
+    dia.set(c.produto, arredondarQtd((dia.get(c.produto) || 0) + p));
     porDia.set(c.dia, dia);
   }
   return [...porDia.entries()].sort(([a], [b]) => a.localeCompare(b))
@@ -124,12 +125,12 @@ export function pendentesPorData(conferencias) {
 
 // quanto do produto espera armazenamento numa doca (somando todas as datas e notas)
 export const pendenteNaDoca = (conferencias, produto, docaId) =>
-  conferencias.filter((c) => c.produto === produto && c.docaId === docaId).reduce((t, c) => t + pendenteDaConferencia(c), 0);
+  conferencias.filter((c) => c.produto === produto && c.docaId === docaId).reduce((t, c) => arredondarQtd(t + pendenteDaConferencia(c)), 0);
 
 // confere o armazenamento antes de gravar; devolve o motivo do bloqueio ou null
 export function validarArmazenamento({ qtd, saldoOrigem, pendente, origemId, destino }) {
-  const quantidade = Number(qtd);
-  if (!(quantidade > 0)) return "Informe a quantidade (maior que zero).";
+  const quantidade = lerQuantidade(qtd); // "101,5" → 101.5
+  if (!quantidadePositiva(quantidade)) return MSG_QUANTIDADE;
   if (quantidade > saldoOrigem) return MSG_SALDO_ORIGEM;
   if (quantidade > pendente) return MSG_ACIMA_DO_PENDENTE;
   if (!destino) return MSG_ENDERECO_NAO_ENCONTRADO;
@@ -142,12 +143,12 @@ export function validarArmazenamento({ qtd, saldoOrigem, pendente, origemId, des
 // Devolve [{ id, qtd }] — quanto abater de cada conferência.
 export function distribuirArmazenamento(conferencias, qtd) {
   const partes = [];
-  let resta = Number(qtd);
+  let resta = lerQuantidade(qtd);
   const ordem = [...conferencias].sort((a, b) => a.dia.localeCompare(b.dia) || a.id - b.id);
   for (const c of ordem) {
     if (resta <= 0) break;
     const parte = Math.min(resta, pendenteDaConferencia(c));
-    if (parte > 0) { partes.push({ id: c.id, qtd: parte }); resta -= parte; }
+    if (parte > 0) { partes.push({ id: c.id, qtd: parte }); resta = arredondarQtd(resta - parte); }
   }
   return partes;
 }

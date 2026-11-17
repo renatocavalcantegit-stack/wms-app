@@ -102,3 +102,13 @@ test("separar novamente: só enquanto ninguém começou a conferir", () => {
   assert.equal(podeSepararNovamente("aguardando"), null);
   for (const st of ["andamento", "conferido", "divergente"]) assert.equal(podeSepararNovamente(st), MSG_JA_NA_CONFERENCIA);
 });
+
+test("quantidade quebrada: total da parada soma sem erro e a falta reparte o valor quebrado", () => {
+  const a = ped("PV-1", "normal", "08:00", [it("RAIO", "01-001-100-101", 0.1)]);
+  const b = ped("PV-2", "normal", "08:05", [it("RAIO", "01-001-100-101", 0.2)]);
+  const [parada] = montarParadas([a, b], { "PV-1": "A", "PV-2": "B" });
+  assert.equal(parada.total, 0.3); // e não 0.30000000000000004
+  const linhas = [{ pedido: "PV-1", idx: 0, qtd: 101.5 }, { pedido: "PV-2", idx: 0, qtd: 2 }];
+  assert.deepEqual(distribuirAchado(linhas, 102.7),
+    [{ pedido: "PV-1", idx: 0, sep: 101.5, falta: false }, { pedido: "PV-2", idx: 0, sep: 1.2, falta: true }]);
+});

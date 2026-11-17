@@ -4,6 +4,7 @@
 // por isso a conferência SOMA o que foi confirmado, em vez de travar o produto para outro coletor.
 import { importacaoDeNotas } from "../demo-dados.js";
 import { lerEstoque, gravarEstoque, enderecoPorId, somarSaldo, saldoNoEndereco, registrarMovimento } from "./estoque.js";
+import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   validarDoca, validarConferencia, validarArmazenamento, distribuirArmazenamento, pendenteNaDoca, pendenteDaConferencia,
   codigoDoVolume, separarNotasImportadas,
@@ -35,7 +36,7 @@ export function conferir({ notaId, produto, qtd, volumes, docaId }) {
   const erro = validarConferencia(nota, { produto, qtd, volumes }, db.conferencias);
   if (erro) return { ok: false, msg: erro };
 
-  const conferencia = { id: db.proximoId.conferencia++, notaId, produto, qtd: Number(qtd), docaId, dia: hoje(), armazenado: 0, cancelado: 0, volumes: [] };
+  const conferencia = { id: db.proximoId.conferencia++, notaId, produto, qtd: lerQuantidade(qtd), docaId, dia: hoje(), armazenado: 0, cancelado: 0, volumes: [] };
   const novos = [];
   for (let seq = 1; seq <= Number(volumes); seq++) {
     const v = { codigo: codigoDoVolume(db.proximoId.volume++), notaId, produto, conferenciaId: conferencia.id, seq, total: Number(volumes) };
@@ -69,10 +70,13 @@ export function armazenar({ produto, docaId, qtd, destinoId }) {
     qtd, saldoOrigem: saldoNoEndereco(db, docaId, produto), pendente, origemId: docaId, destino: enderecoPorId(db, destinoId),
   });
   if (erro) return { ok: false, msg: erro };
-  const quantidade = Number(qtd);
+  const quantidade = lerQuantidade(qtd);
   // abate das conferências pendentes desta doca, das mais antigas para as mais novas
   const daDoca = db.conferencias.filter((c) => c.produto === produto && c.docaId === docaId);
-  for (const parte of distribuirArmazenamento(daDoca, quantidade)) db.conferencias.find((c) => c.id === parte.id).armazenado += parte.qtd;
+  for (const parte of distribuirArmazenamento(daDoca, quantidade)) {
+    const c = db.conferencias.find((x) => x.id === parte.id);
+    c.armazenado = arredondarQtd(c.armazenado + parte.qtd);
+  }
   somarSaldo(db, docaId, produto, -quantidade);
   somarSaldo(db, destinoId, produto, quantidade);
   registrarMovimento(db, { tipo: "armazenamento", produto, qtd: quantidade, origem: docaId, destino: destinoId });
@@ -84,7 +88,7 @@ export function armazenar({ produto, docaId, qtd, destinoId }) {
 // (depois pode ser movido por Transferência). Sem confirmação nem registro de quem cancelou, como no documento.
 export function cancelarPendente(notaId, produto) {
   const db = lerEstoque();
-  for (const c of db.conferencias.filter((x) => x.notaId === notaId && x.produto === produto)) c.cancelado += pendenteDaConferencia(c);
+  for (const c of db.conferencias.filter((x) => x.notaId === notaId && x.produto === produto)) c.cancelado = arredondarQtd(c.cancelado + pendenteDaConferencia(c));
   gravarEstoque(db);
 }
 
