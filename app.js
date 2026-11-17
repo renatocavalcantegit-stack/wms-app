@@ -8,8 +8,8 @@
 // As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao } from "./js/dados/separacao.js";
-import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
-import { baixarPorSeparacao } from "./js/dados/movimentacao.js";
+import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
+import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
@@ -18,6 +18,7 @@ import { Embarque } from "./embarque.js";
 import { lerCodigoDoEndereco, acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import {
   validarDocaExpedicao, validarLote, posicoesDoLote, montarParadas, paradaConcluida, distribuirAchado, MAX_PEDIDOS_LOTE,
+  podeSepararNovamente,
 } from "./compartilhado/regras/separacao.js";
 
 (() => {
@@ -268,6 +269,13 @@ import {
     if (go.dataset.lote) return iniciarLote(lotes.find((l) => l.id === go.dataset.lote));
     const o = pedido(go.dataset.id);
     if (o.status === "concluido") {
+      // separar novamente: só se ninguém começou a conferir; o que foi baixado volta para o endereço
+      // e o pedido sai da fila da conferência até terminar de novo
+      const idNaConferencia = o.parte ? o.parte.pai : o.id;
+      const erro = podeSepararNovamente(statusNaConferencia(setor(), idNaConferencia));
+      if (erro) { closeSheets(); toast(erro); beep(false); return; }
+      estornarSeparacao({ pedido: o.id, usuario: sess?.login });
+      retirarDaConferencia(setor(), idNaConferencia);
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: "pendente", motivo: "" }));
       Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null, prodOk: null });
     }

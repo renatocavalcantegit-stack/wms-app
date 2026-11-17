@@ -112,3 +112,23 @@ export function validarTransferencia({ origem, destino, saldoOrigem, qtd }) {
   if (destino.id === origem.id) return MSG_DESTINO_IGUAL;
   return null;
 }
+
+// ---------- estorno da separação ----------
+// Quanto a separação de um pedido tirou de cada endereço e ainda não voltou (baixas menos estornos).
+// Serve para "separar novamente": o que foi baixado volta para o mesmo endereço antes da nova separação.
+// Devolve [{ enderecoId, produto, qtd }] só com o que tem quantidade a devolver.
+export function baixadoPorPedido(movimentos, pedido) {
+  const soma = new Map();
+  for (const m of movimentos) {
+    if (m.pedido !== pedido) continue;
+    const sinal = m.tipo === "separacao" ? 1 : m.tipo === "estorno-separacao" ? -1 : 0;
+    if (!sinal) continue;
+    const enderecoId = sinal > 0 ? m.origem : m.destino;
+    const chave = `${enderecoId}|${m.produto}`;
+    soma.set(chave, (soma.get(chave) || 0) + sinal * m.qtd);
+  }
+  return [...soma].filter(([, qtd]) => qtd > 0).map(([chave, qtd]) => {
+    const [enderecoId, produto] = chave.split("|");
+    return { enderecoId: Number(enderecoId), produto, qtd };
+  });
+}

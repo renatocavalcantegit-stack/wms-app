@@ -142,3 +142,11 @@ export function juntarPartes(partes) {
     inicio: Math.min(...ordem.map((p) => p.inicio || Infinity)),
   };
 }
+
+// ---------- separar novamente ----------
+// O separador pode refazer um pedido concluído só enquanto ninguém começou a conferir. Depois disso,
+// mexer no pedido é com o gestor (reabrir a conferência), senão a conferência e o embarque ficam desencontrados.
+export const MSG_JA_NA_CONFERENCIA = "PEDIDO JÁ ESTÁ SENDO CONFERIDO. PARA REFAZER, FALE COM O GESTOR.";
+// statusConferencia: status do pedido na conferência (null/undefined = ainda não chegou ou ninguém abriu)
+export const podeSepararNovamente = (statusConferencia) =>
+  !statusConferencia || statusConferencia === "aguardando" ? null : MSG_JA_NA_CONFERENCIA;

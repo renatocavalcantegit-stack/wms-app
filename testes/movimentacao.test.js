@@ -5,7 +5,7 @@ import {
   validarLimite, necessidade, precisaAbastecer, escolherOrigens, tarefaDuplicada, ordenarTarefas, planejadoDaTarefa,
   abastecidoDaTarefa, proximaOrigem, tarefasNoEndereco, validarAbastecimento, statusDepoisDoPasso, quantidadePermitida, validarTransferencia,
   MSG_ORIGEM_FORA_DA_TAREFA, MSG_PRODUTO_DA_TAREFA, MSG_ACIMA_DO_PLANEJADO, MSG_SALDO_ORIGEM, MSG_DESTINO_DA_TAREFA,
-  MSG_DESTINO_IGUAL, MSG_SEM_SALDO_NA_ORIGEM,
+  MSG_DESTINO_IGUAL, MSG_SEM_SALDO_NA_ORIGEM, baixadoPorPedido,
 } from "../compartilhado/regras/movimentacao.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../compartilhado/regras/enderecos.js";
 
@@ -89,4 +89,19 @@ test("tarefa pendente bloqueia desativar o picking e a origem que ainda falta re
   assert.equal(tarefasNoEndereco(ts, 11), 1);
   assert.equal(tarefasNoEndereco(ts, 10), 0); // origem já retirada
   assert.equal(tarefasNoEndereco(ts, 2), 0); // tarefa encerrada não bloqueia
+});
+
+test("estorno da separação: soma o que o pedido baixou por endereço, menos o que já voltou", () => {
+  const movs = [
+    { tipo: "separacao", pedido: "PV-1", origem: 10, produto: "122", qtd: 10 },
+    { tipo: "separacao", pedido: "PV-1", origem: 11, produto: "176", qtd: 4 },
+    { tipo: "separacao", pedido: "PV-2", origem: 10, produto: "122", qtd: 7 }, // outro pedido
+    { tipo: "abastecimento", origem: 99, destino: 10, produto: "122", qtd: 50 }, // não é da separação
+  ];
+  assert.deepEqual(baixadoPorPedido(movs, "PV-1"), [{ enderecoId: 10, produto: "122", qtd: 10 }, { enderecoId: 11, produto: "176", qtd: 4 }]);
+  // depois do estorno, nada mais a devolver (separar novamente duas vezes não devolve em dobro)
+  movs.push({ tipo: "estorno-separacao", pedido: "PV-1", destino: 10, produto: "122", qtd: 10 },
+    { tipo: "estorno-separacao", pedido: "PV-1", destino: 11, produto: "176", qtd: 4 });
+  assert.deepEqual(baixadoPorPedido(movs, "PV-1"), []);
+  assert.deepEqual(baixadoPorPedido([], "PV-1"), []);
 });

@@ -6,7 +6,7 @@ import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../../compart
 import { pendenteNaDoca } from "../../compartilhado/regras/recebimento.js";
 import {
   validarLimite, necessidade, precisaAbastecer, escolherOrigens, tarefaDuplicada, tarefaPendente, ordenarTarefas,
-  validarAbastecimento, statusDepoisDoPasso, abastecidoDaTarefa, validarTransferencia,
+  validarAbastecimento, statusDepoisDoPasso, abastecidoDaTarefa, validarTransferencia, baixadoPorPedido,
   MSG_TAREFA_JA_ABERTA, MSG_SEM_MAXIMO, MSG_PICKING_CHEIO, MSG_SEM_AEREO, MSG_NAO_E_PICKING,
 } from "../../compartilhado/regras/movimentacao.js";
 
@@ -168,6 +168,21 @@ export function baixarPorSeparacao({ endereco, produto, qtd, usuario, pedido }) 
   }
   if (e.tipo === "picking") verificarAutomatico(db, produto, e.id);
   gravarEstoque(db);
+}
+
+// "separar novamente": tudo o que a separação anterior deste pedido baixou volta para o mesmo endereço,
+// com movimento de estorno (assim a nova separação baixa de novo sem tirar duas vezes).
+export function estornarSeparacao({ pedido, usuario }) {
+  const db = lerEstoque();
+  const devolver = baixadoPorPedido(db.movimentos, pedido);
+  for (const d of devolver) {
+    const antes = saldoNoEndereco(db, d.enderecoId, d.produto);
+    somarSaldo(db, d.enderecoId, d.produto, d.qtd);
+    registrarMovimento(db, { tipo: "estorno-separacao", produto: d.produto, qtd: d.qtd, destino: d.enderecoId, usuario, pedido,
+      saldoDestinoAntes: antes, saldoDestinoDepois: antes + d.qtd });
+  }
+  if (devolver.length) gravarEstoque(db);
+  return devolver;
 }
 
 // tira da origem, põe no destino e registra o movimento com os saldos de antes e depois (base dos relatórios)

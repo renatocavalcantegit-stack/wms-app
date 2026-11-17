@@ -4,6 +4,10 @@
   "description": "WMS Beach Bike — app dos operadores e painéis de gestão",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
   }
 }

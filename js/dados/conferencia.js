@@ -40,6 +40,23 @@ export function lerPedidosDaConferencia(setor) {
   try { return (JSON.parse(localStorage.getItem(chave(setor))) || {}).orders || []; } catch { return []; }
 }
 
+// status do pedido na conferência (null = ainda não está gravado lá, ou seja, ninguém abriu)
+export function statusNaConferencia(setor, id) {
+  return lerPedidosDaConferencia(setor).find((o) => o.id === id)?.conf?.status || null;
+}
+
+// "separar novamente": o pedido sai da fila da conferência enquanto ninguém começou a conferir.
+// Ele volta sozinho quando a nova separação terminar (importarConcluidosDaSeparacao).
+export function retirarDaConferencia(setor, id) {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(chave(setor))); } catch {}
+  if (!d || !Array.isArray(d.orders)) return;
+  const o = d.orders.find((x) => x.id === id);
+  if (!o || o.conf?.status !== "aguardando") return;
+  d.orders = d.orders.filter((x) => x !== o);
+  salvarConferencia(setor, d);
+}
+
 // traz pedidos concluídos na Separação (mesmo navegador).
 // Pedido dividido entre separadores só chega quando TODAS as partes terminaram, já juntado num pedido só.
 // Pedido que já está na fila só é substituído se foi separado de novo (horário de fim diferente).

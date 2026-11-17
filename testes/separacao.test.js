@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   validarDocaExpedicao, MSG_NAO_E_DOCA_EXPEDICAO, compararAtendimento, validarLote, posicoesDoLote, montarParadas, paradaConcluida,
   destinoDaLeitura, distribuirAchado, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, partesCompletas, juntarPartes,
+  podeSepararNovamente, MSG_JA_NA_CONFERENCIA,
 } from "../compartilhado/regras/separacao.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../compartilhado/regras/enderecos.js";
 
@@ -94,4 +95,10 @@ test("rótulo das ruas da parte: ordem numérica e rua 0 conta", () => {
   assert.equal(ruasDaParte(itens, [0, 1]), "Rua 802–1000");
   assert.equal(ruasDaParte(itens, [0, 1, 2]), "Rua 0–1000");
   assert.equal(ruasDaParte(itens, [2]), "Rua 0");
+});
+
+test("separar novamente: só enquanto ninguém começou a conferir", () => {
+  assert.equal(podeSepararNovamente(null), null);
+  assert.equal(podeSepararNovamente("aguardando"), null);
+  for (const st of ["andamento", "conferido", "divergente"]) assert.equal(podeSepararNovamente(st), MSG_JA_NA_CONFERENCIA);
 });

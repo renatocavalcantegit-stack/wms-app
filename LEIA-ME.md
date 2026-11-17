@@ -53,7 +53,9 @@ estoque-inventario.js    coletor do Estoquista, Auditoria: contagem do inventár
 gestao-inventario.js     Gestão de Estoque (WEB), aba Inventário: criar, acompanhar, aprovar divergências, finalizar, sincronizar, histórico
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
-testes/                  testes automatizados (rodam no Node, sem instalar nada)
+testes/                  testes automatizados das regras e dados (rodam no Node, sem instalar nada)
+e2e/                     testes de ponta a ponta: abrem as telas num navegador automático e conferem se uma tela
+                         enxerga o que a outra fez (separação → estoque → conferência → embarque, estoque, perfis)
 ```
 
 ## Ordem sugerida para ler o código
@@ -69,6 +71,22 @@ Precisa só do Node (versão 22 ou mais nova):
 
 ```bash
 npm test
+```
+
+Testes de ponta a ponta (navegador automático, Playwright). Na primeira vez, instalar:
+
+```bash
+npm install
+```
+
+```bash
+npx playwright install chromium
+```
+
+Depois, para rodar (uns 3 minutos; o próprio teste sobe um servidor na porta 5175):
+
+```bash
+npm run e2e
 ```
 
 ## Rodar o app no computador
