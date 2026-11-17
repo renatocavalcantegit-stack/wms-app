@@ -1,5 +1,8 @@
-// WMS Beach Bike — login de demonstração e sessão do usuário no aparelho.
-// PINs fictícios, apenas para o MVP; no sistema real a autenticação fica no servidor.
+// WMS Beach Bike — login e sessão do usuário no aparelho.
+// Dois jeitos de entrar:
+//   - demonstração (GitHub Pages): PINs fictícios desta lista, conferidos no próprio aparelho;
+//   - com servidor (Fase 1b): o servidor confere o PIN e devolve um token. O token vai na sessão
+//     e acompanha cada envio da fila. A sessão vale o turno no aparelho, mesmo se a rede cair.
 
 // usuários de demonstração (cada perfil acessa só a sua tela)
 export const USERS = [
@@ -22,7 +25,8 @@ const SESSION = "wms-bb-session";
 export const session = () => {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION));
-    return s && USERS.find((u) => u.login === s.login) ? s : null;
+    // sessão do servidor (tem token) vale para qualquer usuário cadastrado lá; a de demonstração, só para esta lista
+    return s && (s.token || USERS.find((u) => u.login === s.login)) ? s : null;
   } catch { return null; }
 };
 export const login = (user, pin) => {
@@ -33,6 +37,38 @@ export const login = (user, pin) => {
   return s;
 };
 export const logout = () => localStorage.removeItem(SESSION);
+
+// ---------- com servidor ----------
+
+// O app está sendo servido pelo servidor do WMS? O arquivo modo.json responde:
+// no GitHub Pages é o arquivo do repositório ({ servidor: false }); o servidor do WMS responde { servidor: true }.
+// Sem rede, o service worker devolve a cópia guardada, então a resposta vale também offline.
+export async function temServidor(buscar = fetch) {
+  try {
+    const r = await buscar("modo.json", { cache: "no-cache" });
+    return r.ok && (await r.json()).servidor === true;
+  } catch { return false; }
+}
+
+// Login no servidor: o PIN vai para o servidor conferir (nunca é guardado no aparelho).
+// Devolve { ok: true, sessao } ou { ok: false, erro: "pin" | "sem-rede" | "servidor" }.
+// O primeiro login do turno precisa de rede; depois, a sessão fica no aparelho.
+export async function loginNoServidor(user, pin, buscar = fetch) {
+  let r;
+  try {
+    r = await buscar("api/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ login: String(user).trim().toLowerCase(), pin: String(pin).trim() }),
+    });
+  } catch { return { ok: false, erro: "sem-rede" }; }
+  if (r.status === 401 || r.status === 400) return { ok: false, erro: "pin" };
+  if (!r.ok) return { ok: false, erro: "servidor" };
+  const { token, expiraEm, login, nome, perfil } = await r.json();
+  const s = { login, nome, perfil, token, expiraEm, desde: Date.now() };
+  localStorage.setItem(SESSION, JSON.stringify(s));
+  return { ok: true, sessao: s };
+}
 export const setSetor = (setor) => {
   const s = session(); if (!s) return null;
   s.setor = setor; s.setorDesde = Date.now();

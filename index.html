@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=47">
+  <link rel="stylesheet" href="styles.css?v=48">
 </head>
 <body>
 
@@ -90,6 +90,12 @@
       <div class="hello">
         <p class="hello-kicker" id="helloDate"></p>
         <h1 class="hello-title">Olá, <span id="helloName"></span></h1>
+        <p class="sinc-estado" hidden></p>
+      </div>
+      <!-- ações que o servidor recebeu mas não aplicou (ex.: o pedido já estava com outro separador) -->
+      <div id="sincRecusas" class="sinc-recusas" role="alert" hidden>
+        <p id="sincRecusasT"></p>
+        <button id="sincRecusasOk" class="btn ghost">Ok, vou avisar o coordenador</button>
       </div>
 
       <div class="kpis">
@@ -130,6 +136,7 @@
       <div class="pick-head">
         <p id="pickOrder" class="pick-order"></p>
         <p id="pickClient" class="pick-client"></p>
+        <p class="sinc-estado" hidden></p>
       </div>
       <button id="pickListBtn" class="icon-btn" aria-label="Lista de itens">
         <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
@@ -453,6 +460,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=47"></script>
+  <script type="module" src="app.js?v=48"></script>
 </body>
 </html>

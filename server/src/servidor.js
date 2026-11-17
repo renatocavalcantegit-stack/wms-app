@@ -1,4 +1,4 @@
-// Monta o servidor do WMS: junta as rotas da API e o controle de login.
+// Monta o servidor do WMS: junta as rotas da API, o controle de login e as telas do app.
 // Não liga o servidor (quem liga é iniciar.js); assim os testes conseguem montar um servidor com o banco de teste.
 import Fastify from "fastify";
 import { usuarioDaSessao } from "./consultas/sessoes.js";
@@ -7,6 +7,7 @@ import { rotasDeLogin } from "./rotas-api/login.js";
 import { rotasDeCatalogo } from "./rotas-api/catalogo.js";
 import { rotasDePedidos } from "./rotas-api/pedidos.js";
 import { rotasDeSincronizacao } from "./rotas-api/sincronizacao.js";
+import { rotasDasTelas } from "./telas.js";
 
 export function criarServidor({ pool, registrarLog = false }) {
   const app = Fastify({ logger: registrarLog });
@@ -33,6 +34,7 @@ export function criarServidor({ pool, registrarLog = false }) {
   rotasDeCatalogo(app, contexto);
   rotasDePedidos(app, contexto);
   rotasDeSincronizacao(app, contexto);
+  rotasDasTelas(app); // por último: o que não for /api/... é tela
 
   // ao desligar o servidor, fecha as conexões de tempo real
   app.addHook("onClose", async () => tempoReal.fechar());

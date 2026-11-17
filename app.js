@@ -6,7 +6,9 @@
 // Em cada item (ou parada do lote): CONFIRMA O ENDEREÇO (QR ou ID digitado), BIPA O PRODUTO uma vez e DIGITA A QUANTIDADE.
 // Assim o sistema sabe que ele está na prateleira certa com o produto certo, e a falta "endereço vazio" é confiável.
 // As regras ficam em compartilhado/regras/separacao.js.
-import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl } from "./js/sessao.js";
+import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl, temServidor, loginNoServidor } from "./js/sessao.js";
+import { enfileirar, totalPendente, lerEstadoDaSincronizacao, gravarEstadoDaSincronizacao, aoMudarFila } from "./js/dados/fila.js";
+import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos } from "./js/dados/separacao.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
@@ -57,17 +59,70 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   };
   const fmtMin = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
 
+  // ---------- envio ao servidor (Fase 1b) ----------
+  // Com servidor, cada ação da separação entra na FILA do aparelho (js/dados/fila.js) e a tela segue
+  // sem esperar a rede. O js/sincronizacao.js manda a fila a cada 5 s e quando a rede volta.
+  // Na demonstração (sessão sem token), nada é enfileirado.
+  const pedirEnvio = iniciarSincronizacao({ sessao: () => session(), aoMudar: aposEnvio });
+  function registrar(tipo, dados) {
+    if (!sess?.token) return;
+    enfileirar(sess.login, tipo, dados);
+    renderSinc(); pedirEnvio();
+  }
+  // o servidor recebeu mas não aplicou (ex.: o pedido já estava com outro separador): avisa na hora
+  function aposEnvio(r) {
+    r.recusadas.forEach((x) => { toast(`${x.pedido || "Ação"}: ${x.motivo}`); beep(false); vibrate([80, 50, 80]); });
+    renderSinc();
+  }
+  // a linha de estado no início e na separação: tudo enviado, enviando, sem rede há X min, sessão vencida
+  function renderSinc() {
+    const comServidor = !!sess?.token;
+    const n = comServidor ? totalPendente(sess.login) : 0, est = lerEstadoDaSincronizacao();
+    let texto, tipo = "ok";
+    if (est.sessaoVencida) { texto = `Sessão vencida · entre de novo para enviar ${n} ação(ões)`; tipo = "err"; }
+    else if (n && est.semRedeDesde) { texto = `Sem rede há ${fmtMin(Date.now() - Date.parse(est.semRedeDesde))} · ${n} a enviar`; tipo = "warn"; }
+    else if (n) { texto = `Enviando ${n} ação(ões)…`; tipo = "warn"; }
+    else texto = est.ultimaSincronizacao
+      ? `Tudo enviado · ${new Date(est.ultimaSincronizacao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+      : "Conectado ao servidor";
+    $$(".sinc-estado").forEach((el) => { el.hidden = !comServidor; el.dataset.tipo = tipo; el.textContent = texto; });
+    const rec = est.recusadas;
+    $("#sincRecusas").hidden = !comServidor || !rec.length;
+    if (rec.length) $("#sincRecusasT").textContent = `${rec.length} ação(ões) não aplicada(s) no servidor. Última: ${rec.at(-1).pedido || ""} · ${rec.at(-1).motivo}`;
+  }
+  $("#sincRecusasOk").addEventListener("click", () => {
+    gravarEstadoDaSincronizacao({ ...lerEstadoDaSincronizacao(), recusadas: [] });
+    renderSinc();
+  });
+  aoMudarFila(renderSinc);
+
   // ---------- login ----------
-  $("#loginForm").addEventListener("submit", (e) => {
+  // Com servidor, o PIN é conferido lá e a sessão ganha o token (o primeiro login do turno precisa de rede).
+  // Sem servidor (demonstração no GitHub Pages), confere na lista de demonstração, no próprio aparelho.
+  const ERROS_DE_LOGIN = {
+    pin: "Usuário ou PIN inválido",
+    "sem-rede": "Sem rede. O primeiro login do turno precisa de rede: vá para um ponto com Wi-Fi.",
+    servidor: "O servidor não respondeu. Tente de novo em instantes.",
+  };
+  $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const s = login($("#loginName").value, $("#loginPin").value);
+    const nome = $("#loginName").value, pin = $("#loginPin").value;
+    let s = null, erro = "pin";
+    if (await temServidor()) {
+      const r = await loginNoServidor(nome, pin);
+      if (r.ok) s = r.sessao; else erro = r.erro;
+    } else s = login(nome, pin);
     if (!s) {
+      $("#loginErr").textContent = ERROS_DE_LOGIN[erro];
       $("#loginErr").hidden = false; vibrate([80, 50, 80]);
       $("#loginPin").value = ""; $("#loginPin").focus();
       return;
     }
     $("#loginErr").hidden = true;
+    // entrou de novo depois de a sessão vencer: a fila volta a ser enviada
+    gravarEstadoDaSincronizacao({ ...lerEstadoDaSincronizacao(), sessaoVencida: false });
     sess = s; user = s.nome;
+    renderSinc(); pedirEnvio();
     goHome();
   });
   $("#loginQuick").addEventListener("click", (e) => {
@@ -308,11 +363,15 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       const erro = podeSepararNovamente(statusNaConferencia(setor(), idNaConferencia));
       if (erro) { closeSheets(); toast(erro); beep(false); return; }
       estornarSeparacao({ pedido: o.id, usuario: sess?.login });
+      registrar("separacao.reabrir", { pedido: o.id });
       retirarDaConferencia(setor(), idNaConferencia);
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: i.qtd === 0 ? "cortado" : "pendente", motivo: "", devolver: 0 }));
       Object.assign(o, { status: "pendente", atual: 0, doca: null, lote: null, pos: null, endOk: null, prodOk: null });
     }
-    if (o.status === "pendente") { o.status = "andamento"; o.inicio = Date.now(); o.operador = user; }
+    if (o.status === "pendente") {
+      o.status = "andamento"; o.inicio = Date.now(); o.operador = user;
+      registrar("separacao.iniciar", { pedido: o.id });
+    }
     // começa no primeiro item ainda a separar (pula o que o gestor cortou)
     if (o.itens[o.atual || 0]?.status !== "pendente") o.atual = Math.max(0, o.itens.findIndex((i) => i.status === "pendente"));
     current = o; lote = null; save(); closeSheets();
@@ -337,7 +396,10 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   function iniciarLote(l) {
     if (l.status === "pendente") {
       Object.assign(l, { status: "andamento", inicio: Date.now(), operador: user });
-      pedidosDoLote(l).forEach((o) => Object.assign(o, { status: "andamento", inicio: l.inicio, operador: user }));
+      pedidosDoLote(l).forEach((o) => {
+        Object.assign(o, { status: "andamento", inicio: l.inicio, operador: user });
+        registrar("separacao.iniciar", { pedido: o.id, lote: l.id, posicao: l.posicoes[o.id] });
+      });
     }
     lote = l; current = null; save(); closeSheets();
     if (paradas().every(paradaConcluida)) return abrirDoca({ pedidos: [...l.pedidos], lote: l.id });
@@ -541,11 +603,16 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (v == null || Number.isNaN(v) || v > total) return;
     if (v < total) { openShort(v); return; }
     if (lote) {
-      parada().linhas.forEach((l) => { const i = itemDaLinha(l); Object.assign(i, { sep: i.qtd, status: "ok", motivo: "" }); baixar(l.pedido, i); });
+      parada().linhas.forEach((l) => {
+        const i = itemDaLinha(l);
+        Object.assign(i, { sep: i.qtd, status: "ok", motivo: "" }); baixar(l.pedido, i);
+        registrar("separacao.item", { pedido: l.pedido, sequencia: l.idx + 1, qtdSeparada: i.qtd, status: "ok" });
+      });
       save(); return next();
     }
     const i = item();
     Object.assign(i, { sep: v, status: "ok", motivo: "" }); save();
+    registrar("separacao.item", { pedido: current.id, sequencia: current.itens.indexOf(i) + 1, qtdSeparada: v, status: "ok" });
     baixar(current.id, i);
     next();
   }
@@ -602,6 +669,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       distribuirAchado(p.linhas, q).forEach((x) => {
         const i = pedido(x.pedido).itens[x.idx];
         Object.assign(i, { sep: x.sep, status: x.falta ? "falta" : "ok", motivo: x.falta ? reason : "" });
+        registrar("separacao.item", { pedido: x.pedido, sequencia: x.idx + 1, qtdSeparada: x.sep, status: i.status, motivo: i.motivo });
         baixar(x.pedido, i);
       });
       save(); closeSheets(); vibrate(40);
@@ -611,6 +679,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const i = item();
     const q = quantidadeDaFalta(i.qtd); if (q == null) return;
     Object.assign(i, { sep: q, status: "falta", motivo: reason });
+    registrar("separacao.item", { pedido: current.id, sequencia: current.itens.indexOf(i) + 1, qtdSeparada: q, status: "falta", motivo: reason });
     save(); closeSheets(); vibrate(40);
     baixar(current.id, i);
     toast(`Falta registrada · ${fq(q)}/${fq(i.qtd)}`);
@@ -700,7 +769,10 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   function concluir(doca) {
     // pedido de lote cancelado pelo gestor sem nada separado não vai para a doca
     const fim = Date.now(), ps = docaAlvo.pedidos.map(pedido).filter((o) => o.status !== "cancelado");
-    ps.forEach((o) => Object.assign(o, { status: "concluido", fim, doca: { ...doca, quando: fim, por: user } }));
+    ps.forEach((o) => {
+      Object.assign(o, { status: "concluido", fim, doca: { ...doca, quando: fim, por: user } });
+      registrar("separacao.concluir", { pedido: o.id, doca: doca.codigo });
+    });
     const l = docaAlvo.lote ? lotes.find((x) => x.id === docaAlvo.lote) : null;
     if (l) Object.assign(l, { status: "concluido", fim, doca });
     save();

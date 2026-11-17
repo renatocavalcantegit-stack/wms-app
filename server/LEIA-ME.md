@@ -1,10 +1,12 @@
-# Servidor do WMS (Fase 1a)
+# Servidor do WMS (Fase 1b)
 
-API em Node.js (Fastify) com banco PostgreSQL, em SQL puro.
-O app ainda não usa o servidor: ele continua com os dados no aparelho.
-- Fase 1a (esta): o servidor já APLICA as ações da Separação que chegam pelo `/api/sincronizar`.
-- Fase 1b: o coletor da Separação passa a mandar essas ações, com fila de envio para funcionar sem rede.
+API em Node.js (Fastify) com banco PostgreSQL, em SQL puro. O servidor também entrega as telas do app.
+- Fase 1a: o servidor APLICA as ações da Separação que chegam pelo `/api/sincronizar`.
+- Fase 1b (esta): o coletor da Separação entra pelo servidor e manda as ações por uma fila de envio,
+  que funciona sem rede (`js/dados/fila.js` e `js/sincronizacao.js`).
 - Fase 1c: a Gestão acompanha em tempo real e vê os conflitos.
+
+As outras telas (Conferência, Estoque, Gestão...) continuam com os dados só no aparelho, como na demonstração.
 
 ## Estrutura
 
@@ -24,6 +26,7 @@ src/consultas/              TODO o SQL, separado por assunto
   aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
 src/tempo-real.js           canal SSE: avisa as telas conectadas na hora
+src/telas.js                entrega as telas do app (só a lista do que é do app: nunca server/, .env, .git...)
 src/servidor.js             junta tudo e faz o controle de login
 src/iniciar.js              liga o servidor
 
@@ -68,6 +71,13 @@ npm run dev
 
 O servidor atende em http://localhost:3000 (porta `PORTA` do `.env`). Para conferir: http://localhost:3000/api/saude
 
+Abra http://localhost:3000 no navegador para usar o app **com o servidor**: o login do separador é conferido
+no servidor e cada ação da separação vai para o banco. A linha embaixo do nome mostra o envio
+("Tudo enviado", "Enviando…", "Sem rede há X min · N a enviar").
+
+Como o app sabe que tem servidor? Ele lê o `modo.json`. No GitHub Pages é o arquivo do repositório
+(`{ "servidor": false }`, modo demonstração); este servidor responde `{ "servidor": true }`.
+
 ## Testes
 
 ```bash
@@ -85,6 +95,8 @@ npm test
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
 | `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }] }` → `{ novas, repetidas, recusadas }` |
 | `GET /api/tempo-real?token=...` | sim | canal SSE; evento `acoes` quando chegam ações |
+| `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
+| `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/...) |
 
 Login: mande o token no cabeçalho `Authorization: Bearer <token>`.
 A sessão vale 14 horas (um turno).

@@ -498,3 +498,15 @@ a.btn { text-decoration: none; }
   .order-id { font-size: 15px; }
   .order-client { font-size: 13px; }
 }
+
+/* ===== envio ao servidor (Fase 1b): linha de estado e ações recusadas ===== */
+.sinc-estado { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.sinc-estado[hidden] { display: none; }
+.sinc-estado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.sinc-estado[data-tipo="warn"] { color: var(--warn); }
+.sinc-estado[data-tipo="warn"]::before { background: var(--warn); }
+.sinc-estado[data-tipo="err"] { color: var(--red); }
+.sinc-estado[data-tipo="err"]::before { background: var(--red); }
+.pick-head .sinc-estado { margin-top: 2px; font-size: 11px; }
+.sinc-recusas { margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: var(--red-soft); color: var(--red); font-size: 13px; font-weight: 600; }
+.sinc-recusas p { margin: 0 0 8px; }

@@ -3,7 +3,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
-import { USERS, session, login, logout, setSetor, homeUrl, temSetor } from "../js/sessao.js";
+import { USERS, session, login, logout, setSetor, homeUrl, temSetor, temServidor, loginNoServidor } from "../js/sessao.js";
 
 const separador = USERS.find((u) => u.perfil === "sep");
 
@@ -65,4 +65,41 @@ test("estoque: o estoquista vai para o coletor do estoque e o gestor para o pain
   assert.equal(homeUrl("estq"), "estoque.html");
   assert.equal(homeUrl("gest"), "gestao-estoque.html");
   assert.equal(temSetor("estq"), false); // estoquista não escolhe Expedição/Montagem
+});
+
+// ---------- com servidor (Fase 1b) ----------
+// "fetch" de mentira: cada teste diz o que o servidor responde
+
+const responde = (status, corpo) => async () => ({ ok: status === 200, status, json: async () => corpo });
+const semRede = async () => { throw new TypeError("Failed to fetch"); };
+
+test("tem servidor? o arquivo modo.json diz (no GitHub Pages é false; o servidor do WMS responde true)", async () => {
+  assert.equal(await temServidor(responde(200, { servidor: true })), true);
+  assert.equal(await temServidor(responde(200, { servidor: false })), false);
+  assert.equal(await temServidor(responde(404, {})), false);
+  assert.equal(await temServidor(semRede), false);
+});
+
+test("login no servidor: guarda o token na sessão do turno", async () => {
+  const chamadas = [];
+  const buscar = async (url, opcoes) => {
+    chamadas.push({ url, corpo: JSON.parse(opcoes.body) });
+    return { ok: true, status: 200, json: async () => ({ token: "tok-1", expiraEm: "2026-11-18T00:00:00Z", login: "separador", nome: "Usuário Separador", perfil: "sep" }) };
+  };
+  const r = await loginNoServidor(" Separador ", "9999", buscar);
+  assert.equal(r.ok, true);
+  assert.deepEqual(chamadas, [{ url: "api/login", corpo: { login: "separador", pin: "9999" } }]);
+  const s = session();
+  assert.deepEqual([s.login, s.perfil, s.token, s.expiraEm], ["separador", "sep", "tok-1", "2026-11-18T00:00:00Z"]);
+});
+
+test("login no servidor: PIN errado e sem rede dão erros diferentes, e não criam sessão", async () => {
+  assert.deepEqual(await loginNoServidor("separador", "0", responde(401, {})), { ok: false, erro: "pin" });
+  assert.deepEqual(await loginNoServidor("separador", "0", semRede), { ok: false, erro: "sem-rede" });
+  assert.equal(session(), null);
+});
+
+test("sessão do servidor vale para usuário que não está na lista de demonstração", async () => {
+  await loginNoServidor("novo.usuario", "1", responde(200, { token: "t", expiraEm: "x", login: "novo.usuario", nome: "Novo", perfil: "sep" }));
+  assert.equal(session().login, "novo.usuario");
 });

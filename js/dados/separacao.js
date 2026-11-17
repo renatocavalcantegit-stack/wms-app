@@ -1,7 +1,7 @@
 // WMS Beach Bike — camada de dados da Separação.
 // Só este arquivo sabe ONDE os pedidos e os lotes da separação ficam guardados.
-// Hoje: no localStorage do aparelho. Na Fase 1: banco local (IndexedDB) + fila de sincronização com o servidor,
-// sem precisar mudar as telas.
+// No localStorage do aparelho. Com servidor (Fase 1b), cada ação do separador também entra na fila de envio
+// (js/dados/fila.js), que o js/sincronizacao.js manda para o servidor.
 import { seedSeparacao, seedSeparacaoMont, seedLotes } from "../demo-dados.js";
 
 // v4: doca de expedição, lotes e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
