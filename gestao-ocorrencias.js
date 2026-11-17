@@ -96,6 +96,8 @@ const avisar = (msg, erro = false) => { estado.msg = msg; estado.erro = erro; };
 
 function abrir(id) {
   estado.confirmarCancelamento = false;
+  id = String(id || "").trim();
+  if (!id) { estado.pedido = null; avisar("Digite o número do pedido.", true); redesenhar(); return; }
   const p = abrirPedido(ctx.setor, id);
   if (!p) { estado.pedido = null; avisar(`Pedido ${id} não encontrado neste setor.`, true); }
   else { estado.pedido = p; avisar(""); }

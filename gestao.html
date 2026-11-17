@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=38">
-  <link rel="stylesheet" href="gestao.css?v=38">
+  <link rel="stylesheet" href="styles.css?v=39">
+  <link rel="stylesheet" href="gestao.css?v=39">
 </head>
 <body class="gx">
 
@@ -50,16 +50,15 @@
     </nav>
 
     <div class="gx-tools">
-      <label class="gx-search">
+      <label class="gx-search gx-lupa" id="lupa" title="Buscar (tecla /)">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="search" type="text" placeholder="Pedido, cliente, vendedor, rota…" autocomplete="off">
       </label>
       <button id="simBtn" class="gx-sim" title="Simula o andamento da operação (separadores, conferentes e carregamento)">
-        <i></i><span>Simulação ao vivo</span>
+        <i></i><span>Ao vivo</span>
       </button>
-      <button id="userBtn" class="gx-user">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
-        <span id="userName"></span>
+      <button id="userBtn" class="gx-user gx-user-av">
+        <span id="userName" class="gx-av"></span>
       </button>
     </div>
   </header>
@@ -84,6 +83,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="gestao.js?v=38"></script>
+  <script type="module" src="gestao.js?v=39"></script>
 </body>
 </html>

@@ -22,6 +22,23 @@ body.gx { height: 100vh; overflow: hidden; display: grid; grid-template-rows: 62
 .gx-sim.on i { background: var(--ok); animation: pulse 1.4s infinite; }
 .gx-user { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font-weight: 600; font-size: 13px; white-space: nowrap; }
 .gx-user svg { width: 17px; height: 17px; fill: none; stroke: var(--ink); stroke-width: 2; }
+
+/* busca do topo: fica só a lupa; ao clicar (ou tecla /) abre para a esquerda, por cima das abas,
+   só o necessário para caber o texto de exemplo. Com texto digitado, continua aberta. */
+.gx-lupa { position: relative; flex: 0 0 38px; min-width: 38px; width: 38px; padding: 0; justify-content: center; cursor: pointer; background: var(--card); }
+.gx-lupa input { position: absolute; right: 0; top: -1px; height: 38px; width: 38px; padding: 0 12px 0 36px; border: 1px solid transparent; border-radius: 10px;
+  background: transparent; opacity: 0; pointer-events: none; font-size: 14px; }
+.gx-lupa svg { position: relative; z-index: 2; pointer-events: none; }
+.gx-lupa.aberta { border-color: transparent; }
+.gx-lupa.aberta svg { position: absolute; right: 270px; }
+.gx-lupa.aberta input { transition: opacity .12s; width: 300px; opacity: 1; pointer-events: auto; z-index: 1; background: var(--card); border-color: var(--red-brand);
+  box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+.gx-lupa.com-texto:not(.aberta) { border-color: var(--red-brand); }
+.gx-lupa.com-texto:not(.aberta)::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--red-brand); }
+
+/* usuário: círculo com as iniciais (o nome inteiro aparece ao passar o mouse e no menu) */
+.gx-user-av { padding: 0; width: 38px; justify-content: center; border-radius: 50%; }
+.gx-av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--red-soft); color: var(--red); font-size: 12.5px; font-weight: 700; letter-spacing: .3px; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(18,161,80,.5); } 70% { box-shadow: 0 0 0 7px rgba(18,161,80,0); } 100% { box-shadow: 0 0 0 0 rgba(18,161,80,0); } }
 
 /* ---------- sub-barra ---------- */
@@ -38,7 +55,7 @@ body.gx { height: 100vh; overflow: hidden; display: grid; grid-template-rows: 62
 .gx-top { min-width: 0; }
 @media (max-width: 1640px) { .gx-actions .hint { display: none; } }
 @media (max-width: 1600px) { .gx-tab svg { display: none; } .gx-tab { padding: 0 11px; gap: 6px; font-size: 13.5px; } .gx-tabs { margin-left: 4px; } .gx-top { gap: 10px; } }
-@media (max-width: 1360px) { .gx-sim span { display: none; } }
+@media (max-width: 1100px) { .gx-sim span { display: none; } }
 @media (max-width: 1480px) { .gx-mod { display: none; } .gx-user span { max-width: 120px; overflow: hidden; text-overflow: ellipsis; } }
 .gx-actions .btn { height: 40px; font-size: 13.5px; padding: 0 14px; border-radius: 11px; }
 .gx-actions .hint { font-size: 12px; color: var(--ink-3); align-self: center; margin-right: 6px; }

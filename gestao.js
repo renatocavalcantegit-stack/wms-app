@@ -763,7 +763,10 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
     $("#tbSep").textContent = db.sep.inbox.length;
     $("#tbConf").textContent = db.conf.inbox.length;
     $("#simBtn").classList.toggle("on", sim);
-    $("#simBtn span").textContent = sim ? "Simulação ao vivo" : "Simulação pausada";
+    $("#simBtn span").textContent = sim ? "Ao vivo" : "Pausada";
+    $("#simBtn").title = sim ? "Simulação ao vivo: clique para pausar" : "Simulação pausada: clique para retomar";
+    // aba Ocorrências: o título e os números ficam dentro da própria aba (os indicadores da simulação não se aplicam)
+    if (board === "ocorr") { $("#boardTitle").textContent = ""; $("#kpis").innerHTML = ""; $("#actions").innerHTML = ""; return; }
     if (MONT) return renderTopMont();
     $("#tbLib").textContent = db.lib.inbox.length;
     $("#tbEmb").textContent = db.emb.inbox.length;
@@ -1123,7 +1126,24 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
     });
     $$(".ac-row").forEach((el) => el.classList.toggle("q-miss", !!q && !hayP(P(el.dataset.id)).toLowerCase().includes(q)));
   }
-  $("#search").addEventListener("input", (e) => { query = e.target.value; applySearch(); });
+  $("#search").addEventListener("input", (e) => { query = e.target.value; applySearch(); lupaTexto(); });
+
+  // lupa do topo: fechada mostra só o ícone; abre ao clicar ou com a tecla "/" (fora de campos de texto)
+  const lupa = $("#lupa");
+  const lupaTexto = () => lupa.classList.toggle("com-texto", !!query);
+  function abrirLupa() { lupa.classList.add("aberta"); $("#search").focus(); }
+  function fecharLupa(limpar) {
+    if (limpar && query) { $("#search").value = ""; query = ""; applySearch(); lupaTexto(); }
+    lupa.classList.remove("aberta"); $("#search").blur();
+  }
+  lupa.addEventListener("mousedown", (e) => { if (!lupa.classList.contains("aberta")) { e.preventDefault(); abrirLupa(); } });
+  $("#search").addEventListener("blur", () => { if (!query) lupa.classList.remove("aberta"); });
+  $("#search").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); fecharLupa(true); } });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+    e.preventDefault(); abrirLupa();
+  });
 
   // ---------- cronômetros ----------
   function tickTimers() { $$(".timer[data-since]").forEach((el) => (el.textContent = fmtDur(now() - +el.dataset.since))); }
@@ -1821,6 +1841,8 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
 
   // ---------- início ----------
   load();
-  $("#userName").textContent = sess.nome;
+  // iniciais do usuário no círculo (ex.: "Usuário Coordenador" → UC); o nome inteiro fica no título e no menu
+  $("#userName").textContent = sess.nome.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0].toUpperCase()).join("");
+  $("#userBtn").title = sess.nome;
   render(true);
 })();
