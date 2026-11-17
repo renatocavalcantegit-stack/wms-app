@@ -57,6 +57,8 @@ gestao-inventario.js     Gestão de Estoque (WEB), aba Inventário: criar, acomp
 gestao-ocorrencias.js    Gestão de Expedição (WEB), aba Ocorrências: corte de item e cancelamento do pedido, com motivo e referência do Sankhya
 sw.js                    service worker: guarda os arquivos para abrir sem rede
 
+server/                  servidor (Fase 0): API Fastify + PostgreSQL em SQL puro — ver server/LEIA-ME.md
+
 testes/                  testes automatizados das regras e dados (rodam no Node, sem instalar nada)
 e2e/                     testes de ponta a ponta: abrem as telas num navegador automático e conferem se uma tela
                          enxerga o que a outra fez (separação → estoque → conferência → embarque, estoque, perfis)
