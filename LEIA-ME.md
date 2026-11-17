@@ -56,6 +56,7 @@ estoque-inventario.js    coletor do Estoquista, Auditoria: contagem do inventár
 gestao-inventario.js     Gestão de Estoque (WEB), aba Inventário: criar, acompanhar, aprovar divergências, finalizar, sincronizar, histórico
 gestao-ocorrencias.js    Gestão de Expedição (WEB), aba Ocorrências: corte de item e cancelamento do pedido, com motivo e referência do Sankhya
 sw.js                    service worker: guarda os arquivos para abrir sem rede
+teste-leitor.html        página de diagnóstico do leitor do coletor (fora dos menus) — ver "Configurar o coletor"
 
 server/                  servidor (Fase 0): API Fastify + PostgreSQL em SQL puro — ver server/LEIA-ME.md
 
@@ -94,6 +95,34 @@ Depois, para rodar (uns 3 minutos; o próprio teste sobe um servidor na porta 51
 ```bash
 npm run e2e
 ```
+
+## Configurar o coletor (Chainway C6000)
+
+O app do coletor coloca o foco sozinho no campo de bipe **sem abrir o teclado da tela** (para não cobrir a tela pequena).
+Para o código lido chegar ao campo assim, o leitor precisa "apertar as teclas" — e não escrever pelo teclado do sistema.
+Configuração validada em 17/11/2026 (Chainway C6000, Android 10, tela de 4"):
+
+| Onde | Opção | Valor |
+|---|---|---|
+| app **keyboardemulator** → aba Function | Enable Scanner | ligado · Barcode2D marcado (KeyCode 139) |
+| keyboardemulator → **AppSettings** → Process mode | modo de saída | **Keyboard input** (o padrão "Scan content on cursor" NÃO funciona com o foco sem teclado) |
+| AppSettings → End mark | fim do código | **Enter** |
+| AppSettings → Prefix / Suffix | | vazios |
+| AppSettings → Data Format | | default |
+| teclado físico | modo | **números**: tecla **Num** até o ícone da barra de status mostrar **"1"** (não "Fn") |
+
+Por que cada detalhe importa:
+- **Process mode em "Scan content on cursor"**: o leitor apita, mas o código não entra no campo.
+- **Teclado travado em "Fn"**: os números 1 a 6 do código viram F1…F6 (o F1 abre a "Ajuda do Google Chrome").
+  O app avisa "TECLADO NO MODO Fn · aperte Num…" e descarta o bipe incompleto; o separador aperta **Num** e bipa de novo.
+- O gatilho **SCAN** envia **F9** (KeyCode 139) antes de cada código: é normal, o app ignora.
+- O app **não usa teclas F** no coletor (falta e lista de itens são por toque); **Enter** confirma.
+- Para digitar (ex.: ID do endereço), basta **tocar no campo**: aí o teclado da tela sobe.
+
+**Coletor novo, ou depois de um reset de fábrica:** aplicar a tabela acima e conferir em
+`/teste-leitor.html` (ex.: https://demo.renatoflow.com.br/teste-leitor.html): tocar em **"Focar sozinho"** do campo 1 e bipar
+uma etiqueta de volume — o quadro fica verde com o código inteiro (`PV-…|1/1|CLIENTE|CIDADE-UF`) e o teclado da tela não sobe.
+A lista "O que chegou" mostra as teclas que o coletor enviou, para diagnosticar outro modelo.
 
 ## Rodar o app no computador
 
