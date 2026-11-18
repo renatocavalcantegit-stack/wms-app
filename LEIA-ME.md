@@ -3,6 +3,13 @@
 App dos operadores (Separação, Conferência, Embarque e Estoque) e painéis de Gestão (Expedição, Montagem e Estoque).
 Hoje roda só no navegador, com dados de demonstração guardados no próprio aparelho. Está publicado no GitHub Pages.
 
+## Interface aprovada (referência)
+
+A interface e o layout aprovados são os da **versão 40** (17/11/2026), a última antes do servidor.
+Cópia congelada para consultar: https://renatocavalcantegit-stack.github.io/wms-interface-aprovada/
+(no Git: a marca `interface-aprovada-v40`). Ajustes técnicos, validações e travas podem entrar;
+qualquer mudança visível na interface aprovada precisa ser aprovada antes.
+
 ## Estrutura
 
 ```
