@@ -45,7 +45,9 @@ export async function ligarAoVivo({ sess, setor, container, ativa, toast }) {
   let espera = null;
   ouvirTempoReal(sess, () => { clearTimeout(espera); espera = setTimeout(atualizar, 300); });
   setInterval(atualizar, ATUALIZAR_MS);
-  setInterval(() => ctx.ativa() && desenhar(), RELOGIO_MS);
+  // o relógio anda mesmo sem aviso novo: quem passou de 90 s sem sinal fica "sem contato" sozinho,
+  // na lista e no número vermelho da aba (este aparece mesmo com o coordenador em outra aba)
+  setInterval(() => { marcarAba(); if (ctx.ativa()) desenhar(); }, RELOGIO_MS);
 
   container.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-vivo-visto]");
