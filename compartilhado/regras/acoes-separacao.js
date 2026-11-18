@@ -23,14 +23,26 @@ const aplicada = (pedido = {}, itens = []) => ({ resultado: "aplicada", pedido, 
 const conflito = (motivo) => ({ resultado: "conflito", motivo });
 const recusada = (motivo) => ({ resultado: "recusada", motivo });
 
+// Fila do separador (Fase 1e): o coordenador decide quem separa cada pedido. Se ele passou o pedido para outra
+// pessoa (ou devolveu para a caixa de entrada) enquanto o coletor estava sem rede, o que o coletor fez nele é recusado
+// e vai para as "não aplicadas" da Gestão. pedido.designadoPara: login do separador da fila, null = caixa de entrada.
+// Sem o campo (undefined), não há fila para conferir.
+function foraDaFila(pedido, login) {
+  if (pedido.designadoPara === undefined || pedido.designadoPara === login) return null;
+  const id = pedido.id ?? "pedido";
+  return recusada(pedido.designadoPara
+    ? `O COORDENADOR PASSOU O ${id} PARA OUTRA PESSOA.`
+    : `O COORDENADOR TIROU O ${id} DA SUA FILA.`);
+}
+
 // o pedido está com outro separador (ou ainda não foi iniciado): o que esta pessoa fizer nele é conflito
 function conflitoDeDono(pedido, login) {
-  if (!pedido.separador) return conflito("PEDIDO AINDA NÃO FOI INICIADO NO SERVIDOR.");
+  if (!pedido.separador) return foraDaFila(pedido, login) || conflito("PEDIDO AINDA NÃO FOI INICIADO NO SERVIDOR.");
   if (pedido.separador !== login) return conflito(`PEDIDO JÁ ESTÁ COM ${pedido.separador}.`);
   return null;
 }
 
-// acao = { tipo, dados, login, feitaEm } · pedido = { status, separador } ou null · itens = [{ sequencia, qtd, status }]
+// acao = { tipo, dados, login, feitaEm } · pedido = { id, status, separador, designadoPara? } ou null · itens = [{ sequencia, qtd, status }]
 // Devolve null quando o tipo não é da Separação (quem chamou decide o que fazer).
 export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
   const { tipo, dados = {}, login, feitaEm } = acao;
@@ -41,6 +53,8 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
     if (pedido.status === "concluido") return recusada("PEDIDO JÁ CONCLUÍDO. USE SEPARAR NOVAMENTE.");
     if (pedido.separador && pedido.separador !== login) return conflitoDeDono(pedido, login);
     if (pedido.status === "andamento") return aplicada(); // o mesmo separador voltou ao pedido
+    const fila = foraDaFila(pedido, login);
+    if (fila) return fila;
     const muda = { status: "andamento", separador: login, inicio: feitaEm };
     if (dados.lote) Object.assign(muda, { lote: dados.lote, posicaoLote: dados.posicao ?? null });
     return aplicada(muda);

@@ -1,5 +1,6 @@
 // WMS Beach Bike — Conferência (desktop, leitor de código de barras tipo "caixa")
-import { SETORES, session, logout, setSetor } from "./js/sessao.js";
+import { SETORES, session, setSetor } from "./js/sessao.js";
+import { sairDoAparelho } from "./js/sair.js";
 import { find } from "./js/demo-dados.js";
 import { consultaDeCheckout } from "./js/dados/estoque.js";
 import { validarQuantidadeLida } from "./compartilhado/regras/produtos.js";
@@ -645,14 +646,19 @@ import { $, $$, esc } from "./js/util.js";
     setSetor(x); location.reload();
   }
   $("#mSetor .sx-opts").addEventListener("click", (e) => { const b = e.target.closest("[data-setor]"); if (b) pickSetor(b.dataset.setor); });
-  $("#sxOut").addEventListener("click", () => { logout(); location.replace("./"); });
+  // Sair: com servidor, avisa o servidor (login único: libera a entrada em outro aparelho). Ver js/sair.js
+  async function sair() {
+    const r = await sairDoAparelho({ sessao: session() });
+    if (r.ok) location.replace("./"); else if (r.mensagem) toast(r.mensagem);
+  }
+  $("#sxOut").addEventListener("click", sair);
   $("#setorBtn").addEventListener("click", openSetor);
   $("#opSetorBtn").addEventListener("click", openSetor);
   $("#setorT").textContent = SETORES[SETOR];
   $("#setorBtn").classList.toggle("mont", MONT);
   $("#setorBtn").hidden = SEM_SETOR;
   if (MONT) { $("#dGo").className = "btn primary"; $("#dGo").innerHTML = "Voltar à fila <kbd>Enter</kbd>"; }
-  $("#opLogout").addEventListener("click", () => { logout(); location.replace("./"); });
+  $("#opLogout").addEventListener("click", sair);
 
   // ---------- foco do leitor + atalhos ----------
   function focusScan() { if (!modal && !TOUCH) $("#scan").focus(); }

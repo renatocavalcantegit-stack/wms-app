@@ -1,13 +1,16 @@
 // Monta o servidor do WMS: junta as rotas da API, o controle de login e as telas do app.
 // Não liga o servidor (quem liga é iniciar.js); assim os testes conseguem montar um servidor com o banco de teste.
 import Fastify from "fastify";
-import { usuarioDaSessao } from "./consultas/sessoes.js";
+import { usuarioDaSessao, motivoDoFim } from "./consultas/sessoes.js";
+import { MOTIVOS_DE_FIM } from "../../compartilhado/regras/login-unico.js";
 import { criarCanalTempoReal } from "./tempo-real.js";
 import { rotasDeLogin } from "./rotas-api/login.js";
 import { rotasDeCatalogo } from "./rotas-api/catalogo.js";
 import { rotasDePedidos } from "./rotas-api/pedidos.js";
 import { rotasDeSincronizacao } from "./rotas-api/sincronizacao.js";
 import { rotasDoPainel } from "./rotas-api/painel.js";
+import { rotasDosDispositivos } from "./rotas-api/dispositivos.js";
+import { rotasDoQuadro } from "./rotas-api/quadro.js";
 import { rotasDasTelas } from "./telas.js";
 
 export function criarServidor({ pool, registrarLog = false }) {
@@ -20,7 +23,11 @@ export function criarServidor({ pool, registrarLog = false }) {
     const cabecalho = request.headers.authorization || "";
     const token = cabecalho.startsWith("Bearer ") ? cabecalho.slice(7) : request.query?.token;
     const usuario = token ? await usuarioDaSessao(pool, token) : null;
-    if (!usuario) return reply.code(401).send({ erro: "Faça login novamente." });
+    if (!usuario) {
+      // sessão encerrada (o coordenador desconectou, ou a pessoa saiu): o aparelho mostra o motivo
+      const motivo = token ? await motivoDoFim(pool, token) : null;
+      return reply.code(401).send({ erro: MOTIVOS_DE_FIM[motivo] || "Faça login novamente.", motivo });
+    }
     request.usuario = usuario; // as rotas sabem quem está chamando
     request.token = token;     // e de qual sessão (aparelho): usado para gravar o último contato
   }
@@ -37,6 +44,8 @@ export function criarServidor({ pool, registrarLog = false }) {
   rotasDePedidos(app, contexto);
   rotasDeSincronizacao(app, contexto);
   rotasDoPainel(app, contexto);
+  rotasDosDispositivos(app, contexto);
+  rotasDoQuadro(app, contexto);
   rotasDasTelas(app); // por último: o que não for /api/... é tela
 
   // ao desligar o servidor, fecha ANTES as conexões de tempo real: elas não terminam sozinhas

@@ -42,7 +42,7 @@ test("tirar da fila só o que o servidor confirmou, mantendo a ordem do resto", 
 });
 
 test("estado da sincronização: começa vazio e guarda o que for gravado", () => {
-  assert.deepEqual(lerEstadoDaSincronizacao(), { ultimaSincronizacao: null, semRedeDesde: null, sessaoVencida: false, recusadas: [] });
+  assert.deepEqual(lerEstadoDaSincronizacao(), { ultimaSincronizacao: null, semRedeDesde: null, sessaoVencida: false, motivoDoFim: null, recusadas: [] });
   gravarEstadoDaSincronizacao({ ultimaSincronizacao: "2026-11-17T10:00:00.000Z", semRedeDesde: null, sessaoVencida: false, recusadas: [] });
   assert.equal(lerEstadoDaSincronizacao().ultimaSincronizacao, "2026-11-17T10:00:00.000Z");
 });

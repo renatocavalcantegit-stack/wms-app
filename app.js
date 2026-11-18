@@ -9,6 +9,8 @@
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl, temServidor, loginNoServidor } from "./js/sessao.js";
 import { enfileirar, acoesPendentes, totalPendente, lerEstadoDaSincronizacao, gravarEstadoDaSincronizacao, aoMudarFila } from "./js/dados/fila.js";
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
+import { sairDoAparelho } from "./js/sair.js";
+import { MOTIVOS_DE_FIM } from "./compartilhado/regras/login-unico.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
 import { juntarComServidor, comOutroSeparador } from "./compartilhado/regras/juntar-pedidos.js";
 import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
@@ -74,6 +76,19 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   // o servidor recebeu mas não aplicou (ex.: o pedido já estava com outro separador): avisa na hora
   function aposEnvio(r) {
     r.recusadas.forEach((x) => { toast(`${x.pedido || "Ação"}: ${x.motivo}`); beep(false); vibrate([80, 50, 80]); });
+    // o coordenador passou o pedido aberto na tela para outra pessoa (ou devolveu para a caixa): volta para a lista
+    const tirados = new Set(r.recusadas.filter((x) => /^O COORDENADOR/.test(x.motivo || "")).map((x) => x.pedido));
+    if (tirados.size && (tirados.has(current?.id) || (lote && lote.pedidos.some((id) => tirados.has(id))))) {
+      current = null; lote = null; closeSheets(); goHome();
+    }
+    // o coordenador desconectou este aparelho (Dispositivos, na Gestão): volta para o login.
+    // A fila fica guardada e vai quando alguém entrar de novo neste aparelho.
+    if (r.situacao === "sessao-vencida" && r.motivo === "coordenador" && sess) {
+      logout(); sess = null; user = ""; current = null; lote = null; closeSheets(); document.body.classList.remove("setor-mont");
+      $("#loginErr").textContent = `${MOTIVOS_DE_FIM.coordenador} O que não foi enviado continua guardado e vai quando você entrar de novo.`;
+      $("#loginErr").hidden = false;
+      show("viewLogin");
+    }
     renderSinc();
     if (r.enviadas) atualizarDoServidor();
   }
@@ -82,7 +97,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const comServidor = !!sess?.token;
     const n = comServidor ? totalPendente(sess.login) : 0, est = lerEstadoDaSincronizacao();
     let texto, tipo = "ok";
-    if (est.sessaoVencida) { texto = `Sessão vencida · entre de novo para enviar ${n} ação(ões)`; tipo = "err"; }
+    if (est.sessaoVencida && est.motivoDoFim === "coordenador") { texto = `O coordenador desconectou este aparelho · entre de novo para enviar ${n} ação(ões)`; tipo = "err"; }
+    else if (est.sessaoVencida) { texto = `Sessão vencida · entre de novo para enviar ${n} ação(ões)`; tipo = "err"; }
     else if (n && est.semRedeDesde) { texto = `Sem rede há ${fmtMin(Date.now() - Date.parse(est.semRedeDesde))} · ${n} a enviar`; tipo = "warn"; }
     else if (n) { texto = `Enviando ${n} ação(ões)…`; tipo = "warn"; }
     else texto = est.ultimaSincronizacao
@@ -106,6 +122,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     pin: "Usuário ou PIN inválido",
     "sem-rede": "Sem rede. O primeiro login do turno precisa de rede: vá para um ponto com Wi-Fi.",
     servidor: "O servidor não respondeu. Tente de novo em instantes.",
+    // login único (Fase 1e): a mensagem do servidor diz desde quando a pessoa está no outro aparelho
+    "outro-aparelho": "Você já está conectado em outro aparelho. Saia por lá ou peça ao coordenador para desconectar.",
   };
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -113,7 +131,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     let s = null, erro = "pin";
     if (await temServidor()) {
       const r = await loginNoServidor(nome, pin);
-      if (r.ok) s = r.sessao; else erro = r.erro;
+      if (r.ok) s = r.sessao; else { erro = r.erro; if (r.mensagem) ERROS_DE_LOGIN["outro-aparelho"] = r.mensagem; }
     } else s = login(nome, pin);
     if (!s) {
       $("#loginErr").textContent = ERROS_DE_LOGIN[erro];
@@ -123,7 +141,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     }
     $("#loginErr").hidden = true;
     // entrou de novo depois de a sessão vencer: a fila volta a ser enviada
-    gravarEstadoDaSincronizacao({ ...lerEstadoDaSincronizacao(), sessaoVencida: false });
+    gravarEstadoDaSincronizacao({ ...lerEstadoDaSincronizacao(), sessaoVencida: false, motivoDoFim: null });
     sess = s; user = s.nome;
     renderSinc(); pedirEnvio();
     goHome();
@@ -254,8 +272,12 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   }
   // prioridade: na expedição só o aguardando; na Montagem, a do Sankhya (compartilhado/regras/aguardando.js)
   const prioridade = (o) => ehPrioridade(o, setor());
-  const rank = (o) => ({ andamento: 0, pendente: 1, concluido: 2 }[o.status] * 10 + (prioridade(o) ? 0 : 1));
-  const rankLote = (l) => (l.status === "andamento" ? 0 : 10) + (pedidosDoLote(l).some(prioridade) ? 0 : 1);
+  // Com servidor (Fase 1e), a ordem é a da fila que o coordenador montou no quadro da Gestão.
+  // Na demonstração, a prioridade vem primeiro.
+  const naFila = (o) => (o.ordem ?? 999);
+  const peso = (o) => (sess?.token ? naFila(o) : prioridade(o) ? 0 : 1);
+  const rank = (o) => ({ andamento: 0, pendente: 1, concluido: 2 }[o.status] * 1000 + peso(o));
+  const rankLote = (l) => (l.status === "andamento" ? 0 : 1000) + Math.min(...pedidosDoLote(l).map(peso));
   // pode entrar num lote: pedido que ainda não começou, fora de lote e que não é parte de pedido dividido
   const podeSelecionar = (o) => o.status === "pendente" && !o.lote && !o.parte;
 
@@ -913,9 +935,12 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");
   });
-  $("#menuLogout").addEventListener("click", () => {
-    logout(); sess = null; user = ""; closeSheets(); document.body.classList.remove("setor-mont");
-    $("#loginName").value = ""; $("#loginPin").value = ""; show("viewLogin");
+  // Sair: com servidor, avisa o servidor (login único) e manda o que estiver na fila antes (js/sair.js)
+  $("#menuLogout").addEventListener("click", async () => {
+    const r = await sairDoAparelho({ sessao: sess });
+    if (!r.ok) { if (r.mensagem) { toast(r.mensagem); beep(false); vibrate([80, 50, 80]); } return; }
+    sess = null; user = ""; closeSheets(); document.body.classList.remove("setor-mont");
+    $("#loginName").value = ""; $("#loginPin").value = ""; $("#loginErr").hidden = true; show("viewLogin");
   });
 
   // ---------- início ----------

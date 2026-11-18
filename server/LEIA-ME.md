@@ -1,4 +1,4 @@
-# Servidor do WMS (Fase 1d)
+# Servidor do WMS (Fase 1e)
 
 API em Node.js (Fastify) com banco PostgreSQL, em SQL puro. O servidor também entrega as telas do app.
 - Fase 1a: o servidor APLICA as ações da Separação que chegam pelo `/api/sincronizar`.
@@ -7,13 +7,16 @@ API em Node.js (Fastify) com banco PostgreSQL, em SQL puro. O servidor também e
 - Fase 1c: a Gestão ganha a aba **Ao vivo** (`gestao-ao-vivo.js`), com a separação de verdade:
   andamento dos pedidos, último contato de cada separador e as ações não aplicadas (conflitos).
   O coletor dá sinal de vida a cada 30 s (o "batimento"), mesmo sem ação nova.
-- Fase 1d (esta): a **lista do coletor vem do servidor** (`GET /api/separacao`). Todos os aparelhos veem o mesmo:
-  o pedido que outro separador pegou aparece "Com Fulano" e não abre; o concluído aparece concluído.
+- Fase 1d: a **lista do coletor vem do servidor** (`GET /api/separacao`).
   O coletor guarda uma cópia para trabalhar sem rede, e o que está na fila de envio nunca é apagado
   (regra em `compartilhado/regras/juntar-pedidos.js`).
+- Fase 1e (esta, v58): o **quadro da Separação da Gestão vale de verdade** (`gestao-separacao-real.js`).
+  O coordenador arrasta o pedido para a fila de um separador e o coletor dele mostra **só a fila dele**, na ordem do quadro.
+  E o **login único**: separador, conferente e embarque ficam em um aparelho de cada vez; o coordenador desconecta
+  o coletor perdido pela tela **Dispositivos** (menu do usuário, na Gestão).
 
 As outras telas (Conferência, Estoque...) e os outros quadros da Gestão continuam com os dados só no aparelho,
-como na demonstração. A aba Ao vivo só aparece quando o app é aberto pelo servidor.
+como na demonstração; com o servidor, essas abas mostram o aviso **Simulação**.
 
 ## Estrutura
 
@@ -21,18 +24,20 @@ como na demonstração. A aba Ao vivo só aparece quando o app é aberto pelo se
 db/migracoes/001_base.sql   todas as tabelas, comentadas (comece por aqui)
 db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 003 resultado de cada ação
                             · 004 último contato do aparelho e "visto" das ações não aplicadas
+                            · 005 fila do separador, rota e aguardando no pedido; aparelho e fim da sessão (login único)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
 
 src/banco.js                conexão com o PostgreSQL e transação
 src/senha.js                PIN guardado com hash (scrypt), nunca o PIN
 src/consultas/              TODO o SQL, separado por assunto
-  sessoes.js                usuário, criar sessão de turno, quem é o dono do token
+  sessoes.js                usuário, criar e encerrar sessão de turno, quem é o dono do token, Dispositivos
   produtos.js               produto pelo código de barras ou código interno
   pedidos.js                lista e detalhe dos pedidos da separação; a lista do coletor (com os itens)
   acoes.js                  grava as ações sincronizadas sem repetir e aplica cada uma
   aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
-  painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas
+  painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas (em standby)
+  quadro.js                 o quadro da Separação: caixa de entrada, fila de cada separador, rota e lotes
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
 src/tempo-real.js           canal SSE: avisa as telas conectadas na hora
 src/telas.js                entrega as telas do app (só a lista do que é do app: nunca server/, .env, .git...)
@@ -98,20 +103,29 @@ npm test
 | Método e endereço | Login? | O que faz |
 |---|---|---|
 | `GET /api/saude` | não | servidor e banco no ar |
-| `POST /api/login` | não | `{ login, pin }` → `{ token, expiraEm, login, nome, perfil }` |
+| `POST /api/login` | não | `{ login, pin, aparelho? }` → `{ token, expiraEm, login, nome, perfil }`. **409** se a pessoa (separador, conferente, embarque) já está conectada em outro aparelho |
+| `POST /api/logout` | sim | encerra a sessão deste aparelho (o Sair do app) |
 | `GET /api/produtos/:codigo` | sim | produto pelo código de barras ou código interno, com embalagens e endereços com saldo |
 | `GET /api/pedidos?setor=exp` | sim | pedidos do setor (`exp` ou `mont`), opcional `&status=pendente` |
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
-| `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, os abertos e os concluídos hoje, cada um com os itens, `separador_nome` e `doca_id` |
-| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }] }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato |
-| `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor) e `painel` (uma ação foi marcada como vista) |
+| `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, **só a fila de quem pediu** (na ordem do quadro), o que ele está separando e o que concluiu hoje, cada um com os itens, `separador_nome`, `doca_id` e `ordem_fila` |
+| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }], pendentes? }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato. `pendentes`: quanto o aparelho tem na fila (a tela de Dispositivos mostra) |
+| `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor), `painel` (uma ação foi marcada como vista), `quadro` (o quadro mudou) e `dispositivos` (um aparelho entrou ou saiu) |
+| `GET /api/quadro/separacao?setor=exp` | coordenador do setor | `{ agora, pedidos, separadores }`: o que ainda não foi separado (caixa de entrada e filas, com o andamento) e todos os separadores, com o contato e quantos separaram hoje |
+| `POST /api/quadro/mover` | coordenador do setor | `{ setor, unidade, para, ordem }`: muda o pedido (ou o lote inteiro) de fila. `para` = login, `null` = caixa de entrada; `ordem` = a coluna de destino depois de soltar. **409** em separação ou sem rota |
+| `POST /api/quadro/rota` | coordenador do setor | `{ setor, pedido, rota }`: define a rota do pedido que chegou sem rota |
+| `POST /api/quadro/lotes` | coordenador do setor | `{ setor, pedidos }` → `{ id, posicoes }`: agrupa pedidos da caixa num lote |
+| `POST /api/quadro/lotes/:id/desfazer` | coordenador do setor | `{ setor }`: desfaz o lote que ainda não começou |
+| `GET /api/dispositivos` | coordenador | `{ agora, esta, dispositivos }`: os aparelhos conectados (o token nunca sai do servidor) |
+| `POST /api/dispositivos/:id/desconectar` | coordenador | encerra a sessão do aparelho (coletor perdido ou quebrado) |
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
 | `POST /api/painel/nao-aplicadas/:id/vista` | coordenador | marca a ação não aplicada como vista (sai da lista); 404 se não existe ou já foi vista |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
 | `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/...) |
 
 Login: mande o token no cabeçalho `Authorization: Bearer <token>`.
-A sessão vale 14 horas (um turno).
+A sessão vale 14 horas (um turno), até a pessoa sair ou o coordenador desconectar. Sessão encerrada responde
+**401** com o motivo: `{ erro, motivo }`, onde `motivo` é `coordenador` (desconectado pela Gestão), `saiu` ou `novo-login`.
 
 ## Sincronização: o que acontece com cada ação
 
@@ -132,6 +146,9 @@ Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
 - `conflito`: o pedido já está com outro separador. Nada é aplicado; o coordenador vê na aba Ao vivo,
   resolve com o separador e marca como visto (fica gravado quem viu e quando).
 - `recusada`: ação inválida (item que não existe, quantidade errada, perfil que não é separador...).
+  Desde a Fase 1e, também quando o pedido **não está mais na fila** de quem mandou: o coordenador passou para outra
+  pessoa ("O COORDENADOR PASSOU O PV-xxxx PARA OUTRA PESSOA.") ou devolveu para a caixa de entrada
+  ("O COORDENADOR TIROU O PV-xxxx DA SUA FILA."), enquanto o coletor estava sem rede. O coletor avisa e volta para a lista.
 - `desconhecida`: tipo que o servidor ainda não aplica. Fica guardada, sem mexer em nada.
 
 As três últimas voltam em `recusadas: [{ id, resultado, motivo }]`. Todas as ações, mesmo as recusadas,
@@ -180,3 +197,40 @@ Pedido por pedido, o que vale (`compartilhado/regras/juntar-pedidos.js`):
 Os lotes saem dos próprios pedidos (`lote` e `posicao_lote`). O código do lote montado no coletor é único entre
 aparelhos (ex.: `L-K3F9`), porque o servidor junta os pedidos pelo código.
 Continuam só no aparelho: baixa de estoque, Conferência e Ocorrências (corte e cancelamento).
+
+## Quadro da Separação e fila do separador (Fase 1e)
+
+Com o app aberto pelo servidor, a aba **Separação** da Gestão é o quadro de verdade (`gestao-separacao-real.js`,
+dados em `js/dados/quadro.js`, regras em `compartilhado/regras/fila-do-separador.js`). É o mesmo quadro da demonstração:
+
+- arrastar da caixa de entrada para um separador, de um para outro, de volta para a caixa, ou mudar a ordem da fila;
+- pedido **sem rota**: o quadro pede a rota antes de mandar para um separador (o aguardando não tem rota e vai direto);
+- marcar pedidos da caixa e **agrupar em lote**; o lote anda inteiro; "Desfazer lote" antes de começar;
+- clicar no card abre os itens, a rota e "Devolver para a caixa";
+- cada coluna mostra a situação do separador: Separando, Aguardando início, Livre, **Sem contato** (o coletor não dá sinal
+  há mais de 90 s) ou Não conectado.
+
+Travas (no servidor, `src/consultas/quadro.js`): pedido em separação não muda de fila; sem rota não vai para separador;
+só pedido da caixa entra em lote. Cada mudança avisa as outras Gestões abertas pelo canal de tempo real.
+O coletor do separador baixa a fila nova a cada 30 s, ao voltar para a lista ou em "Atualizar a lista do servidor".
+
+Ainda só na demonstração: dividir pedido, sugerir lotes e a distribuição inteligente (pós-MVP, rodando no servidor).
+
+## Login único e Dispositivos (Fase 1e)
+
+O separador, o conferente e o embarque ficam conectados em **um aparelho de cada vez** (regra em
+`compartilhado/regras/login-unico.js`). Cada aparelho cria o seu código na primeira vez (`wms-bb-aparelho`, no
+navegador) e manda no login. No mesmo aparelho a pessoa pode entrar de novo; em outro, o login é recusado:
+"Você já está conectado em outro aparelho (desde 07:42, último contato há 3 min). Saia por lá ou peça ao coordenador
+para desconectar." O coletor que já estava conectado **não cai**. Coordenadores e estoque podem estar em vários aparelhos.
+
+**Sair** (`js/sair.js`) avisa o servidor. Antes, manda o que estiver na fila; se ainda sobrar, pergunta (as ações ficam
+no aparelho e vão quando alguém entrar de novo nele). Sem rede, não sai: o servidor continuaria achando que a pessoa
+está ali.
+
+Coletor perdido, quebrado ou sem bateria: o coordenador abre o menu do usuário (o círculo com as iniciais) →
+**Dispositivos** → **Desconectar**. A lista mostra quem está conectado, desde quando, o último contato e quantas ações
+o aparelho ainda não tinha enviado. O aparelho desconectado volta para o login no próximo contato, com o aviso
+"O coordenador desconectou este aparelho", e guarda a fila dele.
+
+Para testar dois coletores, a demonstração tem um segundo separador (`separador2`, PIN em `js/sessao.js`).

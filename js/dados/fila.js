@@ -50,7 +50,7 @@ export function tirarDaFila(ids) {
 //   semRedeDesde         desde quando o envio falha por falta de rede (null = com rede)
 //   sessaoVencida        o servidor recusou o token: é preciso entrar de novo para enviar
 //   recusadas            ações que o servidor recebeu mas NÃO aplicou (conflito...), para o separador ver
-const ESTADO_INICIAL = { ultimaSincronizacao: null, semRedeDesde: null, sessaoVencida: false, recusadas: [] };
+const ESTADO_INICIAL = { ultimaSincronizacao: null, semRedeDesde: null, sessaoVencida: false, motivoDoFim: null, recusadas: [] };
 export const lerEstadoDaSincronizacao = () => ({ ...ESTADO_INICIAL, ...ler(CHAVE_ESTADO, {}) });
 export const gravarEstadoDaSincronizacao = (estado) => localStorage.setItem(CHAVE_ESTADO, JSON.stringify(estado));
 

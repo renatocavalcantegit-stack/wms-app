@@ -16,7 +16,8 @@ export const BATIMENTO_MS = 30_000; // com a fila vazia, dá sinal de vida ao se
 //   contato         fila vazia, mas mandou o batimento: o servidor sabe que o aparelho está com rede
 //   ok              tudo enviado
 //   sem-rede        a rede falhou: a fila fica como está e tenta de novo depois
-//   sessao-vencida  o servidor não aceitou o token (401): é preciso entrar de novo
+//   sessao-vencida  o servidor não aceitou o token (401): é preciso entrar de novo (motivo "coordenador":
+//                   o coordenador desconectou este aparelho pela tela de Dispositivos)
 //   erro            o servidor respondeu com erro: a fila fica como está
 // buscar = fetch (nos testes, um de mentira) · agora = relógio (nos testes, fixo)
 // batimento = true: mesmo com a fila vazia, chama o servidor com a lista vazia (é assim que a Gestão
@@ -37,16 +38,19 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
       resposta = await buscar("api/sincronizar", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
-        // o login não vai junto: o servidor sabe quem é pelo token
-        body: JSON.stringify({ acoes: lote.map(({ login, ...acao }) => acao) }),
+        // o login não vai junto: o servidor sabe quem é pelo token.
+        // pendentes: quanto há na fila agora (a tela de Dispositivos da Gestão mostra "N ações não enviadas")
+        body: JSON.stringify({ acoes: lote.map(({ login, ...acao }) => acao), pendentes: acoesPendentes(sessao.login).length }),
       });
     } catch {
       gravarEstadoDaSincronizacao({ ...estado, semRedeDesde: estado.semRedeDesde ?? agora().toISOString() });
       return { situacao: "sem-rede", enviadas, recusadas: recusadasAgora };
     }
     if (resposta.status === 401) {
-      gravarEstadoDaSincronizacao({ ...estado, semRedeDesde: null, sessaoVencida: true });
-      return { situacao: "sessao-vencida", enviadas, recusadas: recusadasAgora };
+      // motivo (Fase 1e): "coordenador" = o coordenador desconectou este aparelho; sem motivo = a sessão venceu
+      const motivo = (await resposta.json().catch(() => ({}))).motivo || null;
+      gravarEstadoDaSincronizacao({ ...estado, semRedeDesde: null, sessaoVencida: true, motivoDoFim: motivo });
+      return { situacao: "sessao-vencida", motivo, enviadas, recusadas: recusadasAgora };
     }
     if (!resposta.ok) return { situacao: "erro", enviadas, recusadas: recusadasAgora };
 

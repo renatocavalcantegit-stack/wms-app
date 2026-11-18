@@ -28,6 +28,8 @@ const corpo = {
         },
       },
     },
+    // quantas ações o aparelho tinha na fila ao mandar este lote (Fase 1e: a tela de Dispositivos mostra)
+    pendentes: { type: "integer", minimum: 0 },
   },
 };
 
@@ -37,7 +39,9 @@ export function rotasDeSincronizacao(app, { pool, exigirLogin, tempoReal }) {
     const { novas, repetidas, recusadas } = acoes.length
       ? await registrarAcoes(pool, request.usuario, acoes)
       : { novas: [], repetidas: [], recusadas: [] }; // só o batimento
-    await registrarContato(pool, request.token);
+    // o que sobrou na fila do aparelho depois deste lote
+    const pendentes = request.body.pendentes == null ? null : Math.max(0, request.body.pendentes - novas.length - repetidas.length);
+    await registrarContato(pool, request.token, pendentes);
     if (novas.length) tempoReal.avisar("acoes", { login: request.usuario.login, quantidade: novas.length });
     else tempoReal.avisar("contato", { login: request.usuario.login });
     // o aparelho tira da fila tudo o que está em "novas" e em "repetidas": as duas já estão no servidor.

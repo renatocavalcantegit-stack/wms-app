@@ -45,21 +45,23 @@ export async function buscarPedido(pool, id) {
   return { ...pedido, itens: itens.rows };
 }
 
-// Tudo o que o coletor precisa para montar a lista do setor, numa chamada só (Fase 1d):
-// os pedidos abertos e os concluídos hoje, cada um com os itens. O coletor guarda uma cópia
-// e continua com ela quando fica sem rede.
-//   separador_nome  nome de quem está com o pedido (o coletor mostra "Com Fulano")
+// Tudo o que o coletor precisa para montar a lista do separador, numa chamada só (Fase 1d):
+// cada pedido com os itens. O coletor guarda uma cópia e continua com ela quando fica sem rede.
+// Desde a Fase 1e, cada separador vê só a FILA DELE (o que o coordenador mandou para ele, na ordem da fila),
+// o que ele está separando e o que ele concluiu hoje. O que está na caixa de entrada ou com outra pessoa não aparece.
+//   separador_nome  nome de quem está com o pedido
 //   doca_id         ID do endereço da doca (o coletor conta quantos pedidos esperam em cada doca)
-export async function pedidosDoColetor(pool, setor) {
+export async function pedidosDoColetor(pool, setor, login) {
   const pedidos = (await pool.query(
     `SELECT p.*, u.nome AS separador_nome,
             (SELECT min(e.id) FROM enderecos e WHERE e.codigo = p.doca) AS doca_id
        FROM pedidos p
        LEFT JOIN usuarios u ON u.login = p.separador
       WHERE p.setor = $1
-        AND (p.status <> 'concluido' OR p.fim >= current_date)
-      ORDER BY (p.prioridade = 'alta') DESC, p.chegada, p.id`,
-    [setor],
+        AND ((p.designado_para = $2 AND p.status <> 'concluido')
+          OR (p.separador = $2 AND (p.status <> 'concluido' OR p.fim >= current_date)))
+      ORDER BY p.ordem_fila NULLS LAST, p.chegada, p.id`,
+    [setor, login],
   )).rows;
   if (!pedidos.length) return [];
 

@@ -31,10 +31,12 @@ test("sem login: 401; setor inválido: 400", async () => {
   assert.equal((await lista(await entrar(), "xyz")).statusCode, 400);
 });
 
-test("todos os pedidos do setor, cada um com os itens e os códigos de barras", async () => {
+test("só a fila do separador, na ordem do coordenador, cada pedido com os itens e os códigos de barras", async () => {
   const r = (await lista(await entrar())).json();
   assert.ok(Date.parse(r.agora));
-  assert.equal(r.pedidos.length, 9);
+  // a caixa de entrada (PV-10423, PV-10427, PV-10428) e a fila do separador2 (PV-10426/2) não aparecem
+  assert.deepEqual(r.pedidos.map((p) => p.id), ["PV-10421", "PV-10422", "PV-10424", "PV-10425", "PV-10426/1"]);
+  assert.deepEqual(r.pedidos.map((p) => p.ordem_fila), [1, 2, 3, 3, 4]);
   const p = r.pedidos.find((x) => x.id === "PV-10421");
   assert.deepEqual(p.itens.map((i) => i.sequencia), p.itens.map((_, n) => n + 1));
   assert.ok(p.itens.every((i) => i.descricao && i.endereco_codigo && Array.isArray(i.codigos_de_barras)));
@@ -42,7 +44,7 @@ test("todos os pedidos do setor, cada um com os itens e os códigos de barras", 
   // o lote do coordenador vem nos pedidos
   const lote = r.pedidos.filter((x) => x.lote === "L-1").map((x) => `${x.posicao_lote}:${x.id}`).sort();
   assert.deepEqual(lote, ["A:PV-10424", "B:PV-10425"]);
-  assert.equal((await lista(await entrar(), "mont")).json().pedidos.length, 4);
+  assert.deepEqual((await lista(await entrar(), "mont")).json().pedidos.map((p) => p.id), ["OP-3212", "OP-3213"]);
 });
 
 test("mostra quem está com o pedido e, concluído hoje, continua na lista com a doca", async () => {

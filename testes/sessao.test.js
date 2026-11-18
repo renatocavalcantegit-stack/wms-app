@@ -3,7 +3,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
-import { USERS, session, login, logout, setSetor, homeUrl, temSetor, temServidor, loginNoServidor } from "../js/sessao.js";
+import { USERS, session, login, logout, setSetor, homeUrl, temSetor, temServidor, loginNoServidor, codigoDoAparelho, sairNoServidor } from "../js/sessao.js";
 
 const separador = USERS.find((u) => u.perfil === "sep");
 
@@ -88,7 +88,10 @@ test("login no servidor: guarda o token na sessão do turno", async () => {
   };
   const r = await loginNoServidor(" Separador ", "9999", buscar);
   assert.equal(r.ok, true);
-  assert.deepEqual(chamadas, [{ url: "api/login", corpo: { login: "separador", pin: "9999" } }]);
+  // o código do aparelho vai junto (login único): criado na primeira vez e sempre o mesmo depois
+  assert.deepEqual(chamadas, [{ url: "api/login", corpo: { login: "separador", pin: "9999", aparelho: codigoDoAparelho() } }]);
+  assert.match(codigoDoAparelho(), /^[0-9a-f-]{36}$/);
+  assert.equal(codigoDoAparelho(), codigoDoAparelho());
   const s = session();
   assert.deepEqual([s.login, s.perfil, s.token, s.expiraEm], ["separador", "sep", "tok-1", "2026-11-18T00:00:00Z"]);
 });
@@ -97,6 +100,24 @@ test("login no servidor: PIN errado e sem rede dão erros diferentes, e não cri
   assert.deepEqual(await loginNoServidor("separador", "0", responde(401, {})), { ok: false, erro: "pin" });
   assert.deepEqual(await loginNoServidor("separador", "0", semRede), { ok: false, erro: "sem-rede" });
   assert.equal(session(), null);
+});
+
+test("login único: conectado em outro aparelho, o login é recusado com a mensagem do servidor", async () => {
+  const msg = "Você já está conectado em outro aparelho (desde 07:42, último contato há 3 min). Saia por lá ou peça ao coordenador para desconectar.";
+  assert.deepEqual(await loginNoServidor("separador", "0", responde(409, { erro: msg, motivo: "outro-aparelho" })), { ok: false, erro: "outro-aparelho", mensagem: msg });
+  assert.equal(session(), null);
+});
+
+test("Sair avisa o servidor; sem rede não sai; sessão já encerrada conta como saída", async () => {
+  const sessao = { login: "separador", token: "tok-1" };
+  let chamada = null;
+  const buscar = async (url, opcoes) => { chamada = { url, metodo: opcoes.method, auth: opcoes.headers.authorization }; return { ok: true, status: 200 }; };
+  assert.equal(await sairNoServidor(sessao, buscar), "ok");
+  assert.deepEqual(chamada, { url: "api/logout", metodo: "POST", auth: "Bearer tok-1" });
+  assert.equal(await sairNoServidor(sessao, semRede), "sem-rede");
+  assert.equal(await sairNoServidor(sessao, responde(401, {})), "ok");
+  assert.equal(await sairNoServidor(sessao, responde(500, {})), "servidor");
+  assert.equal(await sairNoServidor({ login: "separador" }, semRede), "ok", "demonstração: não há servidor para avisar");
 });
 
 test("sessão do servidor vale para usuário que não está na lista de demonstração", async () => {

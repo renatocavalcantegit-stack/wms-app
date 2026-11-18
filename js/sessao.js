@@ -4,9 +4,13 @@
 //   - com servidor (Fase 1b): o servidor confere o PIN e devolve um token. O token vai na sessão
 //     e acompanha cada envio da fila. A sessão vale o turno no aparelho, mesmo se a rede cair.
 
+import { novoId } from "./dados/fila.js";
+
 // usuários de demonstração (cada perfil acessa só a sua tela)
 export const USERS = [
   { login: "separador", nome: "Usuário Separador", perfil: "sep", pin: "1111" },
+  // segundo separador: para testar dois coletores com o servidor (fila de cada um, login único)
+  { login: "separador2", nome: "Segundo Separador", perfil: "sep", pin: "8888" },
   { login: "conferente", nome: "Usuário Conferente", perfil: "conf", pin: "2222" },
   { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
   { login: "coordenador", nome: "Usuário Coordenador", perfil: "coord", pin: "4444" },
@@ -40,6 +44,15 @@ export const logout = () => localStorage.removeItem(SESSION);
 
 // ---------- com servidor ----------
 
+// Código deste aparelho (Fase 1e, login único): criado na primeira vez e guardado no próprio aparelho.
+// Vai junto no login: o servidor deixa a pessoa entrar de novo no MESMO aparelho e recusa em outro.
+const CHAVE_APARELHO = "wms-bb-aparelho";
+export function codigoDoAparelho() {
+  let c = localStorage.getItem(CHAVE_APARELHO);
+  if (!c) { c = novoId(); localStorage.setItem(CHAVE_APARELHO, c); }
+  return c;
+}
+
 // O app está sendo servido pelo servidor do WMS? O arquivo modo.json responde:
 // no GitHub Pages é o arquivo do repositório ({ servidor: false }); o servidor do WMS responde { servidor: true }.
 // Sem rede, o service worker devolve a cópia guardada, então a resposta vale também offline.
@@ -51,7 +64,8 @@ export async function temServidor(buscar = fetch) {
 }
 
 // Login no servidor: o PIN vai para o servidor conferir (nunca é guardado no aparelho).
-// Devolve { ok: true, sessao } ou { ok: false, erro: "pin" | "sem-rede" | "servidor" }.
+// Devolve { ok: true, sessao } ou { ok: false, erro: "pin" | "sem-rede" | "servidor" | "outro-aparelho", mensagem? }.
+// "outro-aparelho": a pessoa já está conectada em outro coletor (login único); a mensagem do servidor diz desde quando.
 // O primeiro login do turno precisa de rede; depois, a sessão fica no aparelho.
 export async function loginNoServidor(user, pin, buscar = fetch) {
   let r;
@@ -59,15 +73,26 @@ export async function loginNoServidor(user, pin, buscar = fetch) {
     r = await buscar("api/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ login: String(user).trim().toLowerCase(), pin: String(pin).trim() }),
+      body: JSON.stringify({ login: String(user).trim().toLowerCase(), pin: String(pin).trim(), aparelho: codigoDoAparelho() }),
     });
   } catch { return { ok: false, erro: "sem-rede" }; }
   if (r.status === 401 || r.status === 400) return { ok: false, erro: "pin" };
+  if (r.status === 409) return { ok: false, erro: "outro-aparelho", mensagem: (await r.json().catch(() => ({}))).erro };
   if (!r.ok) return { ok: false, erro: "servidor" };
   const { token, expiraEm, login, nome, perfil } = await r.json();
   const s = { login, nome, perfil, token, expiraEm, desde: Date.now() };
   localStorage.setItem(SESSION, JSON.stringify(s));
   return { ok: true, sessao: s };
+}
+// Sair (Fase 1e): avisa o servidor que a sessão terminou, para a pessoa poder entrar em outro aparelho.
+// Devolve "ok" (também quando o servidor já não aceitava o token: a sessão já tinha terminado), "sem-rede" ou "servidor".
+export async function sairNoServidor(sessao, buscar = fetch) {
+  if (!sessao?.token) return "ok";
+  let r;
+  try {
+    r = await buscar("api/logout", { method: "POST", headers: { authorization: `Bearer ${sessao.token}` } });
+  } catch { return "sem-rede"; }
+  return r.ok || r.status === 401 ? "ok" : "servidor";
 }
 export const setSetor = (setor) => {
   const s = session(); if (!s) return null;

@@ -6,15 +6,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { prepararBancoDeTeste } from "./banco-de-teste.js";
 import { criarServidor } from "../src/servidor.js";
-import { gerarHash } from "../src/senha.js";
 import { USERS } from "../../js/sessao.js";
 
 let pool, app;
-const PIN_DE_TESTE = "9090"; // só do segundo separador criado aqui (não é PIN da demonstração)
 before(async () => {
   pool = await prepararBancoDeTeste();
   app = criarServidor({ pool });
-  await pool.query("INSERT INTO usuarios (login, nome, perfil, pin_hash) VALUES ('separador2', 'Segundo Separador', 'sep', $1)", [gerarHash(PIN_DE_TESTE)]);
 });
 after(async () => {
   await app.close();
@@ -82,7 +79,7 @@ test("o painel mostra o andamento do pedido e o contato do separador", async () 
 });
 
 test("conflito entra em 'não aplicadas' até o coordenador marcar visto", async () => {
-  const sep2 = await entrar("separador2", PIN_DE_TESTE);
+  const sep2 = await entrar("separador2", USERS.find((u) => u.login === "separador2").pin);
   const tentativa = acao("separacao.iniciar", { pedido: "PV-10422" }); // o PV-10422 já está com o separador
   assert.equal((await sincronizar(sep2, [tentativa])).json().recusadas[0].resultado, "conflito");
 
@@ -118,8 +115,9 @@ test("o canal de tempo real avisa a Gestão do contato e das ações", async () 
   try {
     const sep = await entrarComo("sep");
     await sincronizar(sep, []);
-    assert.deepEqual(avisos.map((a) => a.evento), ["contato"]);
-    assert.equal(avisos[0].dados.login, usuario("sep").login);
+    // o login avisa a tela de Dispositivos; o batimento avisa o contato
+    assert.deepEqual(avisos.map((a) => a.evento), ["dispositivos", "contato"]);
+    assert.equal(avisos[1].dados.login, usuario("sep").login);
   } finally {
     app.tempoReal.avisar = original;
   }

@@ -28,7 +28,7 @@ export async function aplicarAcao(conexao, usuario, acao) {
   const pedidoId = String(acao.dados.pedido ?? "");
   // FOR UPDATE: trava a linha do pedido até o fim da transação.
   // Se dois coletores sincronizarem o mesmo pedido ao mesmo tempo, o segundo espera o primeiro terminar.
-  const pedido = (await conexao.query("SELECT id, status, separador FROM pedidos WHERE id = $1 FOR UPDATE", [pedidoId])).rows[0] || null;
+  const pedido = (await conexao.query(`SELECT id, status, separador, designado_para AS "designadoPara" FROM pedidos WHERE id = $1 FOR UPDATE`, [pedidoId])).rows[0] || null;
   const itens = pedido
     ? (await conexao.query("SELECT sequencia, qtd, status FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [pedidoId])).rows
     : [];

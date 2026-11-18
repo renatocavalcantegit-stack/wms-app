@@ -5,6 +5,20 @@ import { conectar, emTransacao } from "../src/banco.js";
 import { gerarHash } from "../src/senha.js";
 import { USERS } from "../../js/sessao.js";
 import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont } from "../../js/demo-dados.js";
+import { cadastroDoCliente } from "../../js/dados/clientes.js";
+
+// Fila de cada separador no começo da demonstração (Fase 1e). O que não está aqui fica na caixa de entrada
+// do coordenador: o PV-10423 (aguardando), o PV-10427 e o PV-10428 (que chega sem rota), e duas OPs.
+// O lote L-1 anda inteiro (os dois pedidos têm a mesma posição na fila).
+export const FILAS_DE_DEMONSTRACAO = {
+  "PV-10421": ["separador", 1], "PV-10422": ["separador", 2], "PV-10424": ["separador", 3], "PV-10425": ["separador", 3],
+  "PV-10426/1": ["separador", 4], "PV-10426/2": ["separador2", 1],
+  "OP-3212": ["separador", 1], "OP-3213": ["separador", 2],
+};
+// chega do Sankhya sem rota: o coordenador define antes de mandar para um separador
+export const SEM_ROTA_NA_DEMONSTRACAO = ["PV-10428"];
+// rota do pedido: vem do Sankhya; na demonstração, do cadastro do cliente. Aguardando e Montagem não têm rota.
+const rotaDoPedido = (o) => (o.setor !== "exp" || o.aguardando || SEM_ROTA_NA_DEMONSTRACAO.includes(o.id) ? null : cadastroDoCliente(o)?.rota || null);
 
 // Insere uma lista de objetos de uma vez: o PostgreSQL recebe a lista como JSON e
 // jsonb_to_recordset transforma cada objeto numa linha, com as colunas e tipos indicados.
@@ -71,13 +85,17 @@ export async function semear(pool) {
     await inserirLista(c, "pedidos",
       ["id text", "setor text", "cliente text", "cidade text", "prioridade text", "chegada timestamptz", "status text", "separador text",
         "inicio timestamptz", "fim timestamptz", "doca text", "lote text", "posicao_lote text",
-        "pedido_pai text", "parte_numero integer", "partes_total integer", "parte_ruas text", "dividido_por text"],
+        "pedido_pai text", "parte_numero integer", "partes_total integer", "parte_ruas text", "dividido_por text",
+        "rota text", "aguardando boolean", "designado_para text", "ordem_fila integer", "designado_em timestamptz", "designado_por text"],
       pedidos.map((o) => ({
         id: o.id, setor: o.setor, cliente: o.cliente, cidade: o.cidade, prioridade: o.prio, chegada: horaDeHoje(o.hora),
         status: o.status, separador: o.operador, inicio: dataOuNada(o.inicio), fim: dataOuNada(o.fim),
         doca: o.doca || null, lote: o.lote || null, posicao_lote: o.pos || null,
         pedido_pai: o.parte?.pai || null, parte_numero: o.parte?.n || null, partes_total: o.parte?.de || null,
         parte_ruas: o.parte?.ruas || null, dividido_por: o.parte?.por || null,
+        rota: rotaDoPedido(o), aguardando: !!o.aguardando,
+        designado_para: FILAS_DE_DEMONSTRACAO[o.id]?.[0] || null, ordem_fila: FILAS_DE_DEMONSTRACAO[o.id]?.[1] || null,
+        designado_em: FILAS_DE_DEMONSTRACAO[o.id] ? horaDeHoje(o.hora) : null, designado_por: FILAS_DE_DEMONSTRACAO[o.id] ? "coordenador" : null,
       })));
 
     // os itens já vêm na ordem da rota de separação; a posição na lista vira a sequência

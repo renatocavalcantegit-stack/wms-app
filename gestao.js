@@ -2,7 +2,7 @@
 // Expedição: quadros estilo kanban (Separação, Conferência, Faturamento, Embarque) + Acompanhamento por rota.
 // Montagem (montagem.html, body data-setor="mont"): pedidos OP com Separação e Conferência (ou conferência dispensada).
 import * as R from "./compartilhado/regras/rotas.js";
-import { PERFIS, SETORES, session, logout } from "./js/sessao.js";
+import { PERFIS, SETORES, session, logout, sairNoServidor } from "./js/sessao.js";
 import { PRODUTOS, ENDERECOS, COMPONENTES, EQUIPE_SETOR, SEPARADORES, CONFERENTES, FATURISTAS, MOTORISTAS, docaDeExpedicao } from "./js/demo-dados.js";
 import {
   validarLote, posicoesDoLote, montarParadas, MAX_PEDIDOS_LOTE, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, MIN_PARTES, MAX_PARTES,
@@ -10,6 +10,8 @@ import {
 import { CLIENTES } from "./js/demo-clientes.js";
 import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
 import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
+import { ligarQuadroReal, desenhar as desenharQuadroReal, resumoDoQuadroReal, textoDaBusca } from "./gestao-separacao-real.js";
+import { abrirDispositivos } from "./gestao-dispositivos.js";
 import { AGUARDANDO, precisaDeRota } from "./compartilhado/regras/aguardando.js";
 import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regras/distribuicao.js";
 
@@ -470,6 +472,10 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   let openRef = null; // { t: "p" | "c", id }
   let sim = localStorage.getItem("wms-bb-gx-sim") !== "off";
   let comServidor = false; // a aba Ao vivo (gestao-ao-vivo.js) diz se o app foi aberto pelo servidor
+  // Fase 1e: com o servidor, a aba Separação é o quadro de verdade (gestao-separacao-real.js); as outras abas
+  // continuam a simulação, com o aviso "Simulação" no topo
+  let quadroReal = false;
+  const real = () => quadroReal && board === "sep";
   let flashId = null; // id ou lista de ids destacados no próximo render
   const intelOn = (k) => !MONT && !!db.intel?.[k]; // distribuição inteligente ligada neste quadro?
   const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
@@ -782,6 +788,8 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       if (reset || !b.querySelector(".vivo-wrap")) b.innerHTML = telaAoVivo();
       renderTop(); return;
     }
+    // aba Separação com o servidor: o quadro de verdade se desenha sozinho (e redesenha quando o servidor avisa)
+    if (real()) { desenharQuadroReal(); applySearch(); tickTimers(); return; }
     [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
     [...selSep].forEach((id) => { if (!db.sep.inbox.includes(id)) selSep.delete(id); });
     const b = $("#board");
@@ -801,7 +809,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
 
   function renderTop() {
     $$(".gx-tab").forEach((x) => x.classList.toggle("active", x.dataset.board === board));
-    $("#tbSep").textContent = db.sep.inbox.length;
+    $("#tbSep").textContent = quadroReal ? resumoDoQuadroReal().caixa : db.sep.inbox.length;
     $("#tbConf").textContent = db.conf.inbox.length;
     $("#simBtn").classList.toggle("on", sim);
     // com o servidor, "Ao vivo" é a aba de verdade: o botão da simulação passa a dizer "Simulação"
@@ -819,7 +827,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const T = { sep: "Distribuição da separação", conf: "Distribuição da conferência", lib: "Liberação para faturamento", emb: "Embarque · cargas do ERP", rota: "Acompanhamento por rota" };
     $("#boardTitle").textContent = T[board];
     let k = "", a = "";
-    if (board === "sep" || board === "conf") {
+    if (real()) {
+      const q = resumoDoQuadroReal();
+      k = kp(q.caixa, "na caixa de entrada") + kp(q.semRota, "sem rota", "red") + kp(q.separando, "em separação") + kp(q.naFila, "na fila") + kp(q.hoje, "separados hoje", "green");
+      a = `<span class="hint show">Com o servidor · arraste para a fila do separador: o coletor dele mostra na mesma ordem</span>`;
+    } else if (board === "sep" || board === "conf") {
       const B = db[board], hojeN = BOARDS[board].people.reduce((t, x) => t + db.stats[x.id], 0);
       k = kp(B.inbox.length, "na caixa de entrada") + (board === "sep" ? kp(B.inbox.filter((id) => semRota(E(id))).length, "sem rota", "red") : "")
         + kp(firstLive(board), board === "sep" ? "em separação" : "em conferência") + kp(queued(board), "na fila") + kp(hojeN, board === "sep" ? "separados hoje" : "conferidos hoje", "green");
@@ -844,12 +856,21 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
           + kp(ps.filter(foraPend).length, "fora do horário", "red") + kp(ps.filter((p) => p.etapa === "fim").length, "embarcados", "green");
       a = `<span class="hint show">Clique na etiqueta de embarque para definir a data</span>`;
     }
+    // com o servidor, as abas que ainda não usam o servidor avisam que são simulação
+    if (quadroReal && !real()) a = avisoSimulacao + a;
     $("#kpis").innerHTML = k; $("#actions").innerHTML = a;
   }
+  const avisoSimulacao = `<span class="gx-sim-aviso" title="Esta aba ainda não usa o servidor: os pedidos e as pessoas são de demonstração">Simulação</span>`;
 
   const entreguesHoje = () => db.entregues.filter((id) => sameDay(P(id).entregue));
   function renderTopMont() {
     $("#boardTitle").textContent = board === "sep" ? "Separação · pedidos de montagem" : "Conferência · pedidos de montagem";
+    if (real()) {
+      const q = resumoDoQuadroReal();
+      $("#kpis").innerHTML = kp(q.caixa, "na caixa de entrada") + kp(q.separando, "em separação") + kp(q.naFila, "na fila") + kp(q.hoje, "separados hoje", "green");
+      $("#actions").innerHTML = `<span class="hint show">Com o servidor · arraste para a fila do separador: o coletor dele mostra na mesma ordem</span>`;
+      return;
+    }
     const B = db[board], people = BOARDS[board].people, hojeN = people.reduce((t, x) => t + db.stats[x.id], 0);
     const ent = entreguesHoje(), pul = ent.filter((id) => P(id).confPulada).length, eq = people.filter((x) => aqui(x.id)).length;
     let k = kp(B.inbox.length, "na caixa de entrada") + kp(firstLive(board), board === "sep" ? "em separação" : "em conferência") + kp(queued(board), "na fila")
@@ -858,7 +879,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const a = (board === "sep" ? `<button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>`
       : `<span class="hint">Arraste para "Entregues à montagem" ou use "Pular conferência" para dispensar a conferência</span>`)
       + `<button class="btn primary" data-act="autoDist">Distribuir automaticamente</button>`;
-    $("#kpis").innerHTML = k; $("#actions").innerHTML = a;
+    $("#kpis").innerHTML = k; $("#actions").innerHTML = (quadroReal ? avisoSimulacao : "") + a;
   }
 
   // card de pedido
@@ -1207,6 +1228,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   function applySearch() {
     const q = query.trim().toLowerCase();
     const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${p.aguardando ? "aguardando retirada" : rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
+    if (real()) { $$(".card").forEach((el) => el.classList.toggle("q-miss", !!q && !textoDaBusca(el.dataset.id).toLowerCase().includes(q))); return; }
     $$(".card").forEach((el) => {
       const id = el.dataset.id, c = board === "emb" && C(id);
       const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}`
@@ -1250,7 +1272,9 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   // ---------- arrastar e soltar ----------
   const ph = document.createElement("div"); ph.className = "ph";
   const boardEl = $("#board");
+  // (com o servidor, a aba Separação tem os próprios eventos: gestao-separacao-real.js)
   boardEl.addEventListener("dragstart", (e) => {
+    if (real()) return;
     const c = e.target.closest(".card");
     if (!c || c.getAttribute("draggable") !== "true") { e.preventDefault(); return; }
     dragId = c.dataset.id;
@@ -1267,6 +1291,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     setTimeout(() => c.classList.add("dragging"), 0);
   });
   boardEl.addEventListener("dragover", (e) => {
+    if (real()) return;
     const list = e.target.closest(".gx-list");
     if (!list || !dragId || list.dataset.col === "ret") return;
     e.preventDefault();
@@ -1279,6 +1304,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     list.classList.add("over");
   });
   boardEl.addEventListener("drop", (e) => {
+    if (real()) return;
     const list = e.target.closest(".gx-list");
     if (!list || !dragId || list.dataset.col === "ret") return;
     e.preventDefault();
@@ -1325,6 +1351,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
 
   // ---------- cliques no quadro ----------
   boardEl.addEventListener("click", (e) => {
+    if (real()) return;
     // seleção em lote (faturamento)
     const cb = e.target.closest("[data-sel]");
     if (cb) { e.stopPropagation(); const id = cb.dataset.sel; sel.has(id) ? sel.delete(id) : sel.add(id); render(); return; }
@@ -1364,7 +1391,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const c = e.target.closest(".card");
     if (c) openDrawer({ t: board === "emb" && C(c.dataset.id) ? "c" : isLote(c.dataset.id) ? "l" : "p", id: c.dataset.id });
   });
-  $("#actions").addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a) action(a.dataset.act); });
+  $("#actions").addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a && !real()) action(a.dataset.act); });
 
   function action(act) {
     if (act === "novoPedido" && MONT) {
@@ -1559,10 +1586,13 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   }
 
   $("#userBtn").addEventListener("click", () => {
+    // Dispositivos (Fase 1e, só com o servidor): desconectar o coletor perdido ou quebrado (login único)
     openModal(`<h2>${esc(sess.nome)}</h2><p>Perfil: ${PERFIS[sess.perfil]}</p>
-      <div class="m-act"><button class="btn ghost" id="mReset">Reiniciar dados de demonstração</button><button class="btn primary" id="mOut">Sair</button></div>`);
+      <div class="m-act">${quadroReal ? `<button class="btn ghost" id="mDisp">Dispositivos</button>` : ""}<button class="btn ghost" id="mReset">Reiniciar ${quadroReal ? "simulação" : "dados de demonstração"}</button><button class="btn primary" id="mOut">Sair</button></div>`);
+    if (quadroReal) $("#mDisp").onclick = () => abrirDispositivos({ sess, abrirJanela: openModal, toast });
     $("#mReset").onclick = () => { seed(); closeModal(); closeDrawer(); render(true); toast("Cenário de demonstração reiniciado"); };
-    $("#mOut").onclick = () => { logout(); location.replace("./"); };
+    // com o servidor, a sessão termina lá também (sem rede, sai do computador do mesmo jeito: o coordenador não tem login único)
+    $("#mOut").onclick = async () => { await sairNoServidor(sess); logout(); location.replace("./"); };
   });
 
   // ---------- gaveta: detalhe do pedido / da carga ----------
@@ -2024,6 +2054,10 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     ligarAoVivo({ sess, setor: SETOR, container: $("#board"), ativa: () => board === "vivo", toast })
       .then((ligou) => { comServidor = ligou; renderTop(); });
   }
+
+  // Fase 1e: com o servidor, a aba Separação vira o quadro de verdade
+  ligarQuadroReal({ sess, setor: SETOR, container: $("#board"), ativa: () => real(), toast, aoMudar: () => renderTop() })
+    .then((ligou) => { quadroReal = ligou; if (ligou) render(true); });
 
   // ---------- início ----------
   load();

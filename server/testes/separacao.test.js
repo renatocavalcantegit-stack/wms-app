@@ -4,16 +4,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { prepararBancoDeTeste } from "./banco-de-teste.js";
 import { criarServidor } from "../src/servidor.js";
-import { gerarHash } from "../src/senha.js";
 import { USERS } from "../../js/sessao.js";
 
 let pool, app;
-const PIN_DE_TESTE = "9090"; // só do segundo separador criado aqui (não é PIN da demonstração)
 before(async () => {
   pool = await prepararBancoDeTeste();
   app = criarServidor({ pool });
-  // um segundo separador, para os conflitos
-  await pool.query("INSERT INTO usuarios (login, nome, perfil, pin_hash) VALUES ('separador2', 'Segundo Separador', 'sep', $1)", [gerarHash(PIN_DE_TESTE)]);
 });
 after(async () => {
   await app.close();
@@ -25,7 +21,7 @@ async function entrar(login, pin) {
   return (await app.inject({ method: "POST", url: "/api/login", payload: { login, pin } })).json().token;
 }
 const entrarSeparador = () => entrar(usuario("sep").login, usuario("sep").pin);
-const entrarSeparador2 = () => entrar("separador2", PIN_DE_TESTE);
+const entrarSeparador2 = () => entrar("separador2", USERS.find((u) => u.login === "separador2").pin);
 
 // cada ação com o seu ID (como o coletor cria) e a hora em que foi feita, um segundo depois da anterior
 let relogio = Date.parse("2026-11-17T08:00:00Z");
@@ -35,6 +31,8 @@ const sincronizar = (token, acoes) =>
 const lerPedido = async (id) => (await pool.query("SELECT status, separador, inicio, fim, doca, lote, posicao_lote FROM pedidos WHERE id = $1", [id])).rows[0];
 const lerItens = async (id) =>
   (await pool.query("SELECT sequencia, qtd, qtd_separada, status, motivo FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [id])).rows;
+// o coordenador manda o pedido para a fila de alguém (no quadro da Gestão; aqui, direto no banco)
+const designar = (id, login) => pool.query("UPDATE pedidos SET designado_para = $2, ordem_fila = 1 WHERE id = $1", [id, login]);
 const resultadoGravado = async (id) => (await pool.query("SELECT resultado, motivo, aplicada_em FROM acoes_recebidas WHERE id = $1", [id])).rows[0];
 
 test("pedido inteiro: iniciar, separar cada item (um com falta quebrada) e deixar na doca", async () => {
@@ -77,6 +75,7 @@ test("ações chegam fora de ordem no lote: o servidor aplica na ordem em que fo
 
 test("dois separadores no mesmo pedido (um estava sem rede): o segundo vira conflito e nada dele é aplicado", async () => {
   const ana = await entrarSeparador(), bruno = await entrarSeparador2();
+  await designar("PV-10423", usuario("sep").login);
   await sincronizar(ana, [acao("separacao.iniciar", { pedido: "PV-10423" })]);
   const lote = [acao("separacao.iniciar", { pedido: "PV-10423" }), acao("separacao.item", { pedido: "PV-10423", sequencia: 1, qtdSeparada: 10, status: "ok" })];
   const r = (await sincronizar(bruno, lote)).json();
@@ -99,6 +98,7 @@ test("reenvio depois de a resposta se perder: não aplica de novo e repete o res
 
 test("ação recusada não impede as outras do mesmo lote", async () => {
   const token = await entrarSeparador();
+  await designar("PV-10427", usuario("sep").login);
   const boa = acao("separacao.iniciar", { pedido: "PV-10427" });
   const ruim = acao("separacao.item", { pedido: "PV-10427", sequencia: 99, qtdSeparada: 1, status: "ok" }); // feita depois do iniciar
   const r = (await sincronizar(token, [boa, ruim])).json();
@@ -147,4 +147,31 @@ test("a lista de pedidos mostra o andamento que veio dos coletores", async () =>
   const lista = (await app.inject({ url: "/api/pedidos?setor=exp", headers: { authorization: `Bearer ${token}` } })).json();
   assert.equal(lista.find((p) => p.id === "PV-10423").status, "andamento");
   assert.equal(lista.find((p) => p.id === "PV-10428").status, "pendente");
+});
+
+test("o coordenador passou o pedido para outra pessoa enquanto o coletor estava sem rede: recusado", async () => {
+  // o PV-10426/2 está na fila do separador2; o separador começou e separou um item sem rede, achando que era dele
+  const token = await entrarSeparador();
+  const lote = [
+    acao("separacao.iniciar", { pedido: "PV-10426/2" }),
+    acao("separacao.item", { pedido: "PV-10426/2", sequencia: 1, qtdSeparada: 1, status: "ok" }),
+  ];
+  const r = (await sincronizar(token, lote)).json();
+  assert.deepEqual(r.novas, lote.map((a) => a.id), "as duas saem da fila do coletor");
+  assert.deepEqual(r.recusadas.map((x) => [x.resultado, x.motivo]), [
+    ["recusada", "O COORDENADOR PASSOU O PV-10426/2 PARA OUTRA PESSOA."],
+    ["recusada", "O COORDENADOR PASSOU O PV-10426/2 PARA OUTRA PESSOA."],
+  ]);
+  const p = await lerPedido("PV-10426/2");
+  assert.deepEqual([p.status, p.separador], ["pendente", null]);
+  // vai para as "não aplicadas" da Gestão (o coordenador vê e resolve com o separador)
+  const naGestao = (await pool.query("SELECT resultado FROM acoes_recebidas WHERE id = $1", [lote[0].id])).rows[0];
+  assert.equal(naGestao.resultado, "recusada");
+});
+
+test("o coordenador devolveu o pedido para a caixa de entrada: recusado com o aviso", async () => {
+  const token = await entrarSeparador();
+  await pool.query("UPDATE pedidos SET designado_para = NULL, ordem_fila = NULL WHERE id = 'PV-10426/1'");
+  const r = (await sincronizar(token, [acao("separacao.iniciar", { pedido: "PV-10426/1" })])).json();
+  assert.equal(r.recusadas[0].motivo, "O COORDENADOR TIROU O PV-10426/1 DA SUA FILA.");
 });

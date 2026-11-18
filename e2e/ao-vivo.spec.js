@@ -72,9 +72,9 @@ test("a Gestão acompanha o coletor ao vivo e o coordenador marca o conflito com
   await expect(linhaDoPedido).toContainText(`1/${pedido.itens.length} itens`);
 
   // um segundo separador tenta pegar o mesmo pedido (direto pela API, como faria outro coletor): conflito
-  await pool.query("INSERT INTO usuarios (login, nome, perfil, pin_hash) SELECT 'separador2', 'Segundo Separador', 'sep', pin_hash FROM usuarios WHERE login = $1", [sep.login]);
+  const sep2 = USERS.find((x) => x.login === "separador2");
   const login2 = await (await fetch(`${endereco}/api/login`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: "separador2", pin: sep.pin }),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: sep2.login, pin: sep2.pin }),
   })).json();
   await fetch(`${endereco}/api/sincronizar`, {
     method: "POST",

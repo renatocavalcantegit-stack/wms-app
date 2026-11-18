@@ -78,6 +78,7 @@ export function pedidoDoServidor(p) {
     status: p.status, inicio: ms(p.inicio), fim,
     operador: p.separador_nome || p.separador || null,
     separadorLogin: p.separador || null, // login de quem está com o pedido (para "Com Fulano")
+    ordem: p.ordem_fila ?? null, // posição na fila do separador (Fase 1e: o coordenador decide a ordem no quadro)
     atual: 0,
     doca: p.doca ? { id: p.doca_id, codigo: p.doca, quando: fim, por: p.separador_nome || p.separador } : null,
     lote: p.lote || null, pos: p.posicao_lote || null,

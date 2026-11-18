@@ -511,3 +511,23 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 /* card marcado na caixa da separação (para agrupar em lote): o ✓ aparece e o card ganha contorno */
 .card.sel .cb { background: var(--red-brand); border-color: var(--red-brand); }
 .card.sel:not(.cc) { box-shadow: 0 0 0 2px var(--red-brand); }
+
+/* ---------- Fase 1e: quadro da Separação com o servidor (gestao-separacao-real.js) ---------- */
+.st.gq-off { color: var(--red-brand); } .st.gq-off i { background: var(--red-brand); animation: pulse 1.4s infinite; }
+.gq-aviso { align-self: flex-start; margin: 4px; padding: 12px 16px; border-radius: 12px; background: #F1F1F4; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.gq-aviso.erro { background: #FDECEC; color: var(--red-brand); }
+.gq-sub { margin: 14px 0 4px; font-size: 14px; }
+.gq-meta { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12.5px; color: var(--ink-3); }
+.gq-itens { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
+.gq-itens .gaddr { margin-right: 6px; }
+/* outras abas com o servidor: ainda são simulação */
+.gx-sim-aviso { font-size: 11.5px; font-weight: 800; letter-spacing: .3px; color: #92400E; background: #FEF3C7; border: 1px solid #FCD34D; padding: 5px 10px; border-radius: 8px; white-space: nowrap; }
+/* Dispositivos (login único) */
+.gq-dsp { overflow-x: auto; margin: 6px 0 4px; }
+.gq-dsp table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gq-dsp th { text-align: left; font-size: 11px; letter-spacing: .3px; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.gq-dsp td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.gq-dsp td small { display: block; color: var(--ink-3); font-size: 11.5px; }
+.gq-dsp td .btn { height: 34px; padding: 0 12px; font-size: 12.5px; }
+.gq-dsp-off { color: var(--red-brand); font-weight: 700; }
+.gq-dsp-pend { color: #B45309; }

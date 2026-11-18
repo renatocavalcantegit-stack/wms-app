@@ -44,7 +44,7 @@ test("batimento com a fila vazia: manda a lista vazia uma vez e o servidor fica 
   const r = await sincronizarAgora({ sessao, buscar: s.buscar, agora, batimento: true });
   assert.equal(r.situacao, "contato");
   assert.equal(s.chamadas.length, 1);
-  assert.deepEqual(s.chamadas[0].corpo, { acoes: [] });
+  assert.deepEqual(s.chamadas[0].corpo, { acoes: [], pendentes: 0 }); // pendentes: a tela de Dispositivos mostra
   assert.equal(s.chamadas[0].opcoes.headers.authorization, "Bearer tok-123");
   assert.equal(lerEstadoDaSincronizacao().ultimaSincronizacao, AGORA.toISOString());
 });
