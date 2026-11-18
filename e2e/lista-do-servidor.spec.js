@@ -125,6 +125,41 @@ test("o coordenador distribui no quadro e cada coletor mostra só a fila do seu 
   await expect(vivo).toHaveAttribute("draggable", "false");
   await expect(g.locator('#board .col:has(.gx-list[data-col="separador"]) .st')).toHaveText("Separando");
 
+  // a gaveta do pedido é a mesma da demonstração: andamento ao vivo, itens e histórico
+  await vivo.click();
+  const gav = g.locator("#drawer");
+  await expect(gav).toBeVisible();
+  await expect(gav.locator(".dr-head h2")).toHaveText("PV-10421");
+  await expect(gav.locator(".dr-head .stage")).toHaveText(/Em separação/);
+  await expect(gav.locator(".dr-live")).toContainText("Separando agora");
+  await expect(gav.locator(".dr-items tbody tr").first()).toBeVisible();
+  await expect(gav.locator(".timeline")).toContainText("Separação iniciada por");
+  await expect(gav.locator("#gqMover")).toHaveCount(0); // em separação não muda de fila
+  await gav.locator("[data-gqfechar]").click();
+  await expect(gav).toBeHidden();
+
+  // "Mover para…" pela gaveta: o PV-10428 sai da Ana e volta para a caixa de entrada
+  await g.locator('#board .card[data-id="PV-10428"]').click();
+  await expect(gav.locator(".dr-head h2")).toHaveText("PV-10428");
+  await expect(gav.locator(".dr-head .stage")).toHaveText(/Aguardando início da separação · \d+º na fila/);
+  await gav.locator("#gqMover").selectOption("inbox");
+  await gav.locator("#gqMoverOk").click();
+  await expect.poll(async () => (await designado("PV-10428")).designado_para).toBeNull();
+  await expect(gav.locator(".dr-head .stage")).toHaveText(/Aguardando designar separador/);
+  // e da caixa para a Bruna, no fim da fila (a rota já foi definida)
+  await gav.locator("#gqMover").selectOption("separador2");
+  await gav.locator("#gqMoverOk").click();
+  await expect.poll(async () => (await designado("PV-10428")).designado_para).toBe("separador2");
+  await g.keyboard.press("Escape");
+  await expect(gav).toBeHidden();
+
+  // a gaveta do lote: pedidos e paradas
+  await g.locator('#board .card[data-id="L-1"]').click();
+  await expect(gav.locator(".dr-k")).toHaveText("Lote · uma viagem só");
+  await expect(gav.locator("tr[data-gqgoto]")).toHaveCount(2);
+  await gav.locator("tr[data-gqgoto]").first().click();
+  await expect(gav.locator(".dr-head h2")).toHaveText(/PV-/);
+
   for (const p of [g, ana, bruna]) await p.context().close();
 });
 

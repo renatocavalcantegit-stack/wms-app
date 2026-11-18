@@ -6,7 +6,8 @@
 //   - arrastar da caixa para um separador, de um separador para outro, de volta para a caixa, ou mudar a ordem;
 //   - pedido sem rota: o coordenador escolhe a rota antes de mandar para um separador;
 //   - marcar pedidos da caixa e agrupar em lote; desfazer o lote antes de começar;
-//   - o andamento de quem está separando, e "Sem contato" quando o coletor não dá sinal há 90 s.
+//   - o andamento de quem está separando, e "Sem contato" quando o coletor não dá sinal há 90 s;
+//   - clicar no card abre a mesma gaveta da demonstração (#drawer), com os itens, a rota e "Mover para…".
 // As travas valem no servidor (server/src/consultas/quadro.js). As decisões de tela (colunas, ordem, situação)
 // estão em compartilhado/regras/fila-do-separador.js. Os dados vêm de js/dados/quadro.js.
 // Ainda NÃO estão aqui (seguem só na demonstração): dividir pedido, sugerir lotes e a distribuição inteligente.
@@ -16,7 +17,7 @@ import { buscarQuadro, moverNoQuadro, definirRota, criarLote, desfazerLote, busc
 import { unidadesDoQuadro, colunasDoQuadro, situacaoNoQuadro } from "./compartilhado/regras/fila-do-separador.js";
 import { precisaDeRota, AGUARDANDO } from "./compartilhado/regras/aguardando.js";
 import { ROTAS, rota as rotaPeloId } from "./compartilhado/regras/rotas.js";
-import { MAX_PEDIDOS_LOTE } from "./compartilhado/regras/separacao.js";
+import { MAX_PEDIDOS_LOTE, montarParadas } from "./compartilhado/regras/separacao.js";
 
 const esc = (s) => escapar(s ?? "");
 const RESERVA_MS = 60_000;   // relê o quadro mesmo sem aviso (se um aviso se perder)
@@ -70,6 +71,7 @@ async function recarregar() {
     [...estado.marcados].forEach((id) => { if (!naCaixa.has(id)) estado.marcados.delete(id); });
   } else estado.erro = r.erro;
   desenhar();
+  desenharGaveta();
 }
 
 function colunas() {
@@ -263,29 +265,207 @@ function abrirJanela(html) {
 }
 function fecharJanela() { document.querySelector("#modal").hidden = true; document.querySelector("#mScrim").hidden = true; }
 
-// detalhe do pedido (ou do lote): itens, rota e as ações que o coordenador pode fazer
-async function abrirDetalhe(unidade) {
-  const u = unidadesDoQuadro(estado.quadro.pedidos).find((x) => x.id === unidade);
-  if (!u) return;
-  const comItens = await Promise.all(u.pedidos.map(async (p) => ({ ...p, detalhe: (await buscarPedido(ctx.sess, p.id)) })));
-  const sep = u.para ? estado.quadro.separadores.find((s) => s.login === u.para) : null;
-  const pendente = !u.andamento;
-  const linhas = (p) => (p.detalhe.ok ? p.detalhe.itens : []).map((i) =>
-    `<li><span class="gaddr">${esc(i.endereco_codigo)}</span>${esc(i.descricao)} · <b>${numero(i.qtd)} ${esc(i.un)}</b>${i.status === "ok" ? " ✓" : i.status === "falta" ? ` · falta (${esc(i.motivo)})` : ""}</li>`).join("");
-  const blocos = comItens.map((p) => `<h3 class="gq-sub">${u.ehLote ? `<b class="lpos">${esc(p.posicao_lote)}</b> ` : ""}${esc(p.id)} · ${esc(p.cliente)}</h3>
-    <p class="gq-meta">${destinoTag(p)} ${esc(p.cidade)}${p.separador_nome ? ` · com ${esc(p.separador_nome)}` : ""}</p>
-    ${!MONT() && !p.aguardando && pendente && !u.ehLote ? `<label class="field"><span>Rota</span><select data-gqrota="${esc(p.id)}"><option value="">Sem rota</option>${ROTAS.map((r) => `<option value="${r.id}" ${r.id === p.rota ? "selected" : ""}>${esc(r.nome)}</option>`).join("")}</select></label>` : ""}
-    <ol class="gq-itens">${linhas(p)}</ol>`).join("");
-  const acoes = [
-    u.para && pendente ? `<button class="btn ghost" data-gqcaixa="${esc(u.id)}">Devolver para a caixa</button>` : "",
-    u.ehLote && pendente ? `<button class="btn ghost" data-gqdesfazer="${esc(u.id)}">Desfazer lote</button>` : "",
-    `<button class="btn primary" data-close>Fechar</button>`,
+// ---------- gaveta do pedido e do lote (a mesma #drawer da demonstração, com os dados do servidor) ----------
+// O que o servidor ainda não tem (vendedor, embarque, carga, volumes, nota fiscal) aparece com "—" até a integração
+// com o Sankhya. Dividir pedido continua só na demonstração.
+let aberto = null;   // { tipo: "p" | "l", id }
+let pedidoDaVez = 0; // descarta a resposta de uma gaveta que já foi trocada
+const gaveta = () => document.querySelector("#drawer");
+const hora = (iso) => new Date(doServidor(iso)).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const ha = (iso) => haQuanto(agora() - Date.parse(iso));
+const pad = (n) => String(n).padStart(2, "0");
+const duracao = (ms) => { const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600); return (h ? `${h}:${pad(Math.floor(t / 60) % 60)}` : pad(Math.floor(t / 60))) + ":" + pad(t % 60); };
+const cronometro = (iso) => `<span class="timer" data-gqdesde="${Date.parse(iso)}">${duracao(agora() - Date.parse(iso))}</span>`;
+const nomeDe = (login) => estado.quadro?.separadores.find((x) => x.login === login)?.nome || login || "";
+const porcento = (feito, total) => (total ? Math.round((feito / total) * 100) : 0);
+const AGUARDANDO_TAG = `<span class="rt aguard" style="--rc:${AGUARDANDO.cor}"><i></i>AGUARDANDO</span>`;
+const pontinho = (i) => i.status !== "pendente" && i.qtd_separada >= i.qtd ? `<span class="sdot ok">${CHECK}</span>`
+  : i.qtd_separada > 0 ? `<span class="sdot part" style="--p:${porcento(i.qtd_separada, i.qtd)}%"></span>` : `<span class="sdot"></span>`;
+
+function abrirGaveta(id) {
+  const u = unidadesDoQuadro(estado.quadro.pedidos).find((x) => x.id === id);
+  aberto = u?.ehLote ? { tipo: "l", id } : { tipo: "p", id };
+  gaveta().hidden = false; document.querySelector("#drScrim").hidden = false;
+  gaveta().scrollTop = 0;
+  desenharGaveta();
+}
+function fecharGaveta() { aberto = null; gaveta().hidden = true; document.querySelector("#drScrim").hidden = true; }
+
+// a unidade (pedido ou lote) no quadro: em que coluna está e em que posição da fila
+function ondeEsta(id) {
+  const { caixa, filas } = colunas();
+  if (caixa.some((u) => u.id === id)) return { col: "inbox", lista: caixa };
+  for (const [login, fila] of filas) if (fila.some((u) => u.id === id)) return { col: login, lista: fila };
+  return null;
+}
+const posicaoNaFila = (onde, id) => { const i = onde.lista.findIndex((u) => u.id === id); return onde.lista[0]?.andamento ? i : i + 1; };
+
+// "Mover para…" e "Passar para o próximo da fila" (as mesmas ações da demonstração)
+function acoesDeMover(u, onde, extra = "") {
+  if (!onde || u.andamento) return extra ? `<section><h4 class="dr-h">Ações</h4><div class="dr-act">${extra}</div></section>` : "";
+  const outros = estado.quadro.separadores.filter((x) => x.login !== onde.col);
+  const i = onde.lista.findIndex((x) => x.id === u.id);
+  const podeSubir = onde.col !== "inbox" && i > (onde.lista[0]?.andamento ? 1 : 0);
+  return `<section><h4 class="dr-h">Ações</h4><div class="dr-act">
+    <select id="gqMover"><option value="">Mover para…</option>${onde.col !== "inbox" ? `<option value="inbox">Caixa de entrada</option>` : ""}
+      ${outros.map((x) => `<option value="${esc(x.login)}">${esc(x.nome)} (fim da fila)</option>`).join("")}</select>
+    <button class="btn primary" id="gqMoverOk">Mover</button>
+    ${podeSubir ? `<button class="btn ghost" data-gqtopo="${esc(u.id)}">Passar para o próximo da fila</button>` : ""}
+    ${extra}
+  </div></section>`;
+}
+
+async function desenharGaveta() {
+  if (!aberto) return;
+  if (gaveta().hidden) { aberto = null; return; } // fechada pela Gestão (fundo escuro)
+  if (gaveta().contains(document.activeElement) && document.activeElement.tagName === "SELECT") return; // não atrapalha quem está escolhendo
+  const vez = ++pedidoDaVez, { tipo, id } = aberto;
+  const ids = tipo === "l" ? estado.quadro.pedidos.filter((p) => p.lote === id).map((p) => p.id) : [id];
+  if (!ids.length) return fecharGaveta(); // o lote terminou (saiu do quadro)
+  const respostas = await Promise.all(ids.map((x) => buscarPedido(ctx.sess, x)));
+  if (vez !== pedidoDaVez || !aberto) return;
+  const falhou = respostas.find((r) => !r.ok);
+  if (falhou) { ctx.toast(falhou.erro); return fecharGaveta(); }
+  gaveta().innerHTML = tipo === "l" ? htmlDoLote(id, respostas) : htmlDoPedido(respostas[0]);
+}
+
+function htmlDoPedido(p) {
+  const itens = p.itens, un = itens.reduce((t, i) => t + i.qtd, 0), unFeitas = itens.reduce((t, i) => t + (i.status !== "pendente" ? i.qtd_separada : 0), 0);
+  const feitos = itens.filter((i) => i.status !== "pendente").length, pc = porcento(unFeitas, un);
+  const onde = ondeEsta(p.lote || p.id), vivo = p.status === "andamento";
+  const atual = vivo ? itens.find((i) => i.status === "pendente") : null;
+  const etapa = p.status === "concluido" ? { txt: `Separado${p.doca ? ` · doca ${p.doca}` : ""}`, cls: "" }
+    : vivo ? { txt: `Em separação · ${pc}%`, cls: "live" }
+    : onde && onde.col !== "inbox" ? { txt: `Aguardando início da separação · ${posicaoNaFila(onde, p.lote || p.id)}º na fila`, cls: "wait" }
+    : { txt: `Aguardando designar separador${semRota(p) ? " · sem rota" : ""}`, cls: "wait" };
+  const r = rotaPeloId(p.rota);
+  const travada = p.status !== "pendente" || !!p.lote || !!p.pedido_pai;
+  const grade = MONT() ? `
+      <div class="dr-f"><small>Tipo de operação</small><b>Montagem (OP)</b><span>Pedido do Sankhya · não entra na expedição</span></div>
+      <div class="dr-f"><small>Chegou</small><b>${hora(p.chegada)}</b><span>${ha(p.chegada)}${p.prioridade === "alta" ? " · prioridade" : ""}</span></div>` : `
+      <div class="dr-f"><small>Cliente</small><b>${esc(p.cliente)}</b><span>${esc(p.cidade)}</span></div>
+      <div class="dr-f"><small>Vendedor</small><b>—</b><span>Chegou ${ha(p.chegada)} · ${hora(p.chegada)}</span></div>
+      ${p.aguardando ? `
+      <div class="dr-f"><small>Rota</small><b>${AGUARDANDO_TAG}</b><span>o cliente retira na empresa</span></div>
+      <div class="dr-f"><small>Embarque</small><b>—</b><span>sem horário de corte e sem embarque</span></div>
+      <div class="dr-f"><small>Retirada</small><b>—</b><span>não entra em carga · depois do faturamento</span></div>` : `
+      <div class="dr-f"><small>Rota</small>${travada ? `<b>${esc(r ? r.nome : "—")}</b>` : `<select id="gqDrRota" class="${p.rota ? "" : "warn"}"><option value="">— Sem rota —</option>${ROTAS.map((x) => `<option value="${x.id}" ${x.id === p.rota ? "selected" : ""}>${esc(x.nome)}</option>`).join("")}</select>`}</div>
+      <div class="dr-f"><small>Embarque</small><b>—</b><span>${r ? "o horário de corte ainda não vem do servidor" : "Defina a rota"}</span></div>
+      <div class="dr-f"><small>Carga</small><b>—</b><span>ainda não faturado</span></div>`}`;
+  const extras = [
+    p.lote ? `<div class="dr-f"><small>Lote</small><b><a href="#" data-gqgoto="${esc(p.lote)}">${esc(p.lote)}</a> · caixa ${esc(p.posicao_lote)}</b><span>${estado.quadro.pedidos.filter((x) => x.lote === p.lote).length || "—"} pedidos numa viagem</span></div>` : "",
+    p.pedido_pai ? `<div class="dr-f"><small>Pedido dividido</small><b>Parte ${p.parte_numero} de ${p.partes_total} · ${esc(p.pedido_pai)}</b><span>${esc(p.parte_ruas || "")}</span></div>` : "",
+    p.doca ? `<div class="dr-f"><small>Doca de expedição</small><b class="dr-docas"><span class="dchip">${esc(p.doca)}</span></b><span>lida pelo separador ao terminar</span></div>` : "",
   ].join("");
-  abrirJanela(`<h2>${u.ehLote ? `Lote ${esc(u.id)} · ${u.pedidos.length} pedidos` : esc(u.id)}</h2>
-    <p>${u.andamento ? `Em separação com ${esc(sep?.nome || "")}` : sep ? `Na fila de ${esc(sep.nome)}` : "Na caixa de entrada"}</p>
-    ${blocos}
-    <div class="m-act">${acoes}</div>`);
-  document.querySelector("#modal").classList.add("wide");
+  const aoVivo = vivo ? `<div class="dr-live">
+      <div class="cl-row"><span class="cl-tag"><i></i>Separando agora · ${esc(nomeDe(p.separador))}</span>${p.inicio ? cronometro(p.inicio) : ""}</div>
+      <div class="cl-row"><span class="big">${pc}%</span><span><b>${feitos}</b>/${itens.length} itens · <b>${numero(unFeitas)}</b>/${numero(un)} unidades</span></div>
+      <div class="cl-bar"><i style="width:${pc}%"></i></div>
+      ${atual ? `<div class="now"><span class="gaddr">${esc(atual.endereco_codigo)}</span><p>${esc(atual.descricao)}<small>${esc(atual.produto)} · ${atual.qtd_separada}/${atual.qtd} un. separadas</small></p></div>` : ""}
+    </div>` : "";
+  // pedido de lote: as ações ficam na gaveta do lote (o lote anda inteiro)
+  const acoes = p.lote ? "" : acoesDeMover({ id: p.id, andamento: vivo }, p.status === "pendente" ? onde : null);
+  const linhas = itens.map((i) => `<tr class="${i.status !== "pendente" && i.qtd_separada >= i.qtd ? "ok" : ""} ${atual === i ? "now" : ""}">
+      <td>${pontinho(i)}</td><td><span class="gaddr">${esc(i.endereco_codigo)}</span></td>
+      <td>${esc(i.descricao)}${atual === i ? `<span class="now-tag">agora</span>` : ""}<small>${esc(i.produto)}${i.status === "falta" ? ` · falta${i.motivo ? `: ${esc(i.motivo)}` : ""}` : ""}</small></td>
+      <td class="r">${i.qtd}</td><td class="r">${i.status === "pendente" && !i.qtd_separada ? 0 : i.qtd_separada}</td></tr>`).join("");
+  return `
+    <header class="dr-head">
+      <div><p class="dr-k">${p.pedido_pai ? "Parte de pedido dividido" : MONT() ? "Pedido de montagem" : "Pedido"}</p><h2>${esc(p.id)}</h2></div>
+      <span class="stage ${etapa.cls}">${esc(etapa.txt)}</span>
+      <button class="dr-x" data-gqfechar="1" aria-label="Fechar">×</button>
+    </header>
+    <div class="dr-body">
+      <div class="dr-grid">${grade}</div>
+      ${extras ? `<div class="dr-grid">${extras}</div>` : ""}
+      <div class="dr-nums">
+        <div><b>${itens.length}</b><small>SKUs</small></div>
+        <div><b>${numero(un)}</b><small>unidades</small></div>
+        ${MONT() ? `<div><b>${numero(unFeitas)}</b><small>separadas</small></div><div><b>—</b><small>conferidas</small></div>`
+          : `<div><b>—</b><small>volumes</small></div><div><b>—</b><small>nota fiscal</small></div>`}
+      </div>
+      ${aoVivo}
+      ${acoes}
+      <section>
+        <h4 class="dr-h">Itens · ordem de coleta</h4>
+        <table class="dr-items"><thead><tr><th></th><th>Endereço</th><th>Produto</th><th class="r">Pedido</th><th class="r">Separado</th></tr></thead><tbody>${linhas}</tbody></table>
+      </section>
+      <section><h4 class="dr-h">Histórico</h4>${historico(p)}</section>
+    </div>`;
+}
+
+// o histórico com o que o servidor já guarda (a demonstração anota cada passo; aqui: chegada, fila, início e fim)
+function historico(p) {
+  const h = [{ t: p.chegada, txt: MONT() ? "Pedido de montagem recebido do Sankhya" : "Pedido recebido do Sankhya" }];
+  if (p.designado_em && p.designado_para) h.push({ t: p.designado_em, txt: `Separação atribuída a ${nomeDe(p.designado_para)}` });
+  if (p.inicio) h.push({ t: p.inicio, txt: `Separação iniciada por ${nomeDe(p.separador)}` });
+  if (p.fim) h.push({ t: p.fim, txt: `Separação finalizada por ${nomeDe(p.separador)}${p.doca ? ` · doca ${p.doca}` : ""}` });
+  return `<ol class="timeline">${h.sort((a, b) => Date.parse(a.t) - Date.parse(b.t)).map((x) => `<li><time>${hora(x.t)}</time>${esc(x.txt)}</li>`).join("")}</ol>`;
+}
+
+function htmlDoLote(id, membros) {
+  const u = unidadesDoQuadro(estado.quadro.pedidos).find((x) => x.id === id) || { id, andamento: membros.some((p) => p.status === "andamento") };
+  const onde = ondeEsta(id), vivo = u.andamento;
+  const posicoes = Object.fromEntries(membros.map((p) => [p.id, p.posicao_lote]));
+  membros.sort((a, b) => String(a.posicao_lote).localeCompare(String(b.posicao_lote)));
+  const todos = membros.flatMap((p) => p.itens);
+  const un = todos.reduce((t, i) => t + i.qtd, 0), unFeitas = todos.reduce((t, i) => t + (i.status !== "pendente" ? i.qtd_separada : 0), 0), pc = porcento(unFeitas, un);
+  const quem = membros.find((p) => p.separador)?.separador, inicio = membros.map((p) => p.inicio).filter(Boolean).sort()[0];
+  const etapa = vivo ? { txt: `Separando · ${nomeDe(quem)}`, cls: "live" }
+    : onde && onde.col !== "inbox" ? { txt: `Na fila de ${nomeDe(onde.col)} · ${posicaoNaFila(onde, id)}º`, cls: "wait" } : { txt: "Aguardando separador", cls: "wait" };
+  const pedidos = membros.map((p) => {
+    const t = p.itens.reduce((s, i) => s + i.qtd, 0), f = p.itens.reduce((s, i) => s + (i.status !== "pendente" ? i.qtd_separada : 0), 0);
+    return `<tr class="click" data-gqgoto="${esc(p.id)}"><td><b class="lpos">${esc(p.posicao_lote)}</b></td><td><b>${esc(p.id)}</b><small>${MONT() ? "Montagem" : esc(p.cliente)}</small></td>
+      <td>${MONT() ? "—" : destinoTag(p)}</td><td class="r">${p.itens.length}</td><td class="r">${f}/${t}</td></tr>`;
+  }).join("");
+  const paradas = montarParadas(membros.map((p) => ({ id: p.id, itens: p.itens.map((i) => ({ end: i.endereco_codigo, sku: i.produto, desc: i.descricao, qtd: i.qtd, sep: i.status !== "pendente" ? i.qtd_separada : 0, status: i.status })) })), posicoes);
+  const linhas = paradas.map((x) => `<tr class="${x.lido >= x.total ? "ok" : ""}"><td><span class="gaddr">${esc(x.end)}</span></td><td>${esc(x.desc)}<small>${esc(x.sku)}</small></td>
+      <td>${x.linhas.map((y) => `<span class="lq"><b class="lpos">${esc(y.pos)}</b>${y.qtd}</span>`).join("")}</td><td class="r">${x.lido}/${x.total}</td></tr>`).join("");
+  const desfazer = !vivo && !inicio ? `<button class="btn ghost" data-gqdesfazer="${esc(id)}">Desfazer lote</button>` : "";
+  const doca = membros.find((p) => p.doca)?.doca;
+  return `
+    <header class="dr-head">
+      <div><p class="dr-k">Lote · uma viagem só</p><h2>${esc(id)}</h2></div>
+      <span class="stage ${etapa.cls}">${esc(etapa.txt)}</span>
+      <button class="dr-x" data-gqfechar="1" aria-label="Fechar">×</button>
+    </header>
+    <div class="dr-body">
+      <div class="dr-grid">
+        <div class="dr-f"><small>Montado por</small><b>—</b><span>ainda não fica gravado no servidor</span></div>
+        <div class="dr-f"><small>Separador</small><b>${quem ? esc(nomeDe(quem)) : onde && onde.col !== "inbox" ? esc(nomeDe(onde.col)) : "—"}</b><span>${inicio ? `desde ${hora(inicio)}` : "não iniciado"}</span></div>
+        <div class="dr-f"><small>Doca de expedição</small><b>${doca ? `<span class="dchip">${esc(doca)}</span>` : "—"}</b><span>uma doca para o lote inteiro</span></div>
+        <div class="dr-f"><small>Depois da separação</small><b>Cada pedido sozinho</b><span>vai para a conferência separado</span></div>
+      </div>
+      <div class="dr-nums">
+        <div><b>${membros.length}</b><small>pedidos</small></div>
+        <div><b>${paradas.length}</b><small>paradas</small></div>
+        <div><b>${numero(un)}</b><small>unidades</small></div>
+        <div><b>${pc}%</b><small>separado</small></div>
+      </div>
+      ${vivo ? `<div class="dr-live"><div class="cl-row"><span class="cl-tag"><i></i>Separando agora · ${esc(nomeDe(quem))}</span>${inicio ? cronometro(inicio) : ""}</div><div class="cl-bar"><i style="width:${pc}%"></i></div></div>` : ""}
+      ${acoesDeMover(u, onde, desfazer)}
+      <section><h4 class="dr-h">Pedidos · caixa no carrinho</h4>
+        <table class="dr-items"><thead><tr><th>Caixa</th><th>Pedido</th><th>Rota</th><th class="r">Itens</th><th class="r">Separado</th></tr></thead><tbody>${pedidos}</tbody></table></section>
+      <section><h4 class="dr-h">Paradas · ordem da viagem</h4>
+        <table class="dr-items"><thead><tr><th>Endereço</th><th>Produto</th><th>Por caixa</th><th class="r">Total</th></tr></thead><tbody>${linhas}</tbody></table></section>
+    </div>`;
+}
+
+// mover pelo "Mover para…" da gaveta: vai para o fim da fila escolhida (como na demonstração)
+function moverPelaGaveta(unidade, destino) {
+  const para = destino === "inbox" ? null : destino;
+  const { filas } = colunas();
+  const ordem = para ? [...(filas.get(para) || []).filter((u) => !u.andamento && u.id !== unidade).map((u) => u.id), unidade] : [];
+  const u = unidadesDoQuadro(estado.quadro.pedidos).find((x) => x.id === unidade);
+  if (para && u && u.pedidos.some(semRota)) return pedirRota(u.pedidos, () => mover(unidade, para, ordem));
+  mover(unidade, para, ordem);
+}
+// "Passar para o próximo da fila": logo depois do que está em separação
+function passarParaProximo(unidade) {
+  const onde = ondeEsta(unidade);
+  if (!onde || onde.col === "inbox") return;
+  const resto = onde.lista.filter((u) => !u.andamento && u.id !== unidade).map((u) => u.id);
+  mover(unidade, onde.col, [unidade, ...resto]);
 }
 
 // ---------- eventos ----------
@@ -378,27 +558,42 @@ function ligarEventos() {
       return recarregar();
     }
     const c = e.target.closest(".card");
-    if (c) abrirDetalhe(c.dataset.id);
+    if (c) abrirGaveta(c.dataset.id);
   });
 
-  // ações dentro da janela de detalhe
-  document.querySelector("#modal").addEventListener("click", async (e) => {
-    const cx = e.target.closest("[data-gqcaixa]");
-    if (cx) { fecharJanela(); return mover(cx.dataset.gqcaixa, null, []); }
+  // ações dentro da gaveta
+  const g = gaveta();
+  g.addEventListener("click", async (e) => {
+    if (!aberto) return;
+    if (e.target.closest("[data-gqfechar]")) return fecharGaveta();
+    const ir = e.target.closest("[data-gqgoto]");
+    if (ir) { e.preventDefault(); return abrirGaveta(ir.dataset.gqgoto); }
+    if (e.target.closest("#gqMoverOk")) {
+      const destino = g.querySelector("#gqMover").value;
+      if (!destino) return ctx.toast("Escolha para onde mover");
+      return moverPelaGaveta(aberto.id, destino);
+    }
+    const topo = e.target.closest("[data-gqtopo]");
+    if (topo) return passarParaProximo(topo.dataset.gqtopo);
     const dz = e.target.closest("[data-gqdesfazer]");
     if (dz) {
       const r = await desfazerLote(ctx.sess, ctx.setor, dz.dataset.gqdesfazer);
       if (!r.ok) return ctx.toast(r.erro);
-      fecharJanela(); ctx.toast(`Lote ${dz.dataset.gqdesfazer} desfeito`);
+      fecharGaveta(); ctx.toast(`Lote ${dz.dataset.gqdesfazer} desfeito · os pedidos voltaram para a caixa de entrada`);
       return recarregar();
     }
   });
-  document.querySelector("#modal").addEventListener("change", async (e) => {
-    const s = e.target.closest("[data-gqrota]");
-    if (!s || !s.value) return;
-    const r = await definirRota(ctx.sess, ctx.setor, s.dataset.gqrota, s.value);
-    if (!r.ok) return ctx.toast(r.erro);
-    ctx.toast(`Rota de ${s.dataset.gqrota}: ${rotaPeloId(s.value).nome}`);
+  g.addEventListener("change", async (e) => {
+    if (!aberto || e.target.id !== "gqDrRota") return;
+    const rota = e.target.value;
+    e.target.blur();
+    if (!rota) { ctx.toast("Escolha uma rota"); return desenharGaveta(); }
+    const r = await definirRota(ctx.sess, ctx.setor, aberto.id, rota);
+    if (!r.ok) { ctx.toast(r.erro); return desenharGaveta(); }
+    ctx.toast(`Rota de ${aberto.id}: ${rotaPeloId(rota).nome}`);
     recarregar();
   });
+  document.querySelector("#drScrim").addEventListener("click", () => { aberto = null; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && aberto && document.querySelector("#modal").hidden) fecharGaveta(); });
+  setInterval(() => g.querySelectorAll(".timer[data-gqdesde]").forEach((el) => (el.textContent = duracao(agora() - +el.dataset.gqdesde))), 1000);
 }

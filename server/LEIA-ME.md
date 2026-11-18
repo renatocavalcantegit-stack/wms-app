@@ -206,7 +206,9 @@ dados em `js/dados/quadro.js`, regras em `compartilhado/regras/fila-do-separador
 - arrastar da caixa de entrada para um separador, de um para outro, de volta para a caixa, ou mudar a ordem da fila;
 - pedido **sem rota**: o quadro pede a rota antes de mandar para um separador (o aguardando não tem rota e vai direto);
 - marcar pedidos da caixa e **agrupar em lote**; o lote anda inteiro; "Desfazer lote" antes de começar;
-- clicar no card abre os itens, a rota e "Devolver para a caixa";
+- clicar no card abre a mesma gaveta lateral da demonstração: andamento ao vivo, itens, rota, histórico e
+  "Mover para…" (outro separador ou a caixa de entrada); no lote, os pedidos, as paradas e "Desfazer lote".
+  O que o servidor ainda não tem (vendedor, embarque, carga, volumes, nota fiscal) aparece com "—" até a integração;
 - cada coluna mostra a situação do separador: Separando, Aguardando início, Livre, **Sem contato** (o coletor não dá sinal
   há mais de 90 s) ou Não conectado.
 
