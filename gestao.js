@@ -182,7 +182,8 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       : `Embarque previsto: ${R.tag(e.data, R.iso(new Date(t))).label.toLowerCase()} (${R.fmtDia(e.data)})`, t);
   }
 
-  function makePedido({ semRota = false, prio = false, chegada = now(), rota = null, itens: nItens = null, aguardando = false } = {}) {
+  // prioridade: na expedição só o aguardando é prioridade; a urgência dos outros vem da rota e do horário de corte
+  function makePedido({ semRota = false, chegada = now(), rota = null, itens: nItens = null, aguardando = false } = {}) {
     // o cliente vem do ranking (com peso); a rota e o vendedor são os do cadastro do cliente
     const cli = pickPeso(rota ? CLI.filter((c) => c.rota === rota) : CLI_COM_ROTA, (c) => c.peso);
     const rid = semRota ? null : cli.rota;
@@ -193,7 +194,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "PV-" + db.seq++, cli: { cod: cli.cod, nome: cli.nome, cidade: cli.cidade, bairro: cli.bairro },
-      vendedor: cli.vendedor, rota: aguardando ? null : rid, prio: prio || aguardando ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
+      vendedor: cli.vendedor, rota: aguardando ? null : rid, prio: aguardando ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
       itens, etapa: "sep", sep: blank(), conf: blank(), lib: { ...blank(), ordem: null }, volumes: 0, nota: null, carga: null, hist: [],
     };
     // aguardando: a rota do cadastro fica guardada só para consulta (não vale para nada)
@@ -1009,11 +1010,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       if (rotaOf(f)) ids = ids.filter((id) => P(id).rota === f); else if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
       const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
       const rotas = R.ROTAS.filter((r) => B.inbox.some((id) => P(id).rota === r.id));
-      const fo = cnt(foraPend), pr = cnt(FILTROS.prio), ag = cnt(FILTROS.aguardando);
+      const fo = cnt(foraPend), ag = cnt(FILTROS.aguardando);
       chips = chip("todos", "Todas", B.inbox.length)
         + rotas.map((r) => chip(r.id, `<i></i>${esc(r.nome)}`, cnt((p) => p.rota === r.id), "", `style="--rc:${r.cor}"`)).join("")
         + (ag ? chip("aguardando", `<i></i>${AGUARDANDO.nome}`, ag, "", `style="--rc:${AGUARDANDO.cor}"`) : "")
-        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + (pr ? chip("prio", "Prioridade", pr) : "");
+        + (fo ? chip("fora", "Fora do horário", fo, "red") : "");
     } else if (MONT) {
       if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](E(id)));
       chips = chip("todos", "Todos", B.inbox.length) + chip("prio", "Prioridade", B.inbox.filter((id) => FILTROS.prio(E(id))).length);
@@ -1022,7 +1023,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       const cnt = (fn) => B.inbox.filter((id) => fn(E(id))).length;
       const fo = cnt(foraPend), ag = cnt(FILTROS.aguardando);
       chips = chip("todos", "Todos", B.inbox.length) + (k === "sep" ? chip("semrota", "Sem rota", cnt(FILTROS.semrota), "red") : "")
-        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje)) + chip("prio", "Prioridade", cnt(FILTROS.prio))
+        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje))
         + (ag || f === "aguardando" ? chip("aguardando", `<i></i>${AGUARDANDO.nome}`, ag, "", `style="--rc:${AGUARDANDO.cor}"`) : "");
     }
     const title = { sep: "Caixa de entrada", conf: "Separados", lib: "Conferidos", emb: "Cargas do ERP" }[k];
@@ -1655,11 +1656,9 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
           ${p.aguardando ? `
           <div class="dr-f"><small>Rota</small><b>${agTag}</b><span>o cliente retira na empresa${p.rotaCadastro ? ` · rota do cadastro: ${esc(rotaOf(p.rotaCadastro).nome)} (não usada)` : ""}</span></div>
           <div class="dr-f"><small>Embarque</small><b>—</b><span>sem horário de corte e sem embarque</span></div>
-          <div class="dr-f"><small>Prioridade</small><b>▲ Alta</b><span>o aguardando é sempre prioridade</span></div>
           <div class="dr-f"><small>Retirada</small><b>${p.retirado ? `Retirado às ${fmtTime(p.retirado)}` : p.etapa === "ret" ? "Aguardando o cliente" : "—"}</b><span>${p.retirado || p.etapa === "ret" ? `NF ${p.nota}` : "não entra em carga · depois do faturamento"}</span></div>` : `
           <div class="dr-f"><small>Rota</small>${rotaLocked ? `<b>${esc(r ? r.nome : "—")}</b>` : `<select id="drRota" class="${p.rota ? "" : "warn"}"><option value="">— Sem rota —</option>${rotaOptions(p.rota)}</select>`}</div>
           <div class="dr-f"><small>Embarque</small>${e ? `<div class="dr-emb">${embTag(p)}<span>${e.sub}${p.embDef ? " · definido pelo coordenador" : ""}</span></div><span>${r ? `Corte ${r.corte}${r.semanal != null ? ` de ${R.DIAS[r.semanal].toLowerCase()}` : ""} · altere no Acompanhamento` : ""}</span>` : `<b>—</b><span>Defina a rota</span>`}</div>
-          <div class="dr-f"><small>Prioridade</small><button class="tgl ${p.prio === "alta" ? "on" : ""}" id="drPrio">${p.prio === "alta" ? "▲ Alta" : "Normal"}</button></div>
           <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>`}`}
         </div>
         ${sepInfo ? `<div class="dr-grid">${sepInfo}</div>` : ""}
