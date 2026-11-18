@@ -10,6 +10,26 @@ Cópia congelada para consultar: https://renatocavalcantegit-stack.github.io/wms
 (no Git: a marca `interface-aprovada-v40`). Ajustes técnicos, validações e travas podem entrar;
 qualquer mudança visível na interface aprovada precisa ser aprovada antes.
 
+### Mudanças aprovadas depois da v40
+
+Estas decisões valem mais que a v40: **não voltam** ao que era na v40 sem nova aprovação.
+Cada mudança de tela aprovada daqui para frente entra nesta lista.
+
+| Versão | Tela | O que foi decidido |
+| --- | --- | --- |
+| v42 | todas | quantidade quebrada aceita (101,5 UN, 20,935 PR) |
+| v43–v47 | coletor | campo de bipe já focado, sem teclado da tela (só sobe ao tocar); modo compacto no C6000 (tela de até 600 px) e faixa vermelha de erro; **sem** atalhos F1/F2; aviso "TECLADO NO MODO Fn · aperte Num" |
+| v48–v52 | coletor | trabalha sem esperar a rede (fila de envio); a lista vem do servidor |
+| v49 / v53 | Gestão | aba **Ao vivo** (em standby desde a v53) |
+| v50 | coletor · lote | a quantidade é pedida **por caixa** (A, B…), não o total da parada; falta por caixa; endereço vazio pergunta pelas outras caixas |
+| v51 | etiqueta de volume | endereço em destaque (cidade · UF, bairro, rua e número) e nome da rota na faixa de baixo; sai a linha de itens e o "P PRIOR." |
+| v53 | todas | pedido **AGUARDANDO** (o cliente retira): etiqueta no lugar da rota, chip nas caixas de entrada, aba no Acompanhamento, coluna "Aguardando retirada" no Embarque; na conferência, o pedido comum na fila diz "Na fila"; interruptor de **distribuição inteligente** no lugar de "Distribuir automaticamente" |
+| v54 | Gestão · Separação | ✓ do pedido marcado para lote; **Ações no alto da gaveta**, antes dos itens; o quadro rola sozinho ao arrastar perto da borda |
+| v55–v57 | expedição | **sem a etiqueta PRIORIDADE** (cards, lote, faturamento, gaveta), sem o filtro "Prioridade" e sem o botão de prioridade; só o aguardando é prioridade (coletor e conferência também). Na Montagem (OP) a prioridade continua |
+| v58 | Gestão | aviso "Simulação" nas abas que ainda não usam o servidor; **Dispositivos** no menu do usuário; coletor: aviso de login recusado em outro aparelho, Sair não sai sem rede |
+| v59–v61 | coletor | toque (uma vez) e vibração quando chega pedido novo na fila |
+| v62 | Gestão · Separação | com o servidor, o card abre a **mesma gaveta da demonstração** (o que o servidor ainda não tem aparece "—") |
+
 ## Estrutura
 
 ```
