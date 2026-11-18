@@ -8,7 +8,7 @@ import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPos
 import { registrarDevolucao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { acharEndereco } from "./compartilhado/regras/enderecos.js";
-import { ehAguardando } from "./compartilhado/regras/aguardando.js";
+import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
 import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, validarDocaDevolucao, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
 import { lerQuantidade, quantidadePositiva, arredondarQtd as arr, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
@@ -25,6 +25,8 @@ import { $, $$, esc } from "./js/util.js";
   // setor: Expedição (volumes, observação, etiquetas) ou Montagem (pedidos OP, sem volumes/etiquetas)
   const SEM_SETOR = !sess.setor;
   const SETOR = sess.setor || "exp", MONT = SETOR === "mont";
+  // prioridade: na expedição só o aguardando; na Montagem, a do Sankhya (compartilhado/regras/aguardando.js)
+  const prioridade = (o) => ehPrioridade(o, SETOR);
   document.body.classList.toggle("setor-mont", MONT);
 
   // aparelho de toque (celular/tablet): sem foco automático e com câmera
@@ -94,7 +96,7 @@ import { $, $$, esc } from "./js/util.js";
     $("#qCountA").textContent = ag.length;
     $("#qCountC").textContent = cf.length;
     const list = (queueFilter === "aguardando" ? ag : cf).sort((a, b) =>
-      (a.conf.status === "andamento" ? -1 : 0) - (b.conf.status === "andamento" ? -1 : 0) || (a.prio === "alta" ? -1 : 1) - (b.prio === "alta" ? -1 : 1));
+      (a.conf.status === "andamento" ? -1 : 0) - (b.conf.status === "andamento" ? -1 : 0) || (prioridade(a) ? -1 : 1) - (prioridade(b) ? -1 : 1));
 
     $("#queueBody").innerHTML = list.map((o) => {
       const faltaSep = o.itens.some((i) => i.status === "falta");
@@ -105,7 +107,7 @@ import { $, $$, esc } from "./js/util.js";
         : o.conf.status === "divergente" ? `<span class="tag div">Com divergência${MONT ? "" : ` · ${o.conf.volumes} vol.`}</span>`
         : faltaSep ? `<span class="tag parcial">Falta na separação</span>`
         : ehAguardando(o) ? `<span class="tag alta">Aguardando · cliente retira</span>`
-        : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Na fila</span>`;
+        : prioridade(o) ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Na fila</span>`;
       return `<tr data-id="${o.id}">
         <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
@@ -152,8 +154,8 @@ import { $, $$, esc } from "./js/util.js";
     $("#oClient").textContent = o.cliente;
     $("#oSub").innerHTML = `${esc(o.cidade)} · separado por ${esc(o.operador || "—")} · ${o.itens.length} itens · ${o.partes && o.partes.length ? "pegar nas docas " : "pegar na doca "}${docasDo(o)}`;
     const t = $("#oTag");
-    t.className = "tag " + (o.prio === "alta" || ehAguardando(o) ? "alta" : "");
-    t.textContent = ehAguardando(o) ? "Aguardando · cliente retira" : o.prio === "alta" ? "Prioridade" : "Normal";
+    t.className = "tag " + (prioridade(o) ? "alta" : "");
+    t.textContent = ehAguardando(o) ? "Aguardando · cliente retira" : prioridade(o) ? "Prioridade" : "Normal";
     $("#scan").placeholder = "Bipe o produto…";
     setLast({ label: "Pedido aberto", desc: `${o.cliente}`, code: o.id, conf: "—", exp: "—" });
     const dev = devolucaoPendente(o.itens, o.conf.postado);

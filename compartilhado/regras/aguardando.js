@@ -17,5 +17,9 @@ export const ehAguardando = (p) => p?.aguardando === true || /^(s|sim|true|1)$/i
 // pedido de expedição sem rota e que não é aguardando: o coordenador precisa definir a rota
 export const precisaDeRota = (p) => !p.rota && !ehAguardando(p) && !p.op;
 
+// é prioridade? Na expedição, só o aguardando (a urgência dos outros vem da rota e do horário de corte).
+// Na Montagem (OP, sem rota), vale a prioridade que vem do Sankhya.
+export const ehPrioridade = (p, setor = "exp") => ehAguardando(p) || (setor === "mont" && p?.prio === "alta");
+
 // o que aparece no lugar da rota: "Aguardando", o nome da rota ou null (sem rota)
 export const destinoDoPedido = (p, nomeDaRota = () => null) => (ehAguardando(p) ? AGUARDANDO.nome : (p.rota && nomeDaRota(p.rota)) || null);

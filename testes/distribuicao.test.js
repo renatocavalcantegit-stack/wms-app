@@ -1,7 +1,7 @@
 // Pedido aguardando e distribuição inteligente.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AGUARDANDO, ehAguardando, precisaDeRota, destinoDoPedido } from "../compartilhado/regras/aguardando.js";
+import { AGUARDANDO, ehAguardando, ehPrioridade, precisaDeRota, destinoDoPedido } from "../compartilhado/regras/aguardando.js";
 import { vaiSozinho, ordemDaDistribuicao, menorFila } from "../compartilhado/regras/distribuicao.js";
 
 const HOJE = "2026-11-18";
@@ -19,6 +19,13 @@ test("aguardando: não precisa de rota e aparece como 'Aguardando', mesmo com ro
   assert.equal(destinoDoPedido({ rota: "centro", aguardando: true }, nomeDaRota), AGUARDANDO.nome);
   assert.equal(destinoDoPedido({ rota: "centro" }, nomeDaRota), "Centro");
   assert.equal(destinoDoPedido({ rota: null }, nomeDaRota), null);
+});
+
+test("prioridade: na expedição só o aguardando; na Montagem vale a do Sankhya", () => {
+  assert.equal(ehPrioridade({ prio: "alta" }, "exp"), false);
+  assert.equal(ehPrioridade({ prio: "alta", aguardando: true }, "exp"), true);
+  assert.equal(ehPrioridade({ prio: "alta" }, "mont"), true);
+  assert.equal(ehPrioridade({ prio: "normal" }, "mont"), false);
 });
 
 test("distribuição inteligente: vai sozinho o aguardando e o de hoje dentro do horário", () => {

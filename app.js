@@ -11,7 +11,7 @@ import { enfileirar, acoesPendentes, totalPendente, lerEstadoDaSincronizacao, gr
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
 import { juntarComServidor, comOutroSeparador } from "./compartilhado/regras/juntar-pedidos.js";
-import { ehAguardando } from "./compartilhado/regras/aguardando.js";
+import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -252,8 +252,10 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $("#orderList").innerHTML = list.length ? list.map((x) => x.html).join("") :
       `<p class="empty">${filter === "concluido" ? "Nenhum pedido concluído ainda." : "Tudo separado por aqui. 🎉"}</p>`;
   }
-  const rank = (o) => ({ andamento: 0, pendente: 1, concluido: 2 }[o.status] * 10 + (o.prio === "alta" ? 0 : 1));
-  const rankLote = (l) => (l.status === "andamento" ? 0 : 10) + (pedidosDoLote(l).some((o) => o.prio === "alta") ? 0 : 1);
+  // prioridade: na expedição só o aguardando; na Montagem, a do Sankhya (compartilhado/regras/aguardando.js)
+  const prioridade = (o) => ehPrioridade(o, setor());
+  const rank = (o) => ({ andamento: 0, pendente: 1, concluido: 2 }[o.status] * 10 + (prioridade(o) ? 0 : 1));
+  const rankLote = (l) => (l.status === "andamento" ? 0 : 10) + (pedidosDoLote(l).some(prioridade) ? 0 : 1);
   // pode entrar num lote: pedido que ainda não começou, fora de lote e que não é parte de pedido dividido
   const podeSelecionar = (o) => o.status === "pendente" && !o.lote && !o.parte;
 
@@ -266,7 +268,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       : o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
       : ehAguardando(o) ? `<span class="tag alta">Aguardando</span>`
-      : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
+      : prioridade(o) ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
     const extra = o.parte ? `<p class="order-note">Pedido dividido pelo coordenador · ${esc(o.parte.ruas || "")}</p>` : "";
     const doca = o.doca ? `<p class="order-note ok">Deixado na doca ${o.doca.codigo}</p>` : "";
     return `<button class="order ${o.status === "concluido" ? "is-done" : ""} ${(selecionando && !sel) || outro ? "is-off" : ""} ${marcado ? "is-sel" : ""}" data-id="${esc(o.id)}">
@@ -328,7 +330,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const go = $("#startGo"); go.textContent = "Criar lote e iniciar"; go.dataset.id = ""; go.dataset.lote = ""; go.dataset.novo = "1";
     openSheet("sheetStart");
   });
-  const posLine = (pos, o) => `<div class="line"><b class="cx-pos big">${pos}</b><span class="line-desc">${esc(o.id)} · ${esc(o.cliente)}<small>${o.itens.length} itens · ${units(o)} un.${o.prio === "alta" ? " · prioridade" : ""}</small></span></div>`;
+  const posLine = (pos, o) => `<div class="line"><b class="cx-pos big">${pos}</b><span class="line-desc">${esc(o.id)} · ${esc(o.cliente)}<small>${o.itens.length} itens · ${units(o)} un.${prioridade(o) && !ehAguardando(o) ? " · prioridade" : ehAguardando(o) ? " · aguardando" : ""}</small></span></div>`;
 
   $("#orderList").addEventListener("click", (e) => {
     const lc = e.target.closest("[data-lote]");
@@ -348,8 +350,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $("#startOrder").textContent = nomeDo(o);
     $("#startClient").textContent = `${o.cliente} · ${o.itens.length} itens · ${units(o)} un.${o.parte ? ` · ${o.parte.ruas}` : ""}`;
     const pr = $("#startPrio");
-    pr.className = "tag " + (o.status === "concluido" ? "concluido" : o.status === "andamento" ? "andamento" : o.prio === "alta" || ehAguardando(o) ? "alta" : "");
-    pr.textContent = o.status === "concluido" ? "Concluído" : o.status === "andamento" ? "Em separação" : ehAguardando(o) ? "Aguardando · cliente retira" : o.prio === "alta" ? "Prioridade" : "Normal";
+    pr.className = "tag " + (o.status === "concluido" ? "concluido" : o.status === "andamento" ? "andamento" : prioridade(o) ? "alta" : "");
+    pr.textContent = o.status === "concluido" ? "Concluído" : o.status === "andamento" ? "Em separação" : ehAguardando(o) ? "Aguardando · cliente retira" : prioridade(o) ? "Prioridade" : "Normal";
     $("#startItems").innerHTML = o.itens.map((i) => lineHtml(i)).join("");
     $("#startUndo").hidden = true;
     const go = $("#startGo");
