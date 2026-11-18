@@ -16,7 +16,7 @@ const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FR
 test("migrar de novo não aplica nada (cada arquivo roda uma vez só)", async () => {
   assert.deepEqual(await migrar(pool), []);
   const { rows } = await pool.query("SELECT nome FROM migracoes ORDER BY nome");
-  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql"]);
+  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql", "004_painel_ao_vivo.sql"]);
 });
 
 test("a demonstração do banco é a mesma do app", async () => {

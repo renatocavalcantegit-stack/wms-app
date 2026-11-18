@@ -12,12 +12,13 @@ export async function buscarUsuario(pool, login) {
   return rows[0] || null;
 }
 
-// cria a sessão e devolve o token (texto aleatório e impossível de adivinhar)
+// cria a sessão e devolve o token (texto aleatório e impossível de adivinhar).
+// O login já conta como o primeiro contato do aparelho (ver registrarContato).
 export async function criarSessao(pool, login) {
   const token = randomBytes(32).toString("base64url");
   const { rows } = await pool.query(
-    `INSERT INTO sessoes (token, login, expira_em)
-     VALUES ($1, $2, now() + make_interval(hours => $3))
+    `INSERT INTO sessoes (token, login, expira_em, ultimo_contato)
+     VALUES ($1, $2, now() + make_interval(hours => $3), now())
      RETURNING token, expira_em`,
     [token, login, HORAS_DO_TURNO],
   );
@@ -34,4 +35,9 @@ export async function usuarioDaSessao(pool, token) {
     [token],
   );
   return rows[0] || null;
+}
+
+// o aparelho deu sinal de vida (ação ou batimento): a Gestão mostra "último contato" com esta hora
+export async function registrarContato(pool, token) {
+  await pool.query("UPDATE sessoes SET ultimo_contato = now() WHERE token = $1", [token]);
 }

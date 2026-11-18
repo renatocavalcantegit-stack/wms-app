@@ -7,6 +7,7 @@ import { rotasDeLogin } from "./rotas-api/login.js";
 import { rotasDeCatalogo } from "./rotas-api/catalogo.js";
 import { rotasDePedidos } from "./rotas-api/pedidos.js";
 import { rotasDeSincronizacao } from "./rotas-api/sincronizacao.js";
+import { rotasDoPainel } from "./rotas-api/painel.js";
 import { rotasDasTelas } from "./telas.js";
 
 export function criarServidor({ pool, registrarLog = false }) {
@@ -21,6 +22,7 @@ export function criarServidor({ pool, registrarLog = false }) {
     const usuario = token ? await usuarioDaSessao(pool, token) : null;
     if (!usuario) return reply.code(401).send({ erro: "Faça login novamente." });
     request.usuario = usuario; // as rotas sabem quem está chamando
+    request.token = token;     // e de qual sessão (aparelho): usado para gravar o último contato
   }
 
   // GET /api/saude — o servidor e o banco estão no ar?
@@ -34,10 +36,12 @@ export function criarServidor({ pool, registrarLog = false }) {
   rotasDeCatalogo(app, contexto);
   rotasDePedidos(app, contexto);
   rotasDeSincronizacao(app, contexto);
+  rotasDoPainel(app, contexto);
   rotasDasTelas(app); // por último: o que não for /api/... é tela
 
-  // ao desligar o servidor, fecha as conexões de tempo real
-  app.addHook("onClose", async () => tempoReal.fechar());
+  // ao desligar o servidor, fecha ANTES as conexões de tempo real: elas não terminam sozinhas
+  // (a Gestão deixa o canal aberto) e o servidor ficaria esperando por elas para desligar
+  app.addHook("preClose", async () => tempoReal.fechar());
   app.decorate("tempoReal", tempoReal);
   return app;
 }

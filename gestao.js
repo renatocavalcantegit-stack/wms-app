@@ -9,6 +9,7 @@ import {
 } from "./compartilhado/regras/separacao.js";
 import { CLIENTES } from "./js/demo-clientes.js";
 import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
+import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
 
 (() => {
   "use strict";
@@ -442,6 +443,7 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
   let query = "";
   let openRef = null; // { t: "p" | "c", id }
   let sim = localStorage.getItem("wms-bb-gx-sim") !== "off";
+  let comServidor = false; // a aba Ao vivo (gestao-ao-vivo.js) diz se o app foi aberto pelo servidor
   let flashId = null; // id ou lista de ids destacados no próximo render
   const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
   let dragId = null, dragGroup = null, pendingRender = false;
@@ -741,6 +743,13 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
       }
       renderTop(); return;
     }
+    // aba Ao vivo (Fase 1c): a separação de verdade, do servidor. Ela mesma se redesenha quando o servidor avisa
+    if (board === "vivo") {
+      const b = $("#board");
+      b.classList.add("list");
+      if (reset || !b.querySelector(".vivo-wrap")) b.innerHTML = telaAoVivo();
+      renderTop(); return;
+    }
     [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
     [...selSep].forEach((id) => { if (!db.sep.inbox.includes(id)) selSep.delete(id); });
     const b = $("#board");
@@ -763,10 +772,11 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
     $("#tbSep").textContent = db.sep.inbox.length;
     $("#tbConf").textContent = db.conf.inbox.length;
     $("#simBtn").classList.toggle("on", sim);
-    $("#simBtn span").textContent = sim ? "Ao vivo" : "Pausada";
+    // com o servidor, "Ao vivo" é a aba de verdade: o botão da simulação passa a dizer "Simulação"
+    $("#simBtn span").textContent = sim ? (comServidor ? "Simulação" : "Ao vivo") : "Pausada";
     $("#simBtn").title = sim ? "Simulação ao vivo: clique para pausar" : "Simulação pausada: clique para retomar";
     // aba Ocorrências: o título e os números ficam dentro da própria aba (os indicadores da simulação não se aplicam)
-    if (board === "ocorr") { $("#boardTitle").textContent = ""; $("#kpis").innerHTML = ""; $("#actions").innerHTML = ""; return; }
+    if (board === "ocorr" || board === "vivo") { $("#boardTitle").textContent = ""; $("#kpis").innerHTML = ""; $("#actions").innerHTML = ""; return; }
     if (MONT) return renderTopMont();
     $("#tbLib").textContent = db.lib.inbox.length;
     $("#tbEmb").textContent = db.emb.inbox.length;
@@ -1847,6 +1857,9 @@ import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
   });
 
   ligarOcorrencias($("#board"));
+  // a aba Ao vivo só aparece com o servidor (no GitHub Pages fica escondida)
+  ligarAoVivo({ sess, setor: SETOR, container: $("#board"), ativa: () => board === "vivo", toast })
+    .then((ligou) => { comServidor = ligou; renderTop(); });
 
   // ---------- início ----------
   load();

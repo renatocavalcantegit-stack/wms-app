@@ -8,23 +8,28 @@ import {
 
 export const INTERVALO_MS = 5000;   // de quanto em quanto tempo tenta enviar
 export const TAMANHO_DO_LOTE = 500; // o servidor aceita até 500 ações por envio
+export const BATIMENTO_MS = 30_000; // com a fila vazia, dá sinal de vida ao servidor a cada 30 s (Fase 1c)
 
 // Uma tentativa de envio. Devolve { situacao, enviadas, recusadas }:
 //   sem-servidor    sessão de demonstração (sem token): não há para onde enviar
-//   vazia           nada na fila
+//   vazia           nada na fila (e não era hora do batimento)
+//   contato         fila vazia, mas mandou o batimento: o servidor sabe que o aparelho está com rede
 //   ok              tudo enviado
 //   sem-rede        a rede falhou: a fila fica como está e tenta de novo depois
 //   sessao-vencida  o servidor não aceitou o token (401): é preciso entrar de novo
 //   erro            o servidor respondeu com erro: a fila fica como está
 // buscar = fetch (nos testes, um de mentira) · agora = relógio (nos testes, fixo)
-export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => new Date() }) {
+// batimento = true: mesmo com a fila vazia, chama o servidor com a lista vazia (é assim que a Gestão
+// sabe a hora do último contato do separador e mostra "sem contato há X min" quando a rede cai)
+export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => new Date(), batimento = false }) {
   if (!sessao?.token) return { situacao: "sem-servidor", enviadas: 0, recusadas: [] };
-  let enviadas = 0;
+  let enviadas = 0, falou = false;
   const recusadasAgora = [];
 
   for (;;) {
     const lote = acoesPendentes(sessao.login).slice(0, TAMANHO_DO_LOTE);
-    if (!lote.length) break;
+    if (!lote.length && (falou || !batimento)) break;
+    falou = true;
     const estado = lerEstadoDaSincronizacao();
 
     let resposta;
@@ -62,18 +67,21 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
     // nada confirmado neste lote (não deveria acontecer): para, senão ficaria mandando o mesmo lote sem fim
     if (!novas.length && !repetidas.length) break;
   }
-  return { situacao: enviadas ? "ok" : "vazia", enviadas, recusadas: recusadasAgora };
+  return { situacao: enviadas ? "ok" : falou ? "contato" : "vazia", enviadas, recusadas: recusadasAgora };
 }
 
 // Liga o envio automático. sessao() devolve a sessão atual; aoMudar(resultado) é chamado depois de cada tentativa.
 // Devolve pedirEnvio(): a tela chama logo depois de gravar uma ação, para não esperar os 5 segundos.
 export function iniciarSincronizacao({ sessao, aoMudar = () => {} }) {
-  let enviando = false, deNovo = false;
+  let enviando = false, deNovo = false, ultimoContato = 0;
   async function tentar() {
     if (enviando) { deNovo = true; return; } // um envio de cada vez; o pedido que chegou no meio roda em seguida
     enviando = true;
     try {
-      aoMudar(await sincronizarAgora({ sessao: sessao() }));
+      const batimento = Date.now() - ultimoContato >= BATIMENTO_MS;
+      const r = await sincronizarAgora({ sessao: sessao(), batimento });
+      if (r.situacao === "ok" || r.situacao === "contato") ultimoContato = Date.now();
+      aoMudar(r);
     } finally {
       enviando = false;
       if (deNovo) { deNovo = false; tentar(); }

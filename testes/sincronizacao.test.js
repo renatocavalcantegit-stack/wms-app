@@ -39,6 +39,30 @@ test("fila vazia: não chama o servidor", async () => {
   assert.equal(s.chamadas.length, 0);
 });
 
+test("batimento com a fila vazia: manda a lista vazia uma vez e o servidor fica sabendo do contato", async () => {
+  const s = servidor();
+  const r = await sincronizarAgora({ sessao, buscar: s.buscar, agora, batimento: true });
+  assert.equal(r.situacao, "contato");
+  assert.equal(s.chamadas.length, 1);
+  assert.deepEqual(s.chamadas[0].corpo, { acoes: [] });
+  assert.equal(s.chamadas[0].opcoes.headers.authorization, "Bearer tok-123");
+  assert.equal(lerEstadoDaSincronizacao().ultimaSincronizacao, AGORA.toISOString());
+});
+
+test("batimento com ações na fila: as ações já servem de contato (uma chamada só)", async () => {
+  enfileirar("separador", "separacao.iniciar", { pedido: "PV-1" });
+  const s = servidor();
+  const r = await sincronizarAgora({ sessao, buscar: s.buscar, agora, batimento: true });
+  assert.equal(r.situacao, "ok");
+  assert.equal(s.chamadas.length, 1);
+  assert.equal(s.chamadas[0].corpo.acoes.length, 1);
+});
+
+test("batimento sem rede: anota desde quando está sem rede", async () => {
+  assert.equal((await sincronizarAgora({ sessao, buscar: semRede, agora, batimento: true })).situacao, "sem-rede");
+  assert.equal(lerEstadoDaSincronizacao().semRedeDesde, AGORA.toISOString());
+});
+
 test("envia com o token, na ordem, e tira da fila o que o servidor recebeu", async () => {
   const a = enfileirar("separador", "separacao.iniciar", { pedido: "PV-1" });
   const b = enfileirar("separador", "separacao.concluir", { pedido: "PV-1", doca: "D1" });

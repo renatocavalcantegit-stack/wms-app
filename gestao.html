@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=48">
-  <link rel="stylesheet" href="gestao.css?v=48">
+  <link rel="stylesheet" href="styles.css?v=49">
+  <link rel="stylesheet" href="gestao.css?v=49">
 </head>
 <body class="gx">
 
@@ -42,6 +42,10 @@
       <button class="gx-tab" data-board="rota">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
         Acompanhamento <b id="tbRota" class="red" hidden>0</b>
+      </button>
+      <button class="gx-tab" data-board="vivo" id="tabVivo" hidden title="A separação de verdade, do servidor">
+        <svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
+        Ao vivo <b id="tbVivo" class="red" hidden>0</b>
       </button>
       <button class="gx-tab" data-board="ocorr">
         <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
@@ -83,6 +87,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="gestao.js?v=48"></script>
+  <script type="module" src="gestao.js?v=49"></script>
 </body>
 </html>
