@@ -8,6 +8,7 @@ import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPos
 import { registrarDevolucao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { acharEndereco } from "./compartilhado/regras/enderecos.js";
+import { ehAguardando } from "./compartilhado/regras/aguardando.js";
 import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, validarDocaDevolucao, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
 import { lerQuantidade, quantidadePositiva, arredondarQtd as arr, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
@@ -103,7 +104,8 @@ import { $, $$, esc } from "./js/util.js";
         : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
         : o.conf.status === "divergente" ? `<span class="tag div">Com divergência${MONT ? "" : ` · ${o.conf.volumes} vol.`}</span>`
         : faltaSep ? `<span class="tag parcial">Falta na separação</span>`
-        : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Aguardando</span>`;
+        : ehAguardando(o) ? `<span class="tag alta">Aguardando · cliente retira</span>`
+        : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Na fila</span>`;
       return `<tr data-id="${o.id}">
         <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
@@ -150,8 +152,8 @@ import { $, $$, esc } from "./js/util.js";
     $("#oClient").textContent = o.cliente;
     $("#oSub").innerHTML = `${esc(o.cidade)} · separado por ${esc(o.operador || "—")} · ${o.itens.length} itens · ${o.partes && o.partes.length ? "pegar nas docas " : "pegar na doca "}${docasDo(o)}`;
     const t = $("#oTag");
-    t.className = "tag " + (o.prio === "alta" ? "alta" : "");
-    t.textContent = o.prio === "alta" ? "Prioridade" : "Normal";
+    t.className = "tag " + (o.prio === "alta" || ehAguardando(o) ? "alta" : "");
+    t.textContent = ehAguardando(o) ? "Aguardando · cliente retira" : o.prio === "alta" ? "Prioridade" : "Normal";
     $("#scan").placeholder = "Bipe o produto…";
     setLast({ label: "Pedido aberto", desc: `${o.cliente}`, code: o.id, conf: "—", exp: "—" });
     const dev = devolucaoPendente(o.itens, o.conf.postado);

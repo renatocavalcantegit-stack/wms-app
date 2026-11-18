@@ -38,10 +38,14 @@ async function entrarPeloServidor(page, perfil) {
 }
 
 test("a Gestão acompanha o coletor ao vivo e o coordenador marca o conflito como visto", async ({ browser }) => {
-  // coordenador: entra e abre a aba Ao vivo (só aparece com o servidor)
+  // coordenador: entra e abre a aba Ao vivo (só aparece com o servidor e com ?aovivo: está em standby)
   const gestao = await (await browser.newContext()).newPage();
   await entrarPeloServidor(gestao, "coord");
   await expect(gestao).toHaveURL(/gestao\.html/);
+  // a aba Ao vivo está em standby: só aparece com "?aovivo" no endereço
+  await expect(gestao.locator(".gx-tab", { hasText: "Separação" })).toBeVisible();
+  await expect(gestao.locator("#tabVivo")).toBeHidden();
+  await gestao.goto(`${endereco}/gestao.html?aovivo`);
   await expect(gestao.locator("#tabVivo")).toBeVisible();
   await expect(gestao.locator("#simBtn span")).toHaveText("Simulação");
   await gestao.locator("#tabVivo").click();

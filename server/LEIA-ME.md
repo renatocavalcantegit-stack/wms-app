@@ -140,9 +140,16 @@ saem da fila do aparelho: elas já estão no servidor.
 Ainda não fazem parte: baixar o saldo do picking no servidor e conferir se a Conferência já começou
 antes de "separar novamente". Entram quando o Estoque e a Conferência passarem pelo servidor.
 
-## Aba Ao vivo da Gestão (Fase 1c)
+## Aba Ao vivo da Gestão (Fase 1c) · em standby
 
-Abra http://localhost:3000, entre como coordenador e clique em **Ao vivo**. A aba relê o painel sempre que
+**Em standby desde a v53 (18/11/2026).** As abas da demonstração (Separação, Conferência…) vão passar a funcionar
+com o servidor e substituem esta aba. Ela fica escondida e só aparece com `?aovivo` no endereço
+(http://localhost:3000/gestao.html?aovivo), para algum teste específico.
+**Retirar no fim do projeto:** `gestao-ao-vivo.js`, `js/dados/painel.js`, `compartilhado/regras/painel.js`, o botão
+`#tabVivo` (gestao.html e montagem.html), os estilos `vivo-*` do gestao.css e os testes dela. A rota `/api/painel`
+e o canal de tempo real podem continuar, se as abas reais usarem.
+
+Abra http://localhost:3000/gestao.html?aovivo, entre como coordenador e clique em **Ao vivo**. A aba relê o painel sempre que
 o canal de tempo real avisa (e, por garantia, a cada minuto). O "há X min" é calculado com a hora do servidor.
 
 Situação de cada separador (regra em `compartilhado/regras/painel.js`):

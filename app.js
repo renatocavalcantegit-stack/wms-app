@@ -11,6 +11,7 @@ import { enfileirar, acoesPendentes, totalPendente, lerEstadoDaSincronizacao, gr
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
 import { juntarComServidor, comOutroSeparador } from "./compartilhado/regras/juntar-pedidos.js";
+import { ehAguardando } from "./compartilhado/regras/aguardando.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -264,6 +265,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       : outro ? `<span class="tag andamento">Com ${esc(String(o.operador).split(" ")[0])}</span>`
       : o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
+      : ehAguardando(o) ? `<span class="tag alta">Aguardando</span>`
       : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
     const extra = o.parte ? `<p class="order-note">Pedido dividido pelo coordenador · ${esc(o.parte.ruas || "")}</p>` : "";
     const doca = o.doca ? `<p class="order-note ok">Deixado na doca ${o.doca.codigo}</p>` : "";
@@ -346,8 +348,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     $("#startOrder").textContent = nomeDo(o);
     $("#startClient").textContent = `${o.cliente} · ${o.itens.length} itens · ${units(o)} un.${o.parte ? ` · ${o.parte.ruas}` : ""}`;
     const pr = $("#startPrio");
-    pr.className = "tag " + (o.status === "concluido" ? "concluido" : o.status === "andamento" ? "andamento" : o.prio === "alta" ? "alta" : "");
-    pr.textContent = o.status === "concluido" ? "Concluído" : o.status === "andamento" ? "Em separação" : o.prio === "alta" ? "Prioridade" : "Normal";
+    pr.className = "tag " + (o.status === "concluido" ? "concluido" : o.status === "andamento" ? "andamento" : o.prio === "alta" || ehAguardando(o) ? "alta" : "");
+    pr.textContent = o.status === "concluido" ? "Concluído" : o.status === "andamento" ? "Em separação" : ehAguardando(o) ? "Aguardando · cliente retira" : o.prio === "alta" ? "Prioridade" : "Normal";
     $("#startItems").innerHTML = o.itens.map((i) => lineHtml(i)).join("");
     $("#startUndo").hidden = true;
     const go = $("#startGo");

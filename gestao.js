@@ -10,6 +10,8 @@ import {
 import { CLIENTES } from "./js/demo-clientes.js";
 import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
 import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
+import { AGUARDANDO, precisaDeRota } from "./compartilhado/regras/aguardando.js";
+import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regras/distribuicao.js";
 
 (() => {
   "use strict";
@@ -53,6 +55,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     pegarCargaSeg: 60,       // o operador de doca começa a carga do motorista
     bipVolumeSeg: [12, 25],  // bipar um volume no carregamento
     opMin: [20, 40],         // chega um pedido de montagem (OP)
+    retiradaSeg: [1200, 3600], // o cliente do pedido aguardando chega para retirar (20 a 60 min depois do faturamento)
   };
   // pedidos feitos por pessoa a cada hora de expediente (para os contadores de "hoje" ao abrir o painel)
   const POR_HORA = { sep: 178 / 8 / 9, conf: 178 / 6 / 9, lib: 178 / 9, mont: 1 };
@@ -105,7 +108,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const ms = membros(l);
     const itens = ms.flatMap((p) => p.itens).sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     return {
-      id: l.id, lt: l, itens, sep: l.sep, membros: ms, rota: ms[0].rota, op: ms[0].op,
+      id: l.id, lt: l, itens, sep: l.sep, membros: ms, rota: ms.find((p) => p.rota)?.rota ?? null, op: ms[0].op,
+      aguardando: ms.every((p) => p.aguardando),
       prio: ms.some((p) => p.prio === "alta") ? "alta" : "normal",
       embarque: ms.map((p) => p.embarque).filter(Boolean).sort()[0] || null, chegada: Math.min(...ms.map((p) => p.chegada)),
     };
@@ -126,6 +130,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     : p.doca ? `<span class="dchip">${p.doca.codigo}</span>` : "";
   const hoje = () => R.iso(new Date());
   const rotaOf = (id) => R.rota(id);
+  // pedido aguardando: o cliente retira na empresa. Não é rota, mas aparece no lugar dela (compartilhado/regras/aguardando.js)
+  // sem rota de verdade = precisa que o coordenador defina (o aguardando e a montagem não precisam)
+  const semRota = (p) => precisaDeRota(p);
+  const corDe = (p) => (p.aguardando ? AGUARDANDO.cor : p.rota ? rotaOf(p.rota).cor : null);
   const units = (p) => p.itens.reduce((t, i) => t + i.qtd, 0);
   const doneU = (p, k) => p.itens.reduce((t, i) => t + Math.min(i[k], i.qtd), 0);
   const itensOk = (p, k) => p.itens.filter((i) => i[k] >= i.qtd).length;
@@ -174,7 +182,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       : `Embarque previsto: ${R.tag(e.data, R.iso(new Date(t))).label.toLowerCase()} (${R.fmtDia(e.data)})`, t);
   }
 
-  function makePedido({ semRota = false, prio = false, chegada = now(), rota = null, itens: nItens = null } = {}) {
+  function makePedido({ semRota = false, prio = false, chegada = now(), rota = null, itens: nItens = null, aguardando = false } = {}) {
     // o cliente vem do ranking (com peso); a rota e o vendedor são os do cadastro do cliente
     const cli = pickPeso(rota ? CLI.filter((c) => c.rota === rota) : CLI_COM_ROTA, (c) => c.peso);
     const rid = semRota ? null : cli.rota;
@@ -185,12 +193,15 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
     const p = {
       id: "PV-" + db.seq++, cli: { cod: cli.cod, nome: cli.nome, cidade: cli.cidade, bairro: cli.bairro },
-      vendedor: cli.vendedor, rota: rid, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
+      vendedor: cli.vendedor, rota: aguardando ? null : rid, prio: prio || aguardando ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
       itens, etapa: "sep", sep: blank(), conf: blank(), lib: { ...blank(), ordem: null }, volumes: 0, nota: null, carga: null, hist: [],
     };
+    // aguardando: a rota do cadastro fica guardada só para consulta (não vale para nada)
+    if (aguardando) Object.assign(p, { aguardando: true, rotaCadastro: rid });
     db.pedidos[p.id] = p;
     log(p, "Pedido recebido via integração (Sankhya)", chegada);
-    if (rid) setEmbarque(p, chegada); else log(p, "Cliente sem rota cadastrada — aguardando definição", chegada);
+    if (aguardando) log(p, "Aguardando: o cliente retira na empresa · entra como prioridade, sem rota e sem carga", chegada);
+    else if (rid) setEmbarque(p, chegada); else log(p, "Cliente sem rota cadastrada — aguardando definição", chegada);
     return p;
   }
 
@@ -290,6 +301,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     db = {
       v: 4, seq: 10431, cargaSeq: 240, nfSeq: 236001, loteSeq: 1, pedidos: {}, cargas: {}, mont: [], lotes: {},
       sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, lib: { inbox: [], cols: {} }, emb: { inbox: [], cols: {} }, stats: {}, tick: 0,
+      ret: [], // pedidos aguardando faturados, esperando o cliente retirar
+      intel: { sep: false, conf: false }, // distribuição inteligente (o coordenador liga e desliga)
     };
     SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("sep") : 0; });
     CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = feitosHoje("conf"); });
@@ -325,7 +338,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
         Object.assign(p.lib, { resp: f, atrib: stamp(p, 0.45), inicio: stamp(p, 0.5), fim: stamp(p, 0.53) });
         p.nota = db.nfSeq++;
         log(p, `Liberado para faturamento → ${nameOf(f)} · Sankhya atualizado`, p.lib.atrib);
-        log(p, `Faturado por ${nameOf(f)} · NF ${p.nota} · aguardando montagem de carga no ERP`, p.lib.fim);
+        log(p, `Faturado por ${nameOf(f)} · NF ${p.nota} · ${p.aguardando ? "aguardando retirada pelo cliente" : "aguardando montagem de carga no ERP"}`, p.lib.fim);
         p.mont = p.lib.fim;
       }
       p.etapa = upto;
@@ -421,6 +434,15 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     mkCarga({ rota: "caucaia", mot: null, n: 3, minsAgo: 6 });
     mkCarga({ rota: "cearatransp", mot: null, n: 2, minsAgo: 12 });
 
+    // --- pedidos aguardando (o cliente retira na empresa): na caixa, na fila de um separador, no faturamento,
+    // aguardando retirada e um já retirado
+    const ag = (o = {}) => makePedido({ aguardando: true, chegada: early(), ...o });
+    db.sep.inbox.push(ag({ chegada: t - 9 * MIN }).id);
+    { const p = ag(); assign(p, "sep", "s4", 3); db.sep.cols.s4.push(p.id); }
+    { const p = ag(); advance(p, "lib"); db.lib.inbox.push(p.id); }
+    [0, 1].forEach(() => { const p = ag(); advance(p, "mont"); p.etapa = "ret"; p.ret = p.lib.fim; db.ret.push(p.id); });
+    { const p = ag({ chegada: t - 200 * MIN }); advance(p, "mont"); p.etapa = "fim"; p.retirado = t - 25 * MIN; log(p, "Retirado pelo cliente na empresa", p.retirado); }
+
     // próximos eventos da simulação
     db.proxChegada = t + entre(RITMO.chegadaSeg);
     db.proxCarga = t + RITMO.cargaSeg * SEG;
@@ -429,7 +451,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   }
 
   function load() {
-    try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 4 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; return; } } catch {}
+    try {
+      const d = JSON.parse(localStorage.getItem(STORE));
+      if (d && d.v === 4 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; db.ret ||= []; db.intel ||= { sep: false, conf: false }; return; }
+    } catch {}
     seed();
   }
   const save = () => localStorage.setItem(STORE, JSON.stringify(db));
@@ -445,6 +470,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   let sim = localStorage.getItem("wms-bb-gx-sim") !== "off";
   let comServidor = false; // a aba Ao vivo (gestao-ao-vivo.js) diz se o app foi aberto pelo servidor
   let flashId = null; // id ou lista de ids destacados no próximo render
+  const intelOn = (k) => !MONT && !!db.intel?.[k]; // distribuição inteligente ligada neste quadro?
   const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
   let dragId = null, dragGroup = null, pendingRender = false;
   // seleção em lote na caixa de entrada do faturamento (expedição) / da conferência (montagem)
@@ -461,6 +487,9 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   const fmtAge = (ts) => { const m = Math.floor((now() - ts) / MIN); return m < 1 ? "agora" : m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)}h${pad(m % 60)}`; };
   function fmtTime(ts) { return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
   const rotaTag = (id) => { const r = rotaOf(id); return r ? `<span class="rt" style="--rc:${r.cor}"><i></i>${esc(r.nome)}</span>` : `<span class="rt none">SEM ROTA</span>`; };
+  // no lugar da rota: AGUARDANDO (o cliente retira) ou a rota do pedido
+  const agTag = `<span class="rt aguard" style="--rc:${AGUARDANDO.cor}"><i></i>AGUARDANDO</span>`;
+  const destinoTag = (p) => (p.aguardando ? agTag : rotaTag(p.rota));
   const ICON_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>';
   const ICON_WARN = '<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>';
   const CARET = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>';
@@ -546,7 +575,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
 
   function move(k, id, toCol, idx, checked = false) {
     // regra: pedido sem rota não vai para separador sem antes definir a rota
-    if (!MONT && !checked && k === "sep" && toCol !== "inbox" && !isLote(id) && !P(id).rota) return askRota(id, () => move(k, id, toCol, idx, true));
+    if (!MONT && !checked && k === "sep" && toCol !== "inbox" && !isLote(id) && semRota(P(id))) return askRota(id, () => move(k, id, toCol, idx, true));
     const before = locate(k, id);
     const err = moveCore(k, id, toCol, idx);
     if (err) { toast(err); render(); return; }
@@ -604,7 +633,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   function criarLote(ids, t = now()) {
     const ps = ids.map(P);
     const erro = validarLote(ps) || (ps.some((p) => !db.sep.inbox.includes(p.id)) ? "Só pedidos da caixa de entrada entram no lote." : null)
-      || (!MONT && ps.some((p) => !p.rota) ? "Defina a rota dos pedidos antes de agrupar." : null);
+      || (!MONT && ps.some(semRota) ? "Defina a rota dos pedidos antes de agrupar." : null);
     if (erro) return erro;
     const posicoes = posicoesDoLote(ps);
     const l = { id: "L-" + db.loteSeq++, pedidos: [...ids].sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes, sep: blank(), criado: t, por: sess.nome, status: "pendente" };
@@ -713,7 +742,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       return ps.some((q) => q.sep.resp) ? S("Aguardando início da separação", "next", "sep", sub) : S("Aguardando designar separador", "wait", "sep", sub);
     }
     if (p.etapa === "sep") {
-      if (!loc || loc.col === "inbox") return S("Aguardando designar separador", "wait", "sep", p.rota ? "" : "sem rota");
+      if (!loc || loc.col === "inbox") return S("Aguardando designar separador", "wait", "sep", semRota(p) ? "sem rota" : "");
       return live(p, "sep") ? S("Em separação", "work", "sep", `${pct(p, "sep")}%`) : S("Aguardando início da separação", "next", "sep", `${loc.list.indexOf(p.id) + 1}º na fila`);
     }
     if (p.etapa === "conf") {
@@ -724,6 +753,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       if (!loc || loc.col === "inbox") return S("Aguardando liberar p/ faturamento", "wait", "fat");
       return S("Aguardando faturamento", "erp", "fat", live(p, "lib") ? `${nameOf(p.lib.resp)} · faturando` : `${nameOf(p.lib.resp)} · ordem ${p.lib.ordem}`);
     }
+    if (p.etapa === "ret") return S("Aguardando retirada", "ship", "emb", `NF ${p.nota} · cliente retira na empresa`);
+    if (p.retirado) return S("Retirado pelo cliente", "done", "fim", fmtTime(p.retirado));
     if (p.etapa === "mont") return S("Aguardando montagem de carga", "erp", "emb", `NF ${p.nota}`);
     if (p.etapa === "emb") { const c = C(p.carga); return S("Aguardando embarque", "ship", "emb", `${c.id}${c.status === "carregando" ? " · carregando" : c.motorista ? "" : " · sem motorista"}`); }
     const c = C(p.carga);
@@ -789,21 +820,27 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     let k = "", a = "";
     if (board === "sep" || board === "conf") {
       const B = db[board], hojeN = BOARDS[board].people.reduce((t, x) => t + db.stats[x.id], 0);
-      k = kp(B.inbox.length, "na caixa de entrada") + (board === "sep" ? kp(B.inbox.filter((id) => !E(id).rota).length, "sem rota", "red") : "")
+      k = kp(B.inbox.length, "na caixa de entrada") + (board === "sep" ? kp(B.inbox.filter((id) => semRota(E(id))).length, "sem rota", "red") : "")
         + kp(firstLive(board), board === "sep" ? "em separação" : "em conferência") + kp(queued(board), "na fila") + kp(hojeN, board === "sep" ? "separados hoje" : "conferidos hoje", "green");
-      a = (board === "sep" ? `<button class="btn ghost" data-act="sugerirLotes">Sugerir lotes</button><button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>` : "") + `<button class="btn primary" data-act="autoDist">Distribuir automaticamente</button>`;
+      // distribuição inteligente: interruptor (o coordenador liga quando vai sair da mesa)
+      const on = intelOn(board);
+      a = (board === "sep" ? `<button class="btn ghost" data-act="sugerirLotes">Sugerir lotes</button><button class="btn ghost" data-act="novoPedido">+ Pedido de teste</button>` : "")
+        + `<button class="btn ${on ? "primary" : "ghost"} gx-intel ${on ? "on" : ""}" data-act="intel" title="${on ? "Ligada: aguardando e pedidos de hoje dentro do horário vão direto para quem tem a menor fila. Clique para desligar." : "Clique para ligar: aguardando e pedidos de hoje dentro do horário vão direto para quem tem a menor fila"}"><i></i>Distribuição inteligente${on ? " · ligada" : ""}</button>`;
     } else if (board === "lib") {
       const fat = Object.values(db.pedidos).filter((p) => p.lib.fim && sameDay(p.lib.fim)).length;
       k = kp(db.lib.inbox.length, "aguardando liberação") + kp(queued("lib"), "liberados na fila") + kp(firstLive("lib"), "faturando") + kp(db.mont.length, "aguardando carga no ERP") + kp(fat, "faturados hoje", "green");
       a = `<span class="hint">Arrastar para a faturista libera o pedido no Sankhya · a ordem da fila é a prioridade</span><button class="btn primary" data-act="autoDist">Liberar automaticamente</button>`;
     } else if (board === "emb") {
       const cs = Object.values(db.cargas), emb = cs.filter((c) => c.status === "embarcada" && sameDay(c.fim)).length;
-      k = kp(db.emb.inbox.length, "sem motorista", db.emb.inbox.length ? "red" : "") + kp(firstLive("emb"), "carregando") + kp(queued("emb"), "na fila") + kp(db.mont.length, "pedidos aguardando carga no ERP") + kp(emb, "embarcadas hoje", "green");
+      k = kp(db.emb.inbox.length, "sem motorista", db.emb.inbox.length ? "red" : "") + kp(firstLive("emb"), "carregando") + kp(queued("emb"), "na fila") + kp(db.mont.length, "pedidos aguardando carga no ERP")
+        + kp(db.ret.length, "aguardando retirada") + kp(emb, "embarcadas hoje", "green");
       a = `<span class="hint">Cargas montadas no Sankhya · com motorista já caem na coluna dele</span><button class="btn primary" data-act="autoDist">Designar motoristas</button>`;
     } else {
-      const ps = reais().filter((p) => acRota === "todas" || (acRota === "semrota" ? !p.rota : p.rota === acRota));
-      k = kp(ps.length, "pedidos") + kp(ps.filter((p) => p.embarque === td && p.etapa !== "fim").length, "a embarcar hoje")
-        + kp(ps.filter(foraPend).length, "fora do horário", "red") + kp(ps.filter((p) => p.etapa === "fim").length, "embarcados", "green");
+      const ps = reais().filter((p) => naAba(p, acRota));
+      k = acRota === "aguardando"
+        ? kp(ps.length, "pedidos") + kp(ps.filter((p) => p.etapa === "ret").length, "aguardando retirada") + kp(ps.filter((p) => p.etapa === "fim").length, "retirados", "green")
+        : kp(ps.length, "pedidos") + kp(ps.filter((p) => p.embarque === td && p.etapa !== "fim").length, "a embarcar hoje")
+          + kp(ps.filter(foraPend).length, "fora do horário", "red") + kp(ps.filter((p) => p.etapa === "fim").length, "embarcados", "green");
       a = `<span class="hint show">Clique na etiqueta de embarque para definir a data</span>`;
     }
     $("#kpis").innerHTML = k; $("#actions").innerHTML = a;
@@ -832,7 +869,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const selL = k === "sep" && o.col === "inbox" && inteiro(p), sL = selL && selSep.has(p.id);
     const cbL = selL ? `<span class="cb" data-selsep="${p.id}" title="Marcar para agrupar em lote">${sL ? CHECK : ""}</span>` : "";
     const parteTag = p.parte ? `<span class="c-parte" title="Pedido dividido pelo coordenador">PARTE ${p.parte.n}/${p.parte.de}</span>` : "";
-    const cls = ["card", !p.rota && !p.op && "no-route", p.op && "op", isL && "live", waiting && "waiting", (s || sL) && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
+    const cls = ["card", semRota(p) && "no-route", p.op && "op", isL && "live", waiting && "waiting", (s || sL) && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
     const nums =`<span><b>${p.itens.length}</b> SKUs</span><span><b>${units(p)}</b> un.</span>${p.volumes ? `<span><b>${p.volumes}</b> vol.</span>` : ""}`;
     const age = o.col === "inbox" ? fmtAge(k === "sep" ? p.chegada : k === "conf" ? p.sep.fim : p.conf.fim) : "";
     let liveHtml = "";
@@ -865,8 +902,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       ${selc ? `<button class="c-skip" data-skip="${p.id}">Pular conferência</button>` : ""}
       ${liveHtml}
     </article>`;
-    return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:${p.rota ? rotaOf(p.rota).cor : "var(--red-brand)"}">
-      <div class="c-top">${cbL}${rotaTag(p.rota)}${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+    return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:${corDe(p) || "var(--red-brand)"}">
+      <div class="c-top">${cbL}${destinoTag(p)}${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${nomeP(p)}</p>${embTag(p)}</div>
       <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
       <p class="c-vend">${ICON_USER}Vend.: ${esc(p.vendedor)}</p>
@@ -880,7 +917,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   function loteCard(l, o = {}) {
     const v = vista(l), isL = live(v, "sep"), waiting = o.first && !isL && o.col !== "inbox";
     const cls = ["card", "lote", isL && "live", waiting && "waiting", isFlash(l.id) && "flash"].filter(Boolean).join(" ");
-    const rotas = [...new Set(v.membros.map((p) => p.rota))];
+    const destinos = [...new Map(v.membros.map((p) => [p.aguardando ? "aguardando" : p.rota, p])).values()];
     let liveHtml = "";
     if (isL) {
       const c = curItem(v, "sep"), pc = pct(v, "sep");
@@ -891,8 +928,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
         ${c ? `<p class="cl-cur"><span class="gaddr">${c.end}</span>${esc(c.desc)}</p>` : ""}
       </div>`;
     } else if (waiting) liveHtml = `<div class="c-live"><div class="cl-row"><span class="cl-tag"><i></i>Aguardando início</span><span class="timer" data-since="${l.sep.atrib || now()}">00:00</span></div></div>`;
-    return `<article class="${cls}" draggable="${!isL}" data-id="${l.id}" style="--rc:${v.rota ? rotaOf(v.rota).cor : "var(--ink)"}">
-      <div class="c-top">${v.op ? `<span class="rt op">MONTAGEM</span>` : rotas.map(rotaTag).join("")}<span class="c-lote">LOTE</span>${v.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+    return `<article class="${cls}" draggable="${!isL}" data-id="${l.id}" style="--rc:${corDe(v) || "var(--ink)"}">
+      <div class="c-top">${v.op ? `<span class="rt op">MONTAGEM</span>` : destinos.map(destinoTag).join("")}<span class="c-lote">LOTE</span>${v.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${l.id} · ${l.pedidos.length} pedidos</p>${v.op ? "" : embTag(v.membros.slice().sort((a, b) => String(a.embarque).localeCompare(String(b.embarque)))[0])}</div>
       <div class="c-peds">${v.membros.map((p) => `<span><b class="lpos">${l.posicoes[p.id]}</b>${p.id}</span>`).join("")}</div>
       <div class="c-nums"><span><b>${v.itens.length}</b> SKUs</span><span><b>${units(v)}</b> un.</span>${o.col === "inbox" ? `<span class="c-age">${fmtAge(l.criado)}</span>` : ""}</div>
@@ -907,10 +944,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const cls = ["card", "cc", isL && "live", s && "sel", isFlash(p.id) && "flash"].filter(Boolean).join(" ");
     const left = isL ? ICON_DOC : inbox ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : o.pos || "";
     const right = isL ? `<span class="timer" data-since="${p.lib.inicio}">00:00</span>` : `<span class="cc-vol">${p.volumes} vol.</span>`;
-    return `<article class="${cls}" draggable="${!isL}" data-id="${p.id}" style="--rc:${r ? r.cor : "var(--red-brand)"}">
+    return `<article class="${cls}" draggable="${!isL}" data-id="${p.id}" style="--rc:${corDe(p) || "var(--red-brand)"}">
       <span class="cc-pos">${left}</span>
       <span class="cc-id">${p.id}${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}${embTag(p)}</span>${right}
-      <span class="cc-sub"><i></i>${esc(r ? r.nome : "Sem rota")} · ${esc(p.cli.nome)}</span>${isL ? `<span class="cc-st">faturando</span>` : ""}
+      <span class="cc-sub"><i></i>${esc(p.aguardando ? AGUARDANDO.nome : r ? r.nome : "Sem rota")} · ${esc(p.cli.nome)}</span>${isL ? `<span class="cc-st">faturando</span>` : ""}
     </article>`;
   }
 
@@ -946,12 +983,16 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   // ordenação da caixa de entrada: sem rota (precisa de ação) > prioridade > data de embarque; empate mantém a ordem manual
   const sortInbox = (ids, k) => k === "emb" ? [...ids] : [...ids].sort((a, b) => {
     const A = E(a), B = E(b);
-    if (k === "sep" && !A.rota !== !B.rota) return !A.rota ? -1 : 1;
+    if (k === "sep" && semRota(A) !== semRota(B)) return semRota(A) ? -1 : 1;
     if (A.prio !== B.prio) return A.prio === "alta" ? -1 : 1;
+    if (!!A.aguardando !== !!B.aguardando) return A.aguardando ? -1 : 1; // entre as prioridades, o aguardando primeiro
     return String(A.embarque || "9").localeCompare(String(B.embarque || "9"));
   });
 
-  const FILTROS = { semrota: (p) => !p.rota, fora: foraPend, hoje: (p) => p.embarque === hoje(), prio: (p) => p.prio === "alta" };
+  const FILTROS = { semrota: semRota, fora: foraPend, hoje: (p) => p.embarque === hoje(), prio: (p) => p.prio === "alta", aguardando: (p) => !!p.aguardando };
+
+  // aba do Acompanhamento: todas, uma rota, Aguardando ou Sem rota
+  const naAba = (p, aba) => aba === "todas" || (aba === "aguardando" ? !!p.aguardando : aba === "semrota" ? semRota(p) : p.rota === aba);
 
   function inboxCol(k) {
     const B = db[k];
@@ -968,9 +1009,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       if (rotaOf(f)) ids = ids.filter((id) => P(id).rota === f); else if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](P(id)));
       const cnt = (fn) => B.inbox.filter((id) => fn(P(id))).length;
       const rotas = R.ROTAS.filter((r) => B.inbox.some((id) => P(id).rota === r.id));
-      const fo = cnt(foraPend), pr = cnt(FILTROS.prio);
+      const fo = cnt(foraPend), pr = cnt(FILTROS.prio), ag = cnt(FILTROS.aguardando);
       chips = chip("todos", "Todas", B.inbox.length)
         + rotas.map((r) => chip(r.id, `<i></i>${esc(r.nome)}`, cnt((p) => p.rota === r.id), "", `style="--rc:${r.cor}"`)).join("")
+        + (ag ? chip("aguardando", `<i></i>${AGUARDANDO.nome}`, ag, "", `style="--rc:${AGUARDANDO.cor}"`) : "")
         + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + (pr ? chip("prio", "Prioridade", pr) : "");
     } else if (MONT) {
       if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](E(id)));
@@ -978,9 +1020,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     } else {
       if (FILTROS[f]) ids = ids.filter((id) => FILTROS[f](E(id)));
       const cnt = (fn) => B.inbox.filter((id) => fn(E(id))).length;
-      const fo = cnt(foraPend);
+      const fo = cnt(foraPend), ag = cnt(FILTROS.aguardando);
       chips = chip("todos", "Todos", B.inbox.length) + (k === "sep" ? chip("semrota", "Sem rota", cnt(FILTROS.semrota), "red") : "")
-        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje)) + chip("prio", "Prioridade", cnt(FILTROS.prio));
+        + (fo ? chip("fora", "Fora do horário", fo, "red") : "") + chip("hoje", "Hoje", cnt(FILTROS.hoje)) + chip("prio", "Prioridade", cnt(FILTROS.prio))
+        + (ag || f === "aguardando" ? chip("aguardando", `<i></i>${AGUARDANDO.nome}`, ag, "", `style="--rc:${AGUARDANDO.cor}"`) : "");
     }
     const title = { sep: "Caixa de entrada", conf: "Separados", lib: "Conferidos", emb: "Cargas do ERP" }[k];
     const sub = MONT ? { sep: "Pedidos de montagem aguardando separador", conf: "Aguardando conferente ou conferência dispensada" }[k]
@@ -1015,6 +1058,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       <header class="col-head">
         <div class="ch-row"><h3>${title}</h3><span class="count">${B.inbox.length}</span></div>
         <p class="ch-sub">${sub}</p>
+        ${intelOn(k) ? `<p class="gx-intel-sub"><i></i>Distribuição inteligente ligada: aqui ficam só os que precisam de você (sem rota, fora do horário e de outros dias)</p>` : ""}
         <div class="gchips">${chips}</div>
         ${extra}
       </header>
@@ -1072,14 +1116,45 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     </section>`;
   }
 
-  const renderPeople = (k) => inboxCol(k) + peopleOf(k).map((x) => personCol(k, x)).join("") + (MONT && k === "conf" ? doneCol() : "");
+  // embarque: pedidos aguardando já faturados, esperando o cliente retirar na empresa (não entram em carga)
+  function retCol() {
+    const cards = db.ret.map((id) => {
+      const p = P(id);
+      return `<article class="card ret-card ${isFlash(id) ? "flash" : ""}" draggable="false" data-id="${id}" style="--rc:${AGUARDANDO.cor}">
+        <div class="c-top">${agTag}<span class="c-prio">PRIORIDADE</span></div>
+        <div class="c-main"><p class="c-id">${id}</p><span class="c-age">faturado ${fmtTime(p.lib.fim || p.ret)}</span></div>
+        <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
+        <div class="c-nums"><span><b>${p.volumes}</b> vol.</span><span>NF <b>${p.nota}</b></span>${p.ret ? `<span class="c-age">${fmtAge(p.ret)}</span>` : ""}</div>
+        ${p.doca ? `<p class="c-doca">Doca ${docasHtml(p)}</p>` : ""}
+        <button class="c-skip" data-retirar="${id}">Retirado pelo cliente</button>
+      </article>`;
+    }).join("");
+    return `<section class="col ret-col">
+      <header class="col-head">
+        <div class="ch-row"><h3>Aguardando retirada</h3><span class="count">${db.ret.length}</span></div>
+        <p class="ch-sub">Pedidos aguardando já faturados · o cliente retira na empresa</p>
+      </header>
+      <div class="gx-list" data-col="ret">${cards || `<div class="col-empty">Nenhum pedido esperando o cliente</div>`}</div>
+    </section>`;
+  }
+  // dá baixa: o cliente retirou o pedido aguardando
+  function retirar(id, por = sess.nome) {
+    const p = P(id), i = db.ret.indexOf(id);
+    if (!p || i < 0) return false;
+    db.ret.splice(i, 1); p.etapa = "fim"; p.retirado = now();
+    log(p, por ? `Retirado pelo cliente na empresa · baixa por ${por}` : "Retirado pelo cliente na empresa");
+    return true;
+  }
+
+  const renderPeople = (k) => inboxCol(k) + (k === "emb" ? retCol() : "") + peopleOf(k).map((x) => personCol(k, x)).join("") + (MONT && k === "conf" ? doneCol() : "");
 
   // ---------- acompanhamento por rota ----------
   function renderRota() {
     const td = hoje(), all = reais();
-    const inRota = (p, r) => r === "todas" || (r === "semrota" ? !p.rota : p.rota === r);
-    const semN = all.filter((p) => !p.rota).length;
-    const tabs = [{ id: "todas", nome: "Todas" }, ...R.ROTAS, ...(semN ? [{ id: "semrota", nome: "Sem rota", cor: "var(--red-brand)" }] : [])];
+    const inRota = naAba;
+    const semN = all.filter(semRota).length;
+    // "Aguardando" fica ao lado das rotas (funciona como uma, mas não é rota)
+    const tabs = [{ id: "todas", nome: "Todas" }, ...R.ROTAS, AGUARDANDO, ...(semN ? [{ id: "semrota", nome: "Sem rota", cor: "var(--red-brand)" }] : [])];
     if (!tabs.some((x) => x.id === acRota)) acRota = "todas";
     const tabsHtml = tabs.map((r) => {
       const ps = all.filter((p) => inRota(p, r.id)), fo = ps.filter(foraPend).length;
@@ -1091,17 +1166,19 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const G = (g) => (p) => sts.get(p.id).grp === g;
     const F = { todos: () => true, fora: foraPend, hoje: (p) => p.embarque === td && p.etapa !== "fim", sep: G("sep"), conf: G("conf"), fat: G("fat"), emb: G("emb"), fim: G("fim") };
     if (!F[acF]) acF = "todos";
-    const fchips = [["todos", "Todos"], ["fora", "Fora do horário", "red"], ["hoje", "Embarque hoje"], ["sep", "Separação"], ["conf", "Conferência"], ["fat", "Faturamento"], ["emb", "Carga / embarque"], ["fim", "Embarcados"]]
+    const ehAg = acRota === "aguardando";
+    const fchips = (ehAg ? [["todos", "Todos"], ["sep", "Separação"], ["conf", "Conferência"], ["fat", "Faturamento"], ["emb", "Aguardando retirada"], ["fim", "Retirados"]]
+      : [["todos", "Todos"], ["fora", "Fora do horário", "red"], ["hoje", "Embarque hoje"], ["sep", "Separação"], ["conf", "Conferência"], ["fat", "Faturamento"], ["emb", "Carga / embarque"], ["fim", "Embarcados"]])
       .map(([id, l, c]) => { const n = base.filter(F[id]).length; if (id === "fora" && !n) return ""; return `<button class="ac-fc ${c || ""} ${acF === id ? "active" : ""}" data-acf="${id}">${l} <b>${n}</b></button>`; }).join("");
 
     const rows = base.filter(F[acF]).sort((a, b) => (foraPend(b) - foraPend(a)) || ((a.etapa === "fim") - (b.etapa === "fim"))
       || String(a.embarque || "0").localeCompare(String(b.embarque || "0")) || a.chegada - b.chegada);
-    const r = R.rota(acRota), showRota = !r;
+    const r = R.rota(acRota), showRota = !r && !ehAg;
     const cargaMot = (p) => { const c = p.carga && C(p.carga); return c ? (c.motorista ? esc(nameOf(c.motorista)) : `<span class="muted">a designar</span>`) : "—"; };
     const tr = rows.map((p) => {
       const s = sts.get(p.id), e = embInfo(p);
       return `<tr class="ac-row ${foraPend(p) ? "fora" : ""} ${p.etapa === "fim" ? "fim" : ""}" data-id="${p.id}">
-        <td><span class="ac-id">${p.id}</span>${showRota ? `<small>${rotaTag(p.rota)}</small>` : ""}</td>
+        <td><span class="ac-id">${p.id}</span>${showRota ? `<small>${destinoTag(p)}</small>` : ""}</td>
         <td class="ac-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</td>
         <td>${esc(p.vendedor)}</td>
         <td class="ac-loc">${esc(p.cli.cidade)}<small>${esc(p.cli.bairro)}</small></td>
@@ -1112,7 +1189,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
         <td>${cargaMot(p)}</td>
       </tr>`;
     }).join("");
-    const rule = r ? `<div class="ac-rule">${rotaTag(r.id)}<span>${esc(R.regraTexto(r))}</span></div>`
+    const rule = ehAg ? `<div class="ac-rule">${agTag}<span>O cliente retira na empresa · entra como prioridade, sem rota, sem horário de corte e sem carga · depois do faturamento fica aguardando retirada</span></div>`
+      : r ? `<div class="ac-rule">${rotaTag(r.id)}<span>${esc(R.regraTexto(r))}</span></div>`
       : `<div class="ac-rule"><b>${acRota === "semrota" ? "Pedidos sem rota cadastrada" : "Todas as rotas"}</b></div>`;
     return `<div class="ac-rotas">${tabsHtml}</div>
       <section class="ac-panel">
@@ -1127,7 +1205,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   // ---------- busca ----------
   function applySearch() {
     const q = query.trim().toLowerCase();
-    const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
+    const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${p.aguardando ? "aguardando retirada" : rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
     $$(".card").forEach((el) => {
       const id = el.dataset.id, c = board === "emb" && C(id);
       const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}`
@@ -1189,7 +1267,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   });
   boardEl.addEventListener("dragover", (e) => {
     const list = e.target.closest(".gx-list");
-    if (!list || !dragId) return;
+    if (!list || !dragId || list.dataset.col === "ret") return;
     e.preventDefault();
     const cards = $$(".card:not(.dragging)", list);
     let before = null;
@@ -1201,7 +1279,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   });
   boardEl.addEventListener("drop", (e) => {
     const list = e.target.closest(".gx-list");
-    if (!list || !dragId) return;
+    if (!list || !dragId || list.dataset.col === "ret") return;
     e.preventDefault();
     const seq = [...list.children].filter((x) => x === ph || (x.classList.contains("card") && !x.classList.contains("dragging")));
     let idx = seq.indexOf(ph);
@@ -1246,6 +1324,12 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     if (e.target.closest("[data-agrupar]")) return agrupar(sortInbox(db.sep.inbox, "sep").filter((id) => selSep.has(id)));
     const sk = e.target.closest("[data-skip]");
     if (sk) { e.stopPropagation(); return pularConf(sk.dataset.skip === "sel" ? sortInbox(db.conf.inbox, "conf").filter((id) => sel.has(id)) : [sk.dataset.skip]); }
+    const rr = e.target.closest("[data-retirar]");
+    if (rr) {
+      e.stopPropagation(); const id = rr.dataset.retirar;
+      if (retirar(id)) { save(); render(); if (openRef) renderDrawer(); toast(`${id} retirado pelo cliente · baixa registrada`); }
+      return;
+    }
     const lt = e.target.closest("[data-libto]");
     if (lt) return liberarSel(lt.dataset.libto);
     const et = e.target.closest("button[data-etag]");
@@ -1259,7 +1343,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const row = e.target.closest(".ac-row");
     if (row) return openDrawer({ t: "p", id: row.dataset.id });
     const c = e.target.closest(".card");
-    if (c) openDrawer({ t: board === "emb" ? "c" : isLote(c.dataset.id) ? "l" : "p", id: c.dataset.id });
+    if (c) openDrawer({ t: board === "emb" && C(c.dataset.id) ? "c" : isLote(c.dataset.id) ? "l" : "p", id: c.dataset.id });
   });
   $("#actions").addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a) action(a.dataset.act); });
 
@@ -1270,9 +1354,19 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       return toast(`${p.id} recebido · pedido de montagem`);
     }
     if (act === "novoPedido") {
-      const p = makePedido({ semRota: Math.random() < 0.3, prio: Math.random() < 0.2 });
-      db.sep.inbox.unshift(p.id); flashId = p.id; save(); render();
-      toast(`${p.id} recebido${p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}`);
+      const x = Math.random();
+      const p = makePedido({ semRota: x < 0.25, aguardando: x >= 0.25 && x < 0.4, prio: Math.random() < 0.2 });
+      db.sep.inbox.unshift(p.id); flashId = p.id;
+      const foi = distribuirInteligente("sep").includes(p.id);
+      save(); render();
+      toast(`${p.id} recebido${p.aguardando ? " · AGUARDANDO (cliente retira)" : p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}${foi ? ` → ${nameOf(p.sep.resp)} (distribuição inteligente)` : ""}`);
+    }
+    if (act === "intel") {
+      db.intel[board] = !db.intel[board];
+      const ids = distribuirInteligente(board);
+      flashId = ids; save(); render();
+      toast(intelOn(board) ? `Distribuição inteligente ligada${ids.length ? ` · ${ids.length} pedido(s) distribuído(s)` : ""} · sem rota, fora do horário e de outros dias continuam na caixa`
+        : "Distribuição inteligente desligada · os pedidos novos ficam na caixa de entrada");
     }
     if (act === "autoDist") autoDistribute(board);
     if (act === "sugerirLotes") sugerirLotes();
@@ -1353,7 +1447,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   // distribui pelo menor volume de trabalho pendente (balanceamento)
   function autoDistribute(k) {
     const B = db[k];
-    const cand = sortInbox(B.inbox, k).filter((id) => MONT || k !== "sep" || E(id).rota);
+    const cand = sortInbox(B.inbox, k).filter((id) => MONT || k !== "sep" || !semRota(E(id)));
     const skipped = B.inbox.length - cand.length;
     if (!cand.length) return toast(skipped ? "Defina a rota dos pedidos antes de distribuir" : "Caixa de entrada vazia");
     const loadOf = (pid) => B.cols[pid].reduce((t, id) => t + (k === "emb" ? cargaVol(C(id)) - cargaLidos(C(id)) : k === "lib" ? 1 : units(E(id)) - doneU(E(id), k)), 0);
@@ -1364,6 +1458,30 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     save(); render();
     const what = { sep: "distribuído(s) por carga de trabalho", conf: "distribuído(s) por carga de trabalho", lib: "liberado(s) no Sankhya", emb: "designada(s) aos motoristas" }[k];
     toast(`${cand.length} ${k === "emb" ? "carga(s)" : "pedido(s)"} ${what}${skipped ? ` · ${skipped} sem rota ficaram na caixa` : ""}`);
+  }
+
+  // ---------- distribuição inteligente (compartilhado/regras/distribuicao.js) ----------
+  // Ligada pelo coordenador (separação e conferência da expedição). O que pode seguir sozinho vai para quem está
+  // atuando no setor e tem a menor fila; o resto fica na caixa. Devolve os ids distribuídos.
+  function distribuirInteligente(k) {
+    if (!intelOn(k)) return [];
+    const B = db[k], td = hoje();
+    const quem = Object.keys(B.cols).filter(aqui);
+    if (!quem.length) return [];
+    const dados = (id) => {
+      const e = E(id);
+      return { id, aguardando: !!e.aguardando, rota: e.rota, embarque: e.embarque, prio: e.prio, chegada: e.chegada,
+        foraDoHorario: e.lt ? e.membros.some(foraPend) : foraPend(e) };
+    };
+    const pendente = (pid) => B.cols[pid].reduce((t, id) => t + units(E(id)) - doneU(E(id), k), 0);
+    const foram = [];
+    B.inbox.map(dados).filter((x) => vaiSozinho(x, td)).sort(ordemDaDistribuicao).forEach((x) => {
+      const pid = menorFila(quem.map((id) => ({ id, pendente: pendente(id) })));
+      if (moveCore(k, x.id, pid, null)) return;
+      logE(E(x.id), `Distribuição inteligente: ${nameOf(pid)} tinha a menor fila`);
+      foram.push(x.id);
+    });
+    return foram;
   }
 
   // ---------- data de embarque (popover do acompanhamento) ----------
@@ -1485,9 +1603,10 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
         ${canTop ? `<button class="btn ghost" id="drTop">Passar para o próximo da fila</button>` : ""}
       </div></section>`;
     }
+    if (p.etapa === "ret") actions = `<section><h4 class="dr-h">Ações</h4><div class="dr-act"><button class="btn primary" id="drRet">Retirado pelo cliente</button></div></section>`;
     if (p.op && k === "conf" && !isL) actions = actions.replace("</div></section>", `<button class="btn ghost" id="drSkip">Pular conferência</button></div></section>`);
     // separação: dividir um pedido grande entre separadores (só antes de começar) ou desfazer a divisão
-    const podeDividir = k === "sep" && loc && !isL && inteiro(p) && !p.sep.inicio && p.itens.length >= MIN_PARTES && (p.rota || p.op);
+    const podeDividir = k === "sep" && loc && !isL && inteiro(p) && !p.sep.inicio && p.itens.length >= MIN_PARTES && !semRota(p);
     const pai = p.parte ? P(p.parte.pai) : p.dividido ? p : null;
     const podeDesfazer = pai && pai.etapa === "sep" && !partesDe(pai).some((q) => q.sep.inicio);
     if (podeDividir || podeDesfazer) {
@@ -1502,7 +1621,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       p.dividido ? `<div class="dr-f"><small>Pedido dividido</small><b>${p.dividido.partes.length} partes</b><span>${partesDe(p).map((q) => `<a href="#" data-goto="${q.id}">${q.parte.n}/${q.parte.de}</a> ${esc(q.parte.ruas)} · ${q.sep.fim ? "pronta" : q.sep.inicio ? "separando" : q.sep.resp ? esc(nameOf(q.sep.resp)) : "na caixa"}`).join("<br>")}</span></div>` : "",
       p.doca || p.partesSep ? `<div class="dr-f"><small>Doca de expedição</small><b class="dr-docas">${docasHtml(p)}</b><span>${p.partesSep ? "uma doca por parte · lida pelo separador" : "lida pelo separador ao terminar"}</span></div>` : "",
     ].join("");
-    const rotaLocked = ["mont", "emb", "fim"].includes(p.etapa) || !!p.parte || !!p.lote || !!p.dividido;
+    const rotaLocked = ["mont", "emb", "ret", "fim"].includes(p.etapa) || !!p.parte || !!p.lote || !!p.dividido;
     const carga = p.carga && C(p.carga);
 
     $("#drawer").innerHTML = `
@@ -1515,10 +1634,15 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
         <div class="dr-grid">${p.op ? opGrid(p) : `
           <div class="dr-f"><small>Cliente</small><b>${p.cli.cod} · ${esc(p.cli.nome)}</b><span>${esc(p.cli.cidade)} · ${esc(p.cli.bairro)}</span></div>
           <div class="dr-f"><small>Vendedor</small><b>${esc(p.vendedor)}</b><span>Chegou ${fmtAge(p.chegada)} · ${fmtTime(p.chegada)}</span></div>
+          ${p.aguardando ? `
+          <div class="dr-f"><small>Rota</small><b>${agTag}</b><span>o cliente retira na empresa${p.rotaCadastro ? ` · rota do cadastro: ${esc(rotaOf(p.rotaCadastro).nome)} (não usada)` : ""}</span></div>
+          <div class="dr-f"><small>Embarque</small><b>—</b><span>sem horário de corte e sem embarque</span></div>
+          <div class="dr-f"><small>Prioridade</small><b>▲ Alta</b><span>o aguardando é sempre prioridade</span></div>
+          <div class="dr-f"><small>Retirada</small><b>${p.retirado ? `Retirado às ${fmtTime(p.retirado)}` : p.etapa === "ret" ? "Aguardando o cliente" : "—"}</b><span>${p.retirado || p.etapa === "ret" ? `NF ${p.nota}` : "não entra em carga · depois do faturamento"}</span></div>` : `
           <div class="dr-f"><small>Rota</small>${rotaLocked ? `<b>${esc(r ? r.nome : "—")}</b>` : `<select id="drRota" class="${p.rota ? "" : "warn"}"><option value="">— Sem rota —</option>${rotaOptions(p.rota)}</select>`}</div>
           <div class="dr-f"><small>Embarque</small>${e ? `<div class="dr-emb">${embTag(p)}<span>${e.sub}${p.embDef ? " · definido pelo coordenador" : ""}</span></div><span>${r ? `Corte ${r.corte}${r.semanal != null ? ` de ${R.DIAS[r.semanal].toLowerCase()}` : ""} · altere no Acompanhamento` : ""}</span>` : `<b>—</b><span>Defina a rota</span>`}</div>
           <div class="dr-f"><small>Prioridade</small><button class="tgl ${p.prio === "alta" ? "on" : ""}" id="drPrio">${p.prio === "alta" ? "▲ Alta" : "Normal"}</button></div>
-          <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>`}
+          <div class="dr-f"><small>Carga</small>${carga ? `<b><a href="#" id="drCarga">${carga.id}</a></b><span>${carga.motorista ? esc(nameOf(carga.motorista)) : "sem motorista"} · ${carga.veiculo} ${carga.placa}</span>` : `<b>—</b><span>${p.etapa === "mont" ? "aguardando montagem no ERP" : "ainda não faturado"}</span>`}</div>`}`}
         </div>
         ${sepInfo ? `<div class="dr-grid">${sepInfo}</div>` : ""}
         <div class="dr-nums">
@@ -1544,7 +1668,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       setRota(p, ev.target.value || null);
       save(); ev.target.blur(); render(); renderDrawer(); toast(p.rota ? `Rota de ${p.id}: ${rotaOf(p.rota).nome}` : `${p.id} sem rota`);
     };
-    $("#drPrio").onclick = () => {
+    if ($("#drRet")) $("#drRet").onclick = () => { if (retirar(p.id)) { save(); render(); renderDrawer(); toast(`${p.id} retirado pelo cliente · baixa registrada`); } };
+    if ($("#drPrio")) $("#drPrio").onclick = () => {
       p.prio = p.prio === "alta" ? "normal" : "alta"; log(p, p.prio === "alta" ? "Marcado como prioridade" : "Prioridade removida");
       save(); render(); renderDrawer();
     };
@@ -1569,7 +1694,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     const st = l.status === "concluido" ? { txt: `Separado · doca ${docaCod(l.doca)}`, cls: "" } : isL ? { txt: `Separando · ${nameOf(l.sep.resp)}`, cls: "live" }
       : loc && loc.col !== "inbox" ? { txt: `Na fila de ${nameOf(loc.col)} · ${loc.list.indexOf(l.id) + 1}º`, cls: "wait" } : { txt: "Aguardando separador", cls: "wait" };
     const peds = v.membros.map((p) => `<tr class="click" data-pid="${p.id}"><td><b class="lpos">${l.posicoes[p.id]}</b></td><td><b>${p.id}</b>${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}<small>${p.op ? "Montagem" : esc(p.cli.nome)}</small></td>
-      <td>${p.op ? "—" : rotaTag(p.rota)}</td><td class="r">${p.itens.length}</td><td class="r">${doneU(p, "sep")}/${units(p)}</td></tr>`).join("");
+      <td>${p.op ? "—" : destinoTag(p)}</td><td class="r">${p.itens.length}</td><td class="r">${doneU(p, "sep")}/${units(p)}</td></tr>`).join("");
     // paradas: o mesmo produto no mesmo endereço é uma parada só, com a quantidade de cada caixa
     const paradas = montarParadas(v.membros.map((p) => ({ ...p, itens: p.itens.map((i) => ({ ...i, status: i.sep >= i.qtd ? "ok" : "pendente" })) })), l.posicoes);
     const pr = paradas.map((x) => `<tr class="${x.lido >= x.total ? "ok" : ""}"><td><span class="gaddr">${x.end}</span></td><td>${esc(x.desc)}<small>${x.sku}</small></td>
@@ -1697,6 +1822,14 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     let changed = false;
     db.tick = (db.tick || 0) + 1;
 
+    // distribuição inteligente (ligada pelo coordenador): o que chegou na caixa e pode seguir sozinho
+    ["sep", "conf"].forEach((k) => {
+      const ids = distribuirInteligente(k);
+      if (!ids.length) return;
+      changed = true; flashId = ids;
+      if (board === k) toast(ids.length === 1 ? `${ids[0]} → ${nameOf(locate(k, ids[0])?.col)} (distribuição inteligente)` : `${ids.length} pedidos distribuídos (distribuição inteligente)`);
+    });
+
     // separadores e conferentes
     ["sep", "conf"].forEach((k) => {
       Object.entries(db[k].cols).forEach(([pid, l]) => {
@@ -1769,8 +1902,9 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       }
       if (now() - p.lib.inicio < (p.lib.dur || 150 * SEG)) return;
       p.lib.fim = now(); p.nota = db.nfSeq++; l.shift(); db.stats[fid]++;
-      p.etapa = "mont"; p.mont = now(); db.mont.push(p.id);
-      log(p, `Faturado por ${nameOf(fid)} · NF ${p.nota} · aguardando montagem de carga no ERP`);
+      // aguardando: não entra em carga, fica esperando o cliente retirar
+      if (p.aguardando) { p.etapa = "ret"; p.ret = now(); db.ret.push(p.id); log(p, `Faturado por ${nameOf(fid)} · NF ${p.nota} · aguardando retirada pelo cliente`); }
+      else { p.etapa = "mont"; p.mont = now(); db.mont.push(p.id); log(p, `Faturado por ${nameOf(fid)} · NF ${p.nota} · aguardando montagem de carga no ERP`); }
       renumLib(fid); if (l[0]) P(l[0]).lib.atrib = now();
       changed = true;
       if (board === "lib") toast(`${p.id} faturado · NF ${p.nota}`);
@@ -1823,12 +1957,19 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
       }
     });
 
+    // o cliente do pedido aguardando chega e retira (simulação)
+    db.ret.slice().forEach((id) => {
+      const p = P(id);
+      if (!p.retPrevista) p.retPrevista = (p.ret || now()) + entre(RITMO.retiradaSeg);
+      if (now() >= p.retPrevista && retirar(id, null)) { changed = true; if (board === "emb") toast(`${id} retirado pelo cliente`); }
+    });
+
     // integração simulada: chega um pedido novo de tempos em tempos
     if (now() >= (db.proxChegada || 0)) {
       db.proxChegada = now() + entre(RITMO.chegadaSeg); // em média um pedido a cada 3 minutos
-      const p = makePedido({ semRota: Math.random() < 0.05, prio: Math.random() < 0.1 });
+      const p = makePedido({ semRota: Math.random() < 0.05, aguardando: Math.random() < 0.08, prio: Math.random() < 0.1 });
       db.sep.inbox.unshift(p.id); flashId = p.id; changed = true;
-      if (board === "sep") toast(`Novo pedido via integração: ${p.id}${p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}`);
+      if (board === "sep") toast(`Novo pedido via integração: ${p.id}${p.aguardando ? " · AGUARDANDO (cliente retira)" : p.rota ? ` · embarque ${embInfo(p).label.toLowerCase()}` : " · SEM ROTA"}`);
     }
     if (changed) { save(); render(); if (openRef) renderDrawer(); }
   }
@@ -1841,6 +1982,7 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
     }));
     Object.values(db.lotes || {}).forEach((l) => { if (live(l, "sep")) l.sep.inicio += parado; else if (l.sep.atrib && !l.sep.fim) l.sep.atrib += parado; });
     Object.values(db.cargas).forEach((c) => { if (c.atrib) c.atrib += parado; if (c.proxBip) c.proxBip += parado; });
+    (db.ret || []).forEach((id) => { const p = P(id); if (p.retPrevista) p.retPrevista += parado; });
     ["proxChegada", "proxCarga", "proxOP"].forEach((x) => { if (db[x]) db[x] += parado; });
   }
   $("#simBtn").addEventListener("click", () => {
@@ -1857,9 +1999,14 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
   });
 
   ligarOcorrencias($("#board"));
-  // a aba Ao vivo só aparece com o servidor (no GitHub Pages fica escondida)
-  ligarAoVivo({ sess, setor: SETOR, container: $("#board"), ativa: () => board === "vivo", toast })
-    .then((ligou) => { comServidor = ligou; renderTop(); });
+  // aba Ao vivo (Fase 1c): EM STANDBY. As abas da demonstração (Separação, Conferência…) passam a funcionar com o
+  // servidor e substituem esta aba. Ela só aparece com o servidor e com "?aovivo" no endereço (gestao.html?aovivo),
+  // para algum teste específico. RETIRAR NO FIM DO PROJETO: gestao-ao-vivo.js, js/dados/painel.js,
+  // compartilhado/regras/painel.js e o botão #tabVivo (ver server/LEIA-ME.md, "Aba Ao vivo em standby").
+  if (new URLSearchParams(location.search).has("aovivo")) {
+    ligarAoVivo({ sess, setor: SETOR, container: $("#board"), ativa: () => board === "vivo", toast })
+      .then((ligou) => { comServidor = ligou; renderTop(); });
+  }
 
   // ---------- início ----------
   load();

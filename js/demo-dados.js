@@ -94,12 +94,16 @@ function pedidoDividido() {
   }));
 }
 
+// pedido aguardando: o cliente retira na empresa (vem do Sankhya com "aguardando" = sim; entra como prioridade)
+const aguardando = (o) => Object.assign(o, { aguardando: true, prio: "alta" });
+
 // pedidos para separar: avulsos, dois num lote montado pelo coordenador (PV-10424 e PV-10425) e um pedido dividido
+// (o PV-10423 é aguardando)
 export const seedSeparacao = () => {
   const lista = [
     order("PV-10421", "Horizonte Cedro Comercial", "Fortaleza · CE", "alta", "07:42", [item("176", 20), item("122", 30), item("536", 6), item("17057", 10)]),
     order("PV-10422", "Arco Cedro Comercial", "Maracanaú · CE", "normal", "08:05", [item("16016", 10), item("1797", 50), item("3243", 4)]),
-    order("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", "alta", "08:31", [item("883", 8), item("167", 10), item("283", 6), item("4084", 4), item("2843", 2)]),
+    aguardando(order("PV-10423", "Estação Cedro Comercial", "Limoeiro do Norte · CE", "alta", "08:31", [item("883", 8), item("167", 10), item("283", 6), item("4084", 4), item("2843", 2)])),
     order("PV-10424", "Diego Valente Pires", "Sobral · CE", "normal", "09:10", [item("13633", 4), item("19212", 12), item("17480", 6)]),
     order("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", "normal", "09:48", [item("8745", 10), item("17726", 12), item("8545", 20), item("2825", 6), item("19212", 6)]),
     order("PV-10427", "Praia Mansa Bikes", "Fortaleza · CE", "normal", "10:05", [item("176", 6), item("536", 2), item("3243", 2)]),
@@ -132,7 +136,7 @@ export const seedConferencia = () => {
     sep(order("PV-10401", "Farol Cedro Comercial", "Fortaleza · CE", "alta", "06:55", [item("176", 10), item("16016", 4), item("17057", 2), item("19212", 3)])),
     sep(order("PV-10402", "Paineira Cedro Comercial", "Fortaleza · CE", "normal", "07:10", [item("536", 4), item("283", 2), item("3243", 2), item("2843", 1)]), { "2843": 0 }),
     sep(order("PV-10403", "Brisa Cedro Comercial", "Sobral · CE", "normal", "07:28", [item("13633", 2), item("8745", 6), item("14857", 5)])),
-    sep(order("PV-10404", "Alameda Arco Comercial", "Quixadá · CE", "alta", "07:35", [item("883", 2), item("167", 6), item("4084", 3), item("19212", 6), item("17480", 4)]), { "167": 5 }),
+    sep(aguardando(order("PV-10404", "Alameda Arco Comercial", "Quixadá · CE", "alta", "07:35", [item("883", 2), item("167", 6), item("4084", 3), item("19212", 6), item("17480", 4)])), { "167": 5 }),
   ].map(routeSort);
 };
 

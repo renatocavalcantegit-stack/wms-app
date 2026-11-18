@@ -59,3 +59,9 @@ test("enderecoDaEtiqueta: sem cadastro, só a cidade; sem rota, SEM ROTA; rua se
   assert.equal(enderecoDaEtiqueta({ cidade: "Sobral · CE" }, { rota: "nao-existe" }, nomeDaRota).rota, "SEM ROTA");
   assert.equal(enderecoDaEtiqueta({ cidade: "Sobral · CE" }, { rua: "Rua Projetada" }).numero, "S/N");
 });
+
+test("enderecoDaEtiqueta: pedido aguardando (o cliente retira) imprime AGUARDANDO, mesmo com rota no cadastro", () => {
+  const e = enderecoDaEtiqueta({ cidade: "Fortaleza · CE", aguardando: true }, { rota: "centro", bairro: "Centro" }, () => "Centro");
+  assert.equal(e.rota, "AGUARDANDO");
+  assert.equal(e.bairro, "Centro");
+});

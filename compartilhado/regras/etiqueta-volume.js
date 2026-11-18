@@ -1,4 +1,5 @@
 // WMS Beach Bike — código da etiqueta de volume.
+import { ehAguardando, AGUARDANDO } from "./aguardando.js";
 // A Conferência imprime o QR (qrText) e o Embarque lê o QR ou o código digitado (parseVolume).
 
 // texto só com caracteres ASCII imprimíveis (o QR e a impressora térmica não lidam bem com acentos)
@@ -18,7 +19,8 @@ export const parseVolume = (raw) => {
 // O endereço de entrega vem do pedido (o.entrega, quando o Sankhya mandar) ou, sem ele, do cadastro do cliente.
 // Saída já pronta para a etiqueta, na ordem pedida pela operação: cidade · UF, bairro, rua + número.
 // Campo que não existe volta vazio ("") e a etiqueta simplesmente não imprime a linha.
-// rota: nome da rota (ex.: "Messejana"); sem rota cadastrada, "SEM ROTA" (o coordenador precisa definir).
+// rota: nome da rota (ex.: "Messejana"); sem rota cadastrada, "SEM ROTA" (o coordenador precisa definir);
+// pedido aguardando (o cliente retira na empresa), "AGUARDANDO", mesmo que o cliente tenha rota no cadastro.
 export function enderecoDaEtiqueta(o, cadastro = null, nomeDaRota = () => null) {
   const e = { ...(cadastro || {}), ...(o.entrega || {}) };
   const limpo = (s) => String(s ?? "").trim();
@@ -29,6 +31,6 @@ export function enderecoDaEtiqueta(o, cadastro = null, nomeDaRota = () => null) 
     bairro: limpo(e.bairro),
     rua: limpo(e.rua),
     numero: limpo(e.numero) || (limpo(e.rua) ? "S/N" : ""),
-    rota: (rotaId && nomeDaRota(rotaId)) || "SEM ROTA",
+    rota: ehAguardando(o) ? AGUARDANDO.nome.toUpperCase() : (rotaId && nomeDaRota(rotaId)) || "SEM ROTA",
   };
 }

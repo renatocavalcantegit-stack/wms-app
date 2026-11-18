@@ -494,3 +494,16 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 .vivo-nao-linha { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(0,0,0,.08); font-size: 13.5px; }
 .vivo-nao-linha p { margin: 2px 0 0; color: var(--red); font-weight: 600; font-size: 12.5px; }
 .vivo-nao-linha small { color: var(--ink-3); }
+
+/* ---------- pedido aguardando (o cliente retira na empresa) e distribuição inteligente ---------- */
+.rt.aguard { background: var(--rc); color: #fff; letter-spacing: .6px; padding: 3px 8px 3px 6px; }
+.rt.aguard i { background: #fff; }
+.col.ret-col { background: #ECEBFA; }
+.col.ret-col .ch-sub { color: #4338CA; }
+.ret-card .c-skip { margin-top: 2px; border-color: #4338CA; color: #4338CA; }
+.ret-card .c-skip:hover { background: #4338CA; color: #fff; border-style: solid; }
+.gx-intel { display: inline-flex; align-items: center; gap: 7px; }
+.gx-intel i { width: 8px; height: 8px; border-radius: 50%; background: #B4B4BC; }
+.gx-intel.on i { background: #22C55E; box-shadow: 0 0 0 3px rgba(34, 197, 94, .25); }
+.gx-intel-sub { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11.5px; font-weight: 600; color: #86EFAC; }
+.gx-intel-sub i { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #22C55E; }
