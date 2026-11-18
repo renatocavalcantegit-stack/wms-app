@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validarDocaExpedicao, MSG_NAO_E_DOCA_EXPEDICAO, compararAtendimento, validarLote, posicoesDoLote, montarParadas, paradaConcluida,
-  destinoDaLeitura, distribuirAchado, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, partesCompletas, juntarPartes,
+  destinoDaLeitura, caixaDaVez, outrasCaixasPendentes, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, partesCompletas, juntarPartes,
   podeSepararNovamente, MSG_JA_NA_CONFERENCIA,
 } from "../compartilhado/regras/separacao.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../compartilhado/regras/enderecos.js";
@@ -43,10 +43,34 @@ test("paradas: ordem do endereço, mesmo produto no mesmo endereço vira uma par
   assert.equal(paradaConcluida(ps[1]), false);
 });
 
-test("falta no lote: o achado vai primeiro para a posição A", () => {
-  const linhas = [{ pedido: "PV-2", idx: 0, qtd: 7 }, { pedido: "PV-1", idx: 0, qtd: 5 }];
-  assert.deepEqual(distribuirAchado(linhas, 9), [{ pedido: "PV-2", idx: 0, sep: 7, falta: false }, { pedido: "PV-1", idx: 0, sep: 2, falta: true }]);
-  assert.deepEqual(distribuirAchado(linhas, 0).map((x) => x.sep), [0, 0]);
+test("quantidade por caixa: a caixa da vez é a primeira pendente, na ordem A, B, C", () => {
+  const p = { linhas: [
+    { pedido: "PV-2", pos: "A", idx: 0, qtd: 7, status: "pendente" },
+    { pedido: "PV-1", pos: "B", idx: 3, qtd: 5, status: "pendente" },
+    { pedido: "PV-3", pos: "C", idx: 1, qtd: 2, status: "pendente" },
+  ] };
+  assert.equal(caixaDaVez(p).pos, "A");
+  p.linhas[0].status = "ok";
+  assert.equal(caixaDaVez(p).pos, "B");
+  p.linhas[1].status = "falta"; // falta também conta como feita: passa para a próxima
+  assert.equal(caixaDaVez(p).pos, "C");
+  p.linhas[2].status = "ok";
+  assert.equal(caixaDaVez(p), null);
+  assert.equal(paradaConcluida(p), true);
+});
+
+test("endereço vazio: as outras caixas pendentes da parada (para marcar a falta de uma vez)", () => {
+  const p = { linhas: [
+    { pedido: "PV-2", pos: "A", idx: 0, qtd: 7, status: "ok" },
+    { pedido: "PV-1", pos: "B", idx: 3, qtd: 5, status: "pendente" },
+    { pedido: "PV-3", pos: "C", idx: 1, qtd: 2, status: "pendente" },
+  ] };
+  // a caixa pode vir de outra chamada de montarParadas (outro objeto): compara pelo pedido e pelo item
+  const b = { ...p.linhas[1] };
+  assert.deepEqual(outrasCaixasPendentes(p, b).map((l) => l.pos), ["C"]);
+  assert.deepEqual(outrasCaixasPendentes(p, p.linhas[2]).map((l) => l.pos), ["B"]);
+  p.linhas[2].status = "falta";
+  assert.deepEqual(outrasCaixasPendentes(p, b), []);
 });
 
 test("divisão: 2 a 4 partes, só antes de começar, fora de lote", () => {
@@ -103,12 +127,9 @@ test("separar novamente: só enquanto ninguém começou a conferir", () => {
   for (const st of ["andamento", "conferido", "divergente"]) assert.equal(podeSepararNovamente(st), MSG_JA_NA_CONFERENCIA);
 });
 
-test("quantidade quebrada: total da parada soma sem erro e a falta reparte o valor quebrado", () => {
+test("quantidade quebrada: total da parada soma sem erro", () => {
   const a = ped("PV-1", "normal", "08:00", [it("RAIO", "01-001-100-101", 0.1)]);
   const b = ped("PV-2", "normal", "08:05", [it("RAIO", "01-001-100-101", 0.2)]);
   const [parada] = montarParadas([a, b], { "PV-1": "A", "PV-2": "B" });
   assert.equal(parada.total, 0.3); // e não 0.30000000000000004
-  const linhas = [{ pedido: "PV-1", idx: 0, qtd: 101.5 }, { pedido: "PV-2", idx: 0, qtd: 2 }];
-  assert.deepEqual(distribuirAchado(linhas, 102.7),
-    [{ pedido: "PV-1", idx: 0, sep: 101.5, falta: false }, { pedido: "PV-2", idx: 0, sep: 1.2, falta: true }]);
 });

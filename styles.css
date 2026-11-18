@@ -510,3 +510,8 @@ a.btn { text-decoration: none; }
 .pick-head .sinc-estado { margin-top: 2px; font-size: 11px; }
 .sinc-recusas { margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: var(--red-soft); color: var(--red); font-size: 13px; font-weight: 600; }
 .sinc-recusas p { margin: 0 0 8px; }
+
+/* ===== lote: quantidade por caixa (v50) ===== */
+.caixa.espera { opacity: .55; }
+.falta-todas p { margin: 4px 0 12px; font-weight: 600; }
+.falta-todas .btn + .btn { margin-top: 8px; }

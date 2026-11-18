@@ -2,7 +2,7 @@
 // e pedido grande dividido entre separadores. Funções puras: não leem nem gravam nada.
 // Usadas pelo coletor (app.js), pela Conferência (junção das partes) e pelo painel do coordenador (gestao.js).
 import { compararEnderecos, MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "./enderecos.js";
-import { arredondarQtd, somarQtd } from "./quantidade.js";
+import { somarQtd } from "./quantidade.js";
 
 // =====================================================================
 // DOCA DE EXPEDIÇÃO (onde o separador deixa a mercadoria para o conferente)
@@ -64,16 +64,15 @@ export const paradaConcluida = (parada) => parada.linhas.every((l) => l.status !
 // para onde vai a próxima peça bipada: a primeira caixa (posição) que ainda não completou
 export const destinoDaLeitura = (parada) => parada.linhas.find((l) => l.sep < l.qtd) || null;
 
-// FALTA no lote: o que foi achado vai primeiro para a posição A (prioridade), depois B…
-// Devolve a quantidade de cada linha: [{ pedido, idx, sep, falta }]
-export function distribuirAchado(linhas, achado) {
-  let resta = Math.max(0, arredondarQtd(achado)); // pode ser quebrado (101,5)
-  return linhas.map((l) => {
-    const sep = Math.min(l.qtd, resta);
-    resta = arredondarQtd(resta - sep);
-    return { pedido: l.pedido, idx: l.idx, sep, falta: sep < l.qtd };
-  });
-}
+// QUANTIDADE POR CAIXA no lote (v50): depois do endereço e do produto, o coletor pede a quantidade
+// de UMA caixa por vez, na ordem das posições (A primeiro: é o pedido de maior prioridade).
+// A caixa da vez é a primeira que ainda está pendente; null quando a parada terminou.
+export const caixaDaVez = (parada) => parada.linhas.find((l) => l.status === "pendente") || null;
+
+// endereço vazio: lançou falta com 0 na caixa da vez. As outras caixas pendentes desta parada também não
+// vão ter nada; o coletor pergunta se marca a falta nelas de uma vez (em vez de uma por uma).
+export const outrasCaixasPendentes = (parada, caixa) =>
+  parada.linhas.filter((l) => l.status === "pendente" && !(l.pedido === caixa.pedido && l.idx === caixa.idx));
 
 // =====================================================================
 // PEDIDO GRANDE DIVIDIDO (só o coordenador): 2 a 4 partes, cada uma para um separador

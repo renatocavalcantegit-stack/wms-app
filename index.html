@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=49">
+  <link rel="stylesheet" href="styles.css?v=50">
 </head>
 <body>
 
@@ -425,6 +425,7 @@
     <div class="sheet-grip"></div>
     <p class="sheet-title">Registrar falta</p>
     <p id="shortDesc" class="muted"></p>
+    <div id="shortCampos">
     <label class="field">
       <span>Quantidade encontrada</span>
       <input id="shortQty" type="text" inputmode="decimal" autocomplete="off">
@@ -436,6 +437,13 @@
       <button class="chip" data-r="Produto divergente">Divergente</button>
     </div>
     <button id="shortGo" class="btn danger block">Confirmar falta</button>
+    </div>
+    <!-- lote: falta com 0 numa caixa (endereço vazio) pergunta se as outras caixas da parada também ficam com falta -->
+    <div id="shortTodas" class="falta-todas" hidden>
+      <p id="shortTodasT"></p>
+      <button id="shortTodasSim" class="btn danger block"></button>
+      <button id="shortTodasNao" class="btn ghost block"></button>
+    </div>
   </div>
 
   <div id="sheetMenu" class="sheet" hidden>
@@ -460,6 +468,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=49"></script>
+  <script type="module" src="app.js?v=50"></script>
 </body>
 </html>

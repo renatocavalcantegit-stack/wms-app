@@ -6,30 +6,51 @@ import {
   abrirNaConferencia, bipar,
 } from "./ajuda.js";
 
-test("lote com falta: o achado vai para a caixa A e cada pedido chega sozinho na conferência", async ({ page }) => {
-  await entrar(page, "separador");
-  // as paradas do lote L-1 (PV-10424 = A, PV-10425 = B), na ordem da rota, calculadas pela regra
-  const paradas = await page.evaluate(async () => {
+// as paradas do lote L-1 (PV-10424 = A, PV-10425 = B), na ordem da rota, calculadas pela regra
+async function paradasDoL1(page) {
+  return page.evaluate(async () => {
     const { carregarPedidos, carregarLotes } = await import("/js/dados/separacao.js");
     const { montarParadas } = await import("/compartilhado/regras/separacao.js");
     const l = carregarLotes("exp").find((x) => x.id === "L-1");
     const ps = carregarPedidos("exp").filter((o) => l.pedidos.includes(o.id));
     return montarParadas(ps, l.posicoes);
   });
+}
+// parada com um pedido só: uma caixa. Com vários: uma quantidade por caixa, na ordem A, B…
+async function separarParada(page, p) {
+  if (!(await page.locator("#addrStatus").innerText()).includes("confirmado")) await ler(page, p.end);
+  await ler(page, p.sku);
+  for (const l of p.linhas) {
+    await expect(page.locator(".qty-l")).toHaveText(`Caixa ${l.pos} · quantidade`);
+    await digitarQuantidade(page, l.qtd);
+  }
+}
+
+test("lote com falta: cada caixa tem a sua quantidade e cada pedido chega sozinho na conferência", async ({ page }) => {
+  await entrar(page, "separador");
+  const paradas = await paradasDoL1(page);
   const comum = paradas.find((p) => p.linhas.length === 2); // produto dos dois pedidos: uma parada só
   expect(comum, "o lote de demonstração tem um produto em comum").toBeTruthy();
 
   await page.locator('[data-lote="L-1"]').click();
   await page.locator("#startGo").click();
   for (const p of paradas) {
+    if (p !== comum) { await separarParada(page, p); continue; }
     if (!(await page.locator("#addrStatus").innerText()).includes("confirmado")) await ler(page, p.end);
     await ler(page, p.sku);
-    if (p !== comum) { await digitarQuantidade(page, p.total); continue; }
-    // achou menos que o total da parada: abre a falta; o achado vai primeiro para a caixa A
-    const achado = p.linhas[0].qtd - 2;
-    await digitarQuantidade(page, achado);
+    // o coletor pede a caixa A primeiro (não o total da parada); a B fica apagada esperando
+    await expect(page.locator(".qty-l")).toHaveText("Caixa A · quantidade");
+    await expect(page.locator("#qtyReq")).toHaveText(String(p.linhas[0].qtd));
+    await expect(page.locator("#loteBox .caixa.atual")).toContainText(p.linhas[0].pedido);
+    await expect(page.locator("#loteBox .caixa.espera")).toContainText(p.linhas[1].pedido);
+    // caixa A: achou 2 a menos → falta só nela
+    await digitarQuantidade(page, p.linhas[0].qtd - 2);
     await expect(page.locator("#sheetShort")).toBeVisible();
     await page.locator("#shortReasons .chip").first().click();
+    await page.locator("#shortGo").click();
+    // caixa B, sem bipar de novo: não sobrou nada (0). É a última caixa: não pergunta das outras
+    await expect(page.locator(".qty-l")).toHaveText("Caixa B · quantidade");
+    await digitarQuantidade(page, 0);
     await page.locator("#shortGo").click();
   }
   await lerDoca(page, "R9002-P1-A100-AP102");
@@ -47,6 +68,32 @@ test("lote com falta: o achado vai para a caixa A e cada pedido chega sozinho na
   const conf = await conferencia(page);
   expect(conf.find((o) => o.id === a.pedido).itens[a.idx].sep).toBe(a.qtd - 2);
   expect(conf.find((o) => o.id === b.pedido).itens[b.idx].sep).toBe(0);
+});
+
+test("endereço vazio no lote: falta com 0 na caixa A marca as outras caixas da parada de uma vez", async ({ page }) => {
+  await entrar(page, "separador");
+  const paradas = await paradasDoL1(page);
+  const comum = paradas.find((p) => p.linhas.length === 2);
+  await page.locator('[data-lote="L-1"]').click();
+  await page.locator("#startGo").click();
+  for (const p of paradas) {
+    if (p !== comum) { await separarParada(page, p); continue; }
+    if (!(await page.locator("#addrStatus").innerText()).includes("confirmado")) await ler(page, p.end);
+    await ler(page, p.sku);
+    await page.locator("#btnShort").click();
+    await page.locator("#shortQty").fill("0");
+    await page.locator("#shortGo").click();
+    // pergunta antes de marcar a caixa B
+    await expect(page.locator("#shortTodas")).toBeVisible();
+    await expect(page.locator("#shortTodasT")).toContainText("caixa A");
+    await page.locator("#shortTodasSim").click();
+  }
+  await lerDoca(page, "R9002-P1-A100-AP102");
+  const sep = await separacao(page);
+  const [a, b] = comum.linhas;
+  const itemA = sep.find((o) => o.id === a.pedido).itens[a.idx], itemB = sep.find((o) => o.id === b.pedido).itens[b.idx];
+  expect([itemA.sep, itemA.status, itemA.motivo]).toEqual([0, "falta", "Endereço vazio"]);
+  expect([itemB.sep, itemB.status, itemB.motivo]).toEqual([0, "falta", "Endereço vazio"]);
 });
 
 test("pedido dividido: a conferência só recebe quando todas as partes terminam, já juntas", async ({ page }) => {
