@@ -29,6 +29,18 @@ export function beep(ok = true) {
   } catch {}
 }
 
+// O Chrome só deixa tocar som depois de um toque ou tecla NA PÁGINA (depois de recarregar, conta de novo).
+// O som do pedido novo chega sozinho, sem toque: por isso o primeiro toque ou tecla em qualquer lugar já liga o áudio.
+function liberarSom() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+  } catch {}
+}
+if (typeof document !== "undefined") {
+  for (const ev of ["pointerdown", "keydown", "touchstart"]) document.addEventListener(ev, liberarSom, { capture: true, passive: true });
+}
+
 // toque de PEDIDO NOVO NA FILA (Fase 1e): o coordenador mandou pedido para este separador.
 // Só som (e vibração), sem notificação. Três notas subindo, duas vezes; bem diferente do bipe da leitura.
 // O navegador só toca som depois de um toque na tela: no coletor isso já aconteceu no login.
