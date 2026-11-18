@@ -67,7 +67,18 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   // Com servidor, cada ação da separação entra na FILA do aparelho (js/dados/fila.js) e a tela segue
   // sem esperar a rede. O js/sincronizacao.js manda a fila a cada 5 s e quando a rede volta.
   // Na demonstração (sessão sem token), nada é enfileirado.
-  const pedirEnvio = iniciarSincronizacao({ sessao: () => session(), aoMudar: aposEnvio });
+  const pedirEnvio = iniciarSincronizacao({ sessao: () => session(), aoMudar: aposEnvio, passo: passoDaVez });
+  // o passo do item da vez, para a Gestão encher a bolinha do item (v63): 1 = endereço lido, 2 = produto bipado.
+  // No lote, vale para cada caixa da parada que ainda não foi confirmada.
+  function passoDaVez() {
+    if (!(current || lote) || $("#viewPick").hidden) return null;
+    const e = etapa(), passo = e === "produto" ? 1 : e === "quantidade" ? 2 : 0;
+    if (!passo) return null;
+    const itens = lote
+      ? parada().linhas.filter((l) => l.status === "pendente").map((l) => ({ pedido: l.pedido, sequencia: l.idx + 1 }))
+      : [{ pedido: current.id, sequencia: current.atual + 1 }];
+    return itens.length ? { passo, itens } : null;
+  }
   function registrar(tipo, dados) {
     if (!sess?.token) return;
     enfileirar(sess.login, tipo, dados);
@@ -652,7 +663,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       return erroLeitura(ehDaVez(code) ? "PRIMEIRO LEIA O QR DO ENDEREÇO." : `ENDEREÇO ERRADO. VÁ PARA ${esperado}.`);
     }
     if (achado && !achado.ativo) return erroLeitura("ENDEREÇO INATIVO. AVISE O GESTOR DE ESTOQUE.");
-    dono().endOk = esperado; save();
+    dono().endOk = esperado; save(); pedirEnvio();
     beep(true); vibrate(30);
     renderEndereco(); renderQty();
     setMsg("Endereço confirmado · agora bipe o produto", "ok");
@@ -663,7 +674,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       const outro = (lote ? paradas() : current.itens).find((x) => ehCodigoDoProduto(x, code));
       return erroLeitura(outro ? `Produto de outro endereço (${outro.end}).` : "PRODUTO ERRADO. NÃO PERTENCE A ESTE ENDEREÇO.");
     }
-    dono().prodOk = chaveProduto(); save();
+    dono().prodOk = chaveProduto(); save(); pedirEnvio();
     beep(true); vibrate(30);
     renderEndereco(); renderQty();
     setMsg(lote ? `Produto confirmado · caixa ${vez().pos}: digite a quantidade (${fq(solicitado())})`

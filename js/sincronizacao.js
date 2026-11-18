@@ -22,14 +22,16 @@ export const BATIMENTO_MS = 30_000; // com a fila vazia, dá sinal de vida ao se
 // buscar = fetch (nos testes, um de mentira) · agora = relógio (nos testes, fixo)
 // batimento = true: mesmo com a fila vazia, chama o servidor com a lista vazia (é assim que a Gestão
 // sabe a hora do último contato do separador e mostra "sem contato há X min" quando a rede cai)
-export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => new Date(), batimento = false }) {
+// passo (v63) = { passo, itens } do item da vez: vai só no primeiro envio desta tentativa (ver iniciarSincronizacao)
+export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => new Date(), batimento = false, passo = null }) {
   if (!sessao?.token) return { situacao: "sem-servidor", enviadas: 0, recusadas: [] };
   let enviadas = 0, falou = false;
   const recusadasAgora = [];
 
   for (;;) {
     const lote = acoesPendentes(sessao.login).slice(0, TAMANHO_DO_LOTE);
-    if (!lote.length && (falou || !batimento)) break;
+    if (!lote.length && (falou || !(batimento || passo))) break;
+    const comPasso = !falou && passo;
     falou = true;
     const estado = lerEstadoDaSincronizacao();
 
@@ -40,7 +42,10 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
         headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
         // o login não vai junto: o servidor sabe quem é pelo token.
         // pendentes: quanto há na fila agora (a tela de Dispositivos da Gestão mostra "N ações não enviadas")
-        body: JSON.stringify({ acoes: lote.map(({ login, ...acao }) => acao), pendentes: acoesPendentes(sessao.login).length }),
+        body: JSON.stringify({
+          acoes: lote.map(({ login, ...acao }) => acao), pendentes: acoesPendentes(sessao.login).length,
+          ...(comPasso ? { passo } : {}),
+        }),
       });
     } catch {
       gravarEstadoDaSincronizacao({ ...estado, semRedeDesde: estado.semRedeDesde ?? agora().toISOString() });
@@ -75,16 +80,20 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
 }
 
 // Liga o envio automático. sessao() devolve a sessão atual; aoMudar(resultado) é chamado depois de cada tentativa.
+// passo() (v63) devolve o passo do item da vez ({ passo, itens }) ou null: só vai quando muda (uma vez cada).
 // Devolve pedirEnvio(): a tela chama logo depois de gravar uma ação, para não esperar os 5 segundos.
-export function iniciarSincronizacao({ sessao, aoMudar = () => {} }) {
-  let enviando = false, deNovo = false, ultimoContato = 0;
+export function iniciarSincronizacao({ sessao, aoMudar = () => {}, passo = () => null }) {
+  let enviando = false, deNovo = false, ultimoContato = 0, passoEnviado = "";
   async function tentar() {
     if (enviando) { deNovo = true; return; } // um envio de cada vez; o pedido que chegou no meio roda em seguida
     enviando = true;
     try {
       const batimento = Date.now() - ultimoContato >= BATIMENTO_MS;
-      const r = await sincronizarAgora({ sessao: sessao(), batimento });
-      if (r.situacao === "ok" || r.situacao === "contato") ultimoContato = Date.now();
+      let p = null;
+      try { p = passo(); } catch { p = null; }
+      const chave = p ? JSON.stringify(p) : "", novo = !!p && chave !== passoEnviado;
+      const r = await sincronizarAgora({ sessao: sessao(), batimento, passo: novo ? p : null });
+      if (r.situacao === "ok" || r.situacao === "contato") { ultimoContato = Date.now(); if (novo) passoEnviado = chave; }
       aoMudar(r);
     } finally {
       enviando = false;

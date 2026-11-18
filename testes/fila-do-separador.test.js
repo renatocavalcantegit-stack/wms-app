@@ -93,3 +93,18 @@ test("coletor: pedido novo na fila (o que chegou e ainda não começou) faz o co
   assert.deepEqual(pedidosNovosNaFila(["PV-1"], depois), ["PV-2"]);
   assert.deepEqual(pedidosNovosNaFila(["PV-1", "PV-2"], depois), []);
 });
+
+test("bolinha do item: 1/3 com o endereço, 2/3 com o produto, cheia com a quantidade", async () => {
+  const { andamentoDoItem } = await import("../compartilhado/regras/fila-do-separador.js");
+  const p = (passo) => ({ status: "andamento", item_da_vez: 2, passo_da_vez: passo });
+  const pend = { sequencia: 2, status: "pendente", qtd: 6, qtd_separada: 0 };
+  assert.equal(andamentoDoItem(pend, p(null)), 0);
+  assert.equal(andamentoDoItem(pend, p(1)), 1 / 3);
+  assert.equal(andamentoDoItem(pend, p(2)), 2 / 3);
+  assert.equal(andamentoDoItem({ ...pend, status: "ok", qtd_separada: 6 }, p(2)), 1);
+  // só o item da vez; e só com o pedido em separação
+  assert.equal(andamentoDoItem({ ...pend, sequencia: 3 }, p(2)), 0);
+  assert.equal(andamentoDoItem(pend, { ...p(2), status: "pendente" }), 0);
+  // falta: o que foi separado
+  assert.equal(andamentoDoItem({ ...pend, status: "falta", qtd_separada: 3 }, p(null)), 0.5);
+});

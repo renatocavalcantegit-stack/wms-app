@@ -25,6 +25,7 @@ db/migracoes/001_base.sql   todas as tabelas, comentadas (comece por aqui)
 db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 003 resultado de cada ação
                             · 004 último contato do aparelho e "visto" das ações não aplicadas
                             · 005 fila do separador, rota e aguardando no pedido; aparelho e fim da sessão (login único)
+                            · 006 passo do item da vez (a bolinha do item na gaveta da Gestão)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
 
@@ -109,7 +110,7 @@ npm test
 | `GET /api/pedidos?setor=exp` | sim | pedidos do setor (`exp` ou `mont`), opcional `&status=pendente` |
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
 | `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, **só a fila de quem pediu** (na ordem do quadro), o que ele está separando e o que concluiu hoje, cada um com os itens, `separador_nome`, `doca_id` e `ordem_fila` |
-| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }], pendentes? }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato. `pendentes`: quanto o aparelho tem na fila (a tela de Dispositivos mostra) |
+| `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }], pendentes? }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato. `pendentes`: quanto o aparelho tem na fila (a tela de Dispositivos mostra). `passo?` = `{ passo: 1 ou 2, itens: [{ pedido, sequencia }] }`: o item da vez com o endereço lido (1) ou o produto bipado (2); só para a Gestão acompanhar, não é ação |
 | `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor), `painel` (uma ação foi marcada como vista), `quadro` (o quadro mudou) e `dispositivos` (um aparelho entrou ou saiu) |
 | `GET /api/quadro/separacao?setor=exp` | coordenador do setor | `{ agora, pedidos, separadores }`: o que ainda não foi separado (caixa de entrada e filas, com o andamento) e todos os separadores, com o contato e quantos separaram hoje |
 | `POST /api/quadro/mover` | coordenador do setor | `{ setor, unidade, para, ordem }`: muda o pedido (ou o lote inteiro) de fila. `para` = login, `null` = caixa de entrada; `ordem` = a coluna de destino depois de soltar. **409** em separação ou sem rota |

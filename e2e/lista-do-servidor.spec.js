@@ -6,7 +6,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { abrirPedidoNoColetor } from "./ajuda.js";
+import { abrirPedidoNoColetor, ler, digitarQuantidade } from "./ajuda.js";
 
 const ENV = resolve(import.meta.dirname, "..", "server", ".env");
 test.skip(!existsSync(ENV), "sem server/.env: este teste precisa do banco");
@@ -135,6 +135,16 @@ test("o coordenador distribui no quadro e cada coletor mostra só a fila do seu 
   await expect(gav.locator(".dr-items tbody tr").first()).toBeVisible();
   await expect(gav.locator(".timeline")).toContainText("Separação iniciada por");
   await expect(gav.locator("#gqMover")).toHaveCount(0); // em separação não muda de fila
+  // a bolinha do item da vez enche pelos passos do coletor (v63): endereço 1/3, produto 2/3, quantidade cheia
+  const primeiro = (await pool.query("SELECT endereco_codigo, produto, qtd FROM itens_pedido WHERE pedido_id = 'PV-10421' ORDER BY sequencia LIMIT 1")).rows[0];
+  const bolinha = gav.locator(".dr-items tbody tr").first().locator(".sdot");
+  await expect(bolinha).not.toHaveClass(/part|ok/);
+  await ler(ana, primeiro.endereco_codigo);
+  await expect(bolinha).toHaveAttribute("style", "--p:33%", { timeout: 15_000 });
+  await ler(ana, primeiro.produto);
+  await expect(bolinha).toHaveAttribute("style", "--p:67%", { timeout: 15_000 });
+  await digitarQuantidade(ana, primeiro.qtd);
+  await expect(bolinha).toHaveClass(/ok/, { timeout: 15_000 });
   await gav.locator("[data-gqfechar]").click();
   await expect(gav).toBeHidden();
 

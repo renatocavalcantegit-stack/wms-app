@@ -29,6 +29,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v58 | Gestão | aviso "Simulação" nas abas que ainda não usam o servidor; **Dispositivos** no menu do usuário; coletor: aviso de login recusado em outro aparelho, Sair não sai sem rede |
 | v59–v61 | coletor | toque (uma vez) e vibração quando chega pedido novo na fila |
 | v62 | Gestão · Separação | com o servidor, o card abre a **mesma gaveta da demonstração** (o que o servidor ainda não tem aparece "—") |
+| v63 | Gestão · gaveta do pedido | a bolinha do item da vez enche pelos passos do coletor: endereço lido 1/3, produto bipado 2/3, quantidade digitada cheia (sem texto novo na tela) |
 
 ## Estrutura
 

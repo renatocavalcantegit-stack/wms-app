@@ -14,7 +14,7 @@
 import { esc as escapar } from "./js/util.js";
 import { temServidor } from "./js/sessao.js";
 import { buscarQuadro, moverNoQuadro, definirRota, criarLote, desfazerLote, buscarPedido, ouvirQuadro } from "./js/dados/quadro.js";
-import { unidadesDoQuadro, colunasDoQuadro, situacaoNoQuadro } from "./compartilhado/regras/fila-do-separador.js";
+import { unidadesDoQuadro, colunasDoQuadro, situacaoNoQuadro, andamentoDoItem } from "./compartilhado/regras/fila-do-separador.js";
 import { precisaDeRota, AGUARDANDO } from "./compartilhado/regras/aguardando.js";
 import { ROTAS, rota as rotaPeloId } from "./compartilhado/regras/rotas.js";
 import { MAX_PEDIDOS_LOTE, montarParadas } from "./compartilhado/regras/separacao.js";
@@ -279,8 +279,9 @@ const cronometro = (iso) => `<span class="timer" data-gqdesde="${Date.parse(iso)
 const nomeDe = (login) => estado.quadro?.separadores.find((x) => x.login === login)?.nome || login || "";
 const porcento = (feito, total) => (total ? Math.round((feito / total) * 100) : 0);
 const AGUARDANDO_TAG = `<span class="rt aguard" style="--rc:${AGUARDANDO.cor}"><i></i>AGUARDANDO</span>`;
-const pontinho = (i) => i.status !== "pendente" && i.qtd_separada >= i.qtd ? `<span class="sdot ok">${CHECK}</span>`
-  : i.qtd_separada > 0 ? `<span class="sdot part" style="--p:${porcento(i.qtd_separada, i.qtd)}%"></span>` : `<span class="sdot"></span>`;
+// a bolinha do item: cheia com ✓, ou enchendo pelos passos do coletor (regra andamentoDoItem)
+const pontinho = (i, p) => { const f = andamentoDoItem(i, p);
+  return f >= 1 ? `<span class="sdot ok">${CHECK}</span>` : f > 0 ? `<span class="sdot part" style="--p:${Math.round(f * 100)}%"></span>` : `<span class="sdot"></span>`; };
 
 function abrirGaveta(id) {
   const u = unidadesDoQuadro(estado.quadro.pedidos).find((x) => x.id === id);
@@ -366,7 +367,7 @@ function htmlDoPedido(p) {
   // pedido de lote: as ações ficam na gaveta do lote (o lote anda inteiro)
   const acoes = p.lote ? "" : acoesDeMover({ id: p.id, andamento: vivo }, p.status === "pendente" ? onde : null);
   const linhas = itens.map((i) => `<tr class="${i.status !== "pendente" && i.qtd_separada >= i.qtd ? "ok" : ""} ${atual === i ? "now" : ""}">
-      <td>${pontinho(i)}</td><td><span class="gaddr">${esc(i.endereco_codigo)}</span></td>
+      <td>${pontinho(i, p)}</td><td><span class="gaddr">${esc(i.endereco_codigo)}</span></td>
       <td>${esc(i.descricao)}${atual === i ? `<span class="now-tag">agora</span>` : ""}<small>${esc(i.produto)}${i.status === "falta" ? ` · falta${i.motivo ? `: ${esc(i.motivo)}` : ""}` : ""}</small></td>
       <td class="r">${i.qtd}</td><td class="r">${i.status === "pendente" && !i.qtd_separada ? 0 : i.qtd_separada}</td></tr>`).join("");
   return `

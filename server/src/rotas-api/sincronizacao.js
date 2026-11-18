@@ -8,6 +8,7 @@
 // (as da Separação: iniciar, item, concluir, reabrir). Ver consultas/acoes.js.
 import { registrarAcoes } from "../consultas/acoes.js";
 import { registrarContato } from "../consultas/sessoes.js";
+import { registrarPasso } from "../consultas/pedidos.js";
 
 // o que o aparelho manda: { acoes: [{ id, tipo, dados, feitaEm }, ...] }
 const corpo = {
@@ -30,6 +31,23 @@ const corpo = {
     },
     // quantas ações o aparelho tinha na fila ao mandar este lote (Fase 1e: a tela de Dispositivos mostra)
     pendentes: { type: "integer", minimum: 0 },
+    // o passo do item da vez (v63): 1 = endereço lido, 2 = produto bipado. No lote, um item por caixa da parada.
+    // Só para a Gestão acompanhar (a bolinha do item enche aos poucos); não é ação e não muda o pedido.
+    passo: {
+      type: "object",
+      required: ["passo", "itens"],
+      properties: {
+        passo: { type: "integer", minimum: 1, maximum: 2 },
+        itens: {
+          type: "array", minItems: 1, maxItems: 6,
+          items: {
+            type: "object",
+            required: ["pedido", "sequencia"],
+            properties: { pedido: { type: "string", minLength: 1, maxLength: 40 }, sequencia: { type: "integer", minimum: 1 } },
+          },
+        },
+      },
+    },
   },
 };
 
@@ -42,6 +60,8 @@ export function rotasDeSincronizacao(app, { pool, exigirLogin, tempoReal }) {
     // o que sobrou na fila do aparelho depois deste lote
     const pendentes = request.body.pendentes == null ? null : Math.max(0, request.body.pendentes - novas.length - repetidas.length);
     await registrarContato(pool, request.token, pendentes);
+    // o passo é só acompanhamento: se falhar, as ações (que já foram gravadas) seguem confirmadas para o aparelho
+    if (request.body.passo) await registrarPasso(pool, request.usuario.login, request.body.passo).catch((e) => request.log.warn(e, "passo do item não gravado"));
     if (novas.length) tempoReal.avisar("acoes", { login: request.usuario.login, quantidade: novas.length });
     else tempoReal.avisar("contato", { login: request.usuario.login });
     // o aparelho tira da fila tudo o que está em "novas" e em "repetidas": as duas já estão no servidor.

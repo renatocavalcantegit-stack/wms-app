@@ -84,3 +84,13 @@ export function situacaoNoQuadro(sep, fila, agora) {
   if (fila.some((u) => u.andamento)) return "separando";
   return fila.length ? "aguardando" : "livre";
 }
+
+// Quanto da bolinha do item fica cheio na gaveta do pedido (v63), de 0 a 1.
+// Os três passos do coletor: 1. endereço lido (1/3), 2. produto bipado (2/3), 3. quantidade digitada (cheia).
+// Item com falta: o que foi separado, sobre o pedido. O passo só vale para o item da vez do pedido em separação.
+export function andamentoDoItem(item, pedido) {
+  if (item.status === "ok") return 1;
+  if (item.status === "falta") return item.qtd ? Math.min(1, item.qtd_separada / item.qtd) : 0;
+  if (pedido.status === "andamento" && pedido.item_da_vez === item.sequencia && [1, 2].includes(pedido.passo_da_vez)) return pedido.passo_da_vez / 3;
+  return 0;
+}

@@ -175,3 +175,22 @@ test("o coordenador devolveu o pedido para a caixa de entrada: recusado com o av
   const r = (await sincronizar(token, [acao("separacao.iniciar", { pedido: "PV-10426/1" })])).json();
   assert.equal(r.recusadas[0].motivo, "O COORDENADOR TIROU O PV-10426/1 DA SUA FILA.");
 });
+
+test("passo do item da vez (v63): grava para a Gestão, só no pedido em separação de quem mandou", async () => {
+  const token = await entrarSeparador(); // o PV-10427 ficou em separação com ele (teste "ação recusada...")
+  const passo = (token, p) =>
+    app.inject({ method: "POST", url: "/api/sincronizar", headers: { authorization: `Bearer ${token}` }, payload: { acoes: [], passo: p } });
+  const ler = async (id) => (await pool.query("SELECT item_da_vez, passo_da_vez FROM pedidos WHERE id = $1", [id])).rows[0];
+  assert.equal((await passo(token, { passo: 1, itens: [{ pedido: "PV-10427", sequencia: 1 }] })).statusCode, 200);
+  assert.deepEqual(await ler("PV-10427"), { item_da_vez: 1, passo_da_vez: 1 });
+  await passo(token, { passo: 2, itens: [{ pedido: "PV-10427", sequencia: 1 }] });
+  assert.deepEqual(await ler("PV-10427"), { item_da_vez: 1, passo_da_vez: 2 });
+  // outro separador, ou pedido que não está em separação: ignorado, sem erro
+  const outro = await entrarSeparador2();
+  assert.equal((await passo(outro, { passo: 1, itens: [{ pedido: "PV-10427", sequencia: 2 }] })).statusCode, 200);
+  assert.deepEqual(await ler("PV-10427"), { item_da_vez: 1, passo_da_vez: 2 });
+  await passo(token, { passo: 1, itens: [{ pedido: "PV-10428", sequencia: 1 }] });
+  assert.deepEqual(await ler("PV-10428"), { item_da_vez: null, passo_da_vez: null });
+  // passo inválido: 400
+  assert.equal((await passo(token, { passo: 3, itens: [{ pedido: "PV-10427", sequencia: 1 }] })).statusCode, 400);
+});

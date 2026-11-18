@@ -45,6 +45,17 @@ export async function buscarPedido(pool, id) {
   return { ...pedido, itens: itens.rows };
 }
 
+// O passo do item da vez (v63): grava em que item e em que passo o separador está, para a Gestão.
+// Só vale no pedido que está em separação com quem mandou (o resto é ignorado, sem erro).
+export async function registrarPasso(pool, login, { passo, itens }) {
+  await pool.query(
+    `UPDATE pedidos p SET item_da_vez = x.sequencia, passo_da_vez = $3
+       FROM json_to_recordset($1::json) AS x(pedido text, sequencia integer)
+      WHERE p.id = x.pedido AND p.separador = $2 AND p.status = 'andamento'`,
+    [JSON.stringify(itens), login, passo],
+  );
+}
+
 // Tudo o que o coletor precisa para montar a lista do separador, numa chamada só (Fase 1d):
 // cada pedido com os itens. O coletor guarda uma cópia e continua com ela quando fica sem rede.
 // Desde a Fase 1e, cada separador vê só a FILA DELE (o que o coordenador mandou para ele, na ordem da fila),
