@@ -7,9 +7,10 @@
 // Assim o sistema sabe que ele está na prateleira certa com o produto certo, e a falta "endereço vazio" é confiável.
 // As regras ficam em compartilhado/regras/separacao.js.
 import { USERS, PERFIS, SETORES, session, login, logout, setSetor, homeUrl, temServidor, loginNoServidor } from "./js/sessao.js";
-import { enfileirar, totalPendente, lerEstadoDaSincronizacao, gravarEstadoDaSincronizacao, aoMudarFila } from "./js/dados/fila.js";
+import { enfileirar, acoesPendentes, totalPendente, lerEstadoDaSincronizacao, gravarEstadoDaSincronizacao, aoMudarFila } from "./js/dados/fila.js";
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
-import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos } from "./js/dados/separacao.js";
+import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
+import { juntarComServidor, comOutroSeparador } from "./compartilhado/regras/juntar-pedidos.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -73,6 +74,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   function aposEnvio(r) {
     r.recusadas.forEach((x) => { toast(`${x.pedido || "Ação"}: ${x.motivo}`); beep(false); vibrate([80, 50, 80]); });
     renderSinc();
+    if (r.enviadas) atualizarDoServidor();
   }
   // a linha de estado no início e na separação: tudo enviado, enviando, sem rede há X min, sessão vencida
   function renderSinc() {
@@ -140,6 +142,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (!sess.setor) return openSetor(false);
     load();
     renderHome(); show("viewHome");
+    atualizarDoServidor();
   }
 
   // ---------- o gestor mudou o pedido em outra tela (corte de item ou cancelamento) ----------
@@ -169,6 +172,34 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (visivel("viewHome")) renderHome();
   }
   ["exp", "mont"].forEach((s) => aoMudarPedidos(s, () => s === setor() && recarregarPorOutraTela()));
+
+  // ---------- lista do servidor (Fase 1d) ----------
+  // Com servidor, a lista vem do servidor (todos os aparelhos veem o mesmo) e o aparelho guarda uma cópia:
+  // sem rede, segue com ela. Quem decide o que vale (aparelho ou servidor) é compartilhado/regras/juntar-pedidos.js:
+  // o que ainda está na fila de envio nunca é apagado.
+  // Só atualiza com a lista na tela e nenhuma janela aberta: nunca mexe no pedido que o separador está separando.
+  const ATUALIZAR_LISTA_MS = 30_000;
+  const podeAtualizarLista = () => visivel("viewHome") && $("#scrim").hidden;
+  let baixando = false;
+  async function atualizarDoServidor() {
+    if (!sess?.token || sess.perfil !== "sep" || !sess.setor || baixando || !podeAtualizarLista()) return;
+    baixando = true;
+    try {
+      const s = setor(), r = await baixarDoServidor(sess, s);
+      if (!r.ok || s !== setor() || !podeAtualizarLista()) return;
+      const comFila = new Set(acoesPendentes(sess.login).map((a) => a.dados.pedido));
+      ({ pedidos: orders, lotes } = juntarComServidor({ locais: orders, lotesLocais: lotes, doServidor: r.pedidos, comFila }));
+      save();
+      // na seleção de "Separar vários", tira o pedido que outro separador pegou nesse meio-tempo
+      [...selecionados].forEach((id) => { const o = pedido(id); if (!o || !podeSelecionar(o)) selecionados.delete(id); });
+      renderHome();
+    } finally { baixando = false; }
+  }
+  setInterval(atualizarDoServidor, ATUALIZAR_LISTA_MS);
+  window.addEventListener("online", atualizarDoServidor);
+  // o pedido está com outro separador (a lista veio do servidor): não abre
+  const comOutro = (o) => comOutroSeparador(o, sess?.login);
+  function avisarComOutro(o) { toast(`${nomeDo(o)} está com ${o.operador}.`); beep(false); vibrate([80, 50, 80]); }
 
   // ---------- setor (Expedição / Montagem) ----------
   function openSetor(canBack) {
@@ -228,13 +259,15 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   function orderCard(o) {
     const pct = Math.round((doneCount(o) / o.itens.length) * 100);
     const sel = selecionando && podeSelecionar(o), marcado = selecionados.has(o.id);
+    const outro = comOutro(o);
     const tag = o.cancelado ? `<span class="tag alta">Cancelado</span>`
+      : outro ? `<span class="tag andamento">Com ${esc(String(o.operador).split(" ")[0])}</span>`
       : o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
       : o.prio === "alta" ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Pendente</span>`;
     const extra = o.parte ? `<p class="order-note">Pedido dividido pelo coordenador · ${esc(o.parte.ruas || "")}</p>` : "";
     const doca = o.doca ? `<p class="order-note ok">Deixado na doca ${o.doca.codigo}</p>` : "";
-    return `<button class="order ${o.status === "concluido" ? "is-done" : ""} ${selecionando && !sel ? "is-off" : ""} ${marcado ? "is-sel" : ""}" data-id="${esc(o.id)}">
+    return `<button class="order ${o.status === "concluido" ? "is-done" : ""} ${(selecionando && !sel) || outro ? "is-off" : ""} ${marcado ? "is-sel" : ""}" data-id="${esc(o.id)}">
       <div class="order-top">
         ${sel ? `<span class="order-cb">${marcado ? CHECK : ""}</span>` : ""}
         <div class="grow"><p class="order-id">${esc(nomeDo(o))}</p><p class="order-client">${esc(o.cliente)}</p></div>${tag}
@@ -250,8 +283,10 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const ps = pedidosDoLote(l);
     const itens = ps.reduce((t, o) => t + o.itens.length, 0), un = ps.reduce((t, o) => t + units(o), 0);
     const feitos = ps.reduce((t, o) => t + doneCount(o), 0);
-    const tag = l.status === "andamento" ? `<span class="tag andamento">Em separação</span>` : `<span class="tag lote">Lote</span>`;
-    return `<button class="order lote" data-lote="${l.id}">
+    const outro = ps.find(comOutro);
+    const tag = outro ? `<span class="tag andamento">Com ${esc(String(outro.operador).split(" ")[0])}</span>`
+      : l.status === "andamento" ? `<span class="tag andamento">Em separação</span>` : `<span class="tag lote">Lote</span>`;
+    return `<button class="order lote ${outro ? "is-off" : ""}" data-lote="${l.id}">
       <div class="order-top">
         <div class="grow"><p class="order-id">${l.id} · ${ps.length} pedidos</p>
         <p class="order-client">${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma viagem só</p></div>${tag}
@@ -295,9 +330,13 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
 
   $("#orderList").addEventListener("click", (e) => {
     const lc = e.target.closest("[data-lote]");
-    if (lc) return abrirLote(lotes.find((l) => l.id === lc.dataset.lote));
+    if (lc) {
+      const l = lotes.find((x) => x.id === lc.dataset.lote), outro = pedidosDoLote(l).find(comOutro);
+      return outro ? avisarComOutro(outro) : abrirLote(l);
+    }
     const card = e.target.closest(".order"); if (!card) return;
     const o = pedido(card.dataset.id);
+    if (comOutro(o)) return avisarComOutro(o);
     if (selecionando) {
       if (!podeSelecionar(o)) return toast(o.parte ? "Parte de pedido dividido não entra em lote." : "Só pedidos pendentes entram no lote.");
       if (!selecionados.has(o.id) && selecionados.size >= MAX_PEDIDOS_LOTE) return toast(`O lote aceita no máximo ${MAX_PEDIDOS_LOTE} pedidos.`);
@@ -384,8 +423,11 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const ps = [...selecionados].map(pedido);
     const erro = validarLote(ps); if (erro) return toast(erro);
     const posicoes = posicoesDoLote(ps);
-    const n = Math.max(0, ...lotes.map((l) => +l.id.slice(2) || 0)) + 1;
-    const l = { id: `L-${n}`, pedidos: ps.map((o) => o.id).sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes, status: "pendente",
+    // código único entre aparelhos: dois coletores montando lote ao mesmo tempo não podem gerar o mesmo "L-2"
+    // (o servidor junta os pedidos pelo código do lote). Os últimos 4 caracteres da hora, em base 36.
+    let id;
+    do id = `L-${Date.now().toString(36).slice(-4).toUpperCase()}`; while (lotes.some((x) => x.id === id));
+    const l = { id, pedidos: ps.map((o) => o.id).sort((a, b) => posicoes[a].localeCompare(posicoes[b])), posicoes, status: "pendente",
       criadoPor: { tipo: "separador", login: sess.login, nome: user }, criado: Date.now(), inicio: null, fim: null, operador: null, atual: 0 };
     ps.forEach((o) => Object.assign(o, { lote: l.id, pos: posicoes[o.id] }));
     lotes.push(l);
@@ -851,10 +893,17 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const ts = sess.perfil === "sep" && !!sess.setor;
     $("#menuSetorL").hidden = $("#menuSetorBtn").hidden = !ts;
     if (ts) $("#menuSetor").textContent = SETORES[sess.setor];
+    $("#menuReset").textContent = sess.token ? "Atualizar a lista do servidor" : "Reiniciar dados de demonstração";
     openSheet("sheetMenu");
   }));
   $("#menuSetorBtn").addEventListener("click", () => openSetor(true));
   $("#menuReset").addEventListener("click", () => {
+    // com servidor, a lista é a do servidor: baixa de novo (o que está na fila de envio continua guardado)
+    if (sess?.token) {
+      closeSheets(); selecionando = false; selecionados.clear();
+      goHome(); toast("Atualizando a lista do servidor…");
+      return;
+    }
     orders = pedidosDeDemonstracao(setor()); lotes = lotesDeDemonstracao(setor()); save(); closeSheets();
     selecionando = false; selecionados.clear();
     document.dispatchEvent(new Event("wms:reset"));

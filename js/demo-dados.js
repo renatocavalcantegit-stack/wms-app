@@ -33,7 +33,7 @@ export const EQUIPE_SETOR = { s9: "mont", s10: "mont", s11: "mont", s12: "mont" 
 // ---------- catálogo ----------
 // tipo do produto (só muda o ícone no coletor e o peso de exemplo no cadastro), deduzido da descrição
 const ACESSORIO = /^(BOMBA|CADEADO|CARAMANHOLA|SUPORTE CARAMANHOLA|FAROL|PISCA|CAPACETE|LUVA|ADESIVO|CAPA |RETROVISOR|BUZINA|CAMPAINHA|REFLETOR)/;
-const tipoDoProduto = (desc) => (/^BICICLETA /.test(desc) ? "bike" : ACESSORIO.test(desc) ? "acess" : "peca");
+export const tipoDoProduto = (desc) => (/^BICICLETA /.test(desc) ? "bike" : ACESSORIO.test(desc) ? "acess" : "peca");
 // códigos de barras de cada produto vêm da planilha real (o 1º é o principal); o do catálogo fica só se o produto não estiver nela
 const CODIGOS_REAIS = new Map(PRODUTOS_REAIS.map(([codigo, , , cods]) => [codigo, cods || []]));
 const doCatalogo = (segmento) => ([sku, desc, un, ean, vendidos]) => {

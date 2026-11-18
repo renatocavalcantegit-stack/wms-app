@@ -19,19 +19,23 @@ export async function listarPedidos(pool, { setor, status = null }) {
   return rows;
 }
 
-// Um pedido com os itens na ordem de separação. Cada item traz a descrição
-// e os códigos de barras do produto (para conferir o bipe no aparelho, mesmo sem rede).
+// Colunas de cada item: a descrição e os códigos de barras do produto vão junto
+// (o coletor confere o bipe no próprio aparelho, mesmo sem rede).
+const COLUNAS_DO_ITEM = `
+  i.pedido_id, i.sequencia, i.produto, pr.descricao, pr.un, pr.checkout, i.endereco_codigo,
+  i.qtd, i.qtd_separada, i.status, i.motivo,
+  coalesce(
+    (SELECT array_agg(e.codigo ORDER BY e.qtd, e.id) FROM embalagens e
+      WHERE e.produto = i.produto AND e.codigo IS NOT NULL),
+    '{}') AS codigos_de_barras`;
+
+// Um pedido com os itens na ordem de separação.
 export async function buscarPedido(pool, id) {
   const pedido = (await pool.query("SELECT * FROM pedidos WHERE id = $1", [id])).rows[0];
   if (!pedido) return null;
 
   const itens = await pool.query(
-    `SELECT i.sequencia, i.produto, pr.descricao, pr.un, pr.checkout, i.endereco_codigo,
-            i.qtd, i.qtd_separada, i.status, i.motivo,
-            coalesce(
-              (SELECT array_agg(e.codigo ORDER BY e.qtd, e.id) FROM embalagens e
-                WHERE e.produto = i.produto AND e.codigo IS NOT NULL),
-              '{}') AS codigos_de_barras
+    `SELECT ${COLUNAS_DO_ITEM}
        FROM itens_pedido i
        JOIN produtos pr ON pr.codigo = i.produto
       WHERE i.pedido_id = $1
@@ -39,4 +43,34 @@ export async function buscarPedido(pool, id) {
     [id],
   );
   return { ...pedido, itens: itens.rows };
+}
+
+// Tudo o que o coletor precisa para montar a lista do setor, numa chamada só (Fase 1d):
+// os pedidos abertos e os concluídos hoje, cada um com os itens. O coletor guarda uma cópia
+// e continua com ela quando fica sem rede.
+//   separador_nome  nome de quem está com o pedido (o coletor mostra "Com Fulano")
+//   doca_id         ID do endereço da doca (o coletor conta quantos pedidos esperam em cada doca)
+export async function pedidosDoColetor(pool, setor) {
+  const pedidos = (await pool.query(
+    `SELECT p.*, u.nome AS separador_nome,
+            (SELECT min(e.id) FROM enderecos e WHERE e.codigo = p.doca) AS doca_id
+       FROM pedidos p
+       LEFT JOIN usuarios u ON u.login = p.separador
+      WHERE p.setor = $1
+        AND (p.status <> 'concluido' OR p.fim >= current_date)
+      ORDER BY (p.prioridade = 'alta') DESC, p.chegada, p.id`,
+    [setor],
+  )).rows;
+  if (!pedidos.length) return [];
+
+  const itens = (await pool.query(
+    `SELECT ${COLUNAS_DO_ITEM}
+       FROM itens_pedido i
+       JOIN produtos pr ON pr.codigo = i.produto
+      WHERE i.pedido_id = ANY($1)
+      ORDER BY i.pedido_id, i.sequencia`,
+    [pedidos.map((p) => p.id)],
+  )).rows;
+  const porPedido = Map.groupBy(itens, (i) => i.pedido_id);
+  return pedidos.map((p) => ({ ...p, itens: porPedido.get(p.id) || [] }));
 }

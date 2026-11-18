@@ -1,12 +1,16 @@
-# Servidor do WMS (Fase 1c)
+# Servidor do WMS (Fase 1d)
 
 API em Node.js (Fastify) com banco PostgreSQL, em SQL puro. O servidor também entrega as telas do app.
 - Fase 1a: o servidor APLICA as ações da Separação que chegam pelo `/api/sincronizar`.
 - Fase 1b: o coletor da Separação entra pelo servidor e manda as ações por uma fila de envio,
   que funciona sem rede (`js/dados/fila.js` e `js/sincronizacao.js`).
-- Fase 1c (esta): a Gestão ganha a aba **Ao vivo** (`gestao-ao-vivo.js`), com a separação de verdade:
+- Fase 1c: a Gestão ganha a aba **Ao vivo** (`gestao-ao-vivo.js`), com a separação de verdade:
   andamento dos pedidos, último contato de cada separador e as ações não aplicadas (conflitos).
   O coletor dá sinal de vida a cada 30 s (o "batimento"), mesmo sem ação nova.
+- Fase 1d (esta): a **lista do coletor vem do servidor** (`GET /api/separacao`). Todos os aparelhos veem o mesmo:
+  o pedido que outro separador pegou aparece "Com Fulano" e não abre; o concluído aparece concluído.
+  O coletor guarda uma cópia para trabalhar sem rede, e o que está na fila de envio nunca é apagado
+  (regra em `compartilhado/regras/juntar-pedidos.js`).
 
 As outras telas (Conferência, Estoque...) e os outros quadros da Gestão continuam com os dados só no aparelho,
 como na demonstração. A aba Ao vivo só aparece quando o app é aberto pelo servidor.
@@ -25,7 +29,7 @@ src/senha.js                PIN guardado com hash (scrypt), nunca o PIN
 src/consultas/              TODO o SQL, separado por assunto
   sessoes.js                usuário, criar sessão de turno, quem é o dono do token
   produtos.js               produto pelo código de barras ou código interno
-  pedidos.js                lista e detalhe dos pedidos da separação
+  pedidos.js                lista e detalhe dos pedidos da separação; a lista do coletor (com os itens)
   acoes.js                  grava as ações sincronizadas sem repetir e aplica cada uma
   aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
   painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas
@@ -98,6 +102,7 @@ npm test
 | `GET /api/produtos/:codigo` | sim | produto pelo código de barras ou código interno, com embalagens e endereços com saldo |
 | `GET /api/pedidos?setor=exp` | sim | pedidos do setor (`exp` ou `mont`), opcional `&status=pendente` |
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
+| `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, os abertos e os concluídos hoje, cada um com os itens, `separador_nome` e `doca_id` |
 | `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }] }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato |
 | `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor) e `painel` (uma ação foi marcada como vista) |
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
@@ -150,3 +155,21 @@ Situação de cada separador (regra em `compartilhado/regras/painel.js`):
 | Não entrou no turno | nunca entrou com o servidor, ou o último contato tem mais de 14 h |
 
 Com o coletor sem rede, as ações continuam na fila do aparelho: a Gestão só vê o andamento quando a rede volta.
+
+## Lista do coletor (Fase 1d)
+
+O coletor baixa a lista ao entrar no setor, a cada 30 s com a lista na tela, quando a rede volta e logo depois
+de enviar ações. Nunca enquanto o separador está dentro de um pedido. No menu, com servidor,
+"Atualizar a lista do servidor" baixa na hora.
+
+Pedido por pedido, o que vale (`compartilhado/regras/juntar-pedidos.js`):
+
+| Situação | Fica |
+|---|---|
+| tem ação na fila do aparelho (ainda não chegou ao servidor) | a versão do aparelho |
+| sem ação na fila | a do servidor, com o andamento de tela do aparelho (item em que parou, endereço e produto confirmados) |
+| existe só no aparelho, sem ação na fila | sai da lista |
+
+Os lotes saem dos próprios pedidos (`lote` e `posicao_lote`). O código do lote montado no coletor é único entre
+aparelhos (ex.: `L-K3F9`), porque o servidor junta os pedidos pelo código.
+Continuam só no aparelho: baixa de estoque, Conferência e Ocorrências (corte e cancelamento).
