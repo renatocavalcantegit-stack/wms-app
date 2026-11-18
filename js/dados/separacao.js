@@ -74,7 +74,7 @@ const horaCurta = (iso) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-
 export function pedidoDoServidor(p) {
   const fim = ms(p.fim);
   return {
-    id: p.id, cliente: p.cliente, cidade: p.cidade, prio: p.prioridade, hora: horaCurta(p.chegada), aguardando: !!p.aguardando,
+    id: p.id, cliente: p.cliente, cidade: p.cidade, prio: p.prioridade, hora: horaCurta(p.chegada), aguardando: !!p.aguardando, rota: p.rota || null,
     status: p.status, inicio: ms(p.inicio), fim,
     operador: p.separador_nome || p.separador || null,
     separadorLogin: p.separador || null, // login de quem está com o pedido (para "Com Fulano")

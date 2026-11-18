@@ -1,6 +1,6 @@
 // Service worker: mantém o app funcionando offline.
-const CACHE = "wms-bb-v63";
-const V = "?v=63";
+const CACHE = "wms-bb-v64";
+const V = "?v=64";
 const ASSETS = ["./", "index.html", "conferencia.html", "gestao.html", "montagem.html", "gestao.css" + V, "gestao.js" + V, "styles.css" + V, "app.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V,
   "estoque.html", "gestao-estoque.html", "estoque.css" + V, "estoque.js" + V, "gestao-estoque.css" + V, "gestao-estoque.js" + V, "etiqueta-recebimento.css" + V,
   // módulos importados pelas telas (o import não leva ?v; o service worker busca sempre a versão nova na rede)

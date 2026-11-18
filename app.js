@@ -14,6 +14,8 @@ import { MOTIVOS_DE_FIM } from "./compartilhado/regras/login-unico.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
 import { juntarComServidor, comOutroSeparador, pedidosNovosNaFila } from "./compartilhado/regras/juntar-pedidos.js";
 import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
+import { rota as rotaPeloId } from "./compartilhado/regras/rotas.js";
+import { cadastroDoCliente } from "./js/dados/clientes.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -301,6 +303,12 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   // pode entrar num lote: pedido que ainda não começou, fora de lote e que não é parte de pedido dividido
   const podeSelecionar = (o) => o.status === "pendente" && !o.lote && !o.parte;
 
+  // etiqueta da rota no card (a mesma da Gestão: bolinha com a cor da rota e o nome).
+  // Fica no lugar da cidade. Com servidor, a rota vem no pedido; na demonstração, do cadastro do cliente.
+  // Aguardando não tem rota (continua a cidade).
+  const rotaDoPedido = (o) => (ehAguardando(o) || setor() === "mont" ? null : rotaPeloId(o.rota || cadastroDoCliente(o)?.rota));
+  const etiquetaDaRota = (r) => (r ? `<span class="order-rota" style="--rc:${r.cor}"><i></i>${esc(r.nome)}</span>` : "");
+
   function orderCard(o) {
     const pct = Math.round((doneCount(o) / o.itens.length) * 100);
     const sel = selecionando && podeSelecionar(o), marcado = selecionados.has(o.id);
@@ -319,7 +327,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
         <div class="grow"><p class="order-id">${esc(nomeDo(o))}</p><p class="order-client">${esc(o.cliente)}</p></div>${tag}
       </div>
       ${extra}
-      <div class="order-meta"><span><b>${o.itens.length}</b> itens</span><span><b>${units(o)}</b> un.</span><span>${o.cidade}</span><span>${o.hora}</span></div>
+      <div class="order-meta"><span><b>${o.itens.length}</b> itens</span><span><b>${units(o)}</b> un.</span>${rotaDoPedido(o) ? etiquetaDaRota(rotaDoPedido(o)) : `<span>${o.cidade}</span>`}<span>${o.hora}</span></div>
       ${o.status !== "pendente" ? `<div class="order-bar"><i style="width:${pct}%"></i></div>` : ""}
       ${doca}
     </button>`;
@@ -338,7 +346,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
         <p class="order-client">${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma viagem só</p></div>${tag}
       </div>
       <div class="lote-peds">${ps.map((o) => `<span><b class="cx-pos">${l.posicoes[o.id]}</b>${esc(o.id)}</span>`).join("")}</div>
-      <div class="order-meta"><span><b>${itens}</b> itens</span><span><b>${un}</b> un.</span></div>
+      <div class="order-meta"><span><b>${itens}</b> itens</span><span><b>${un}</b> un.</span>${[...new Map(ps.map(rotaDoPedido).filter(Boolean).map((r) => [r.id, r])).values()].map(etiquetaDaRota).join("")}</div>
       ${l.status === "andamento" ? `<div class="order-bar"><i style="width:${Math.round((feitos / itens) * 100)}%"></i></div>` : ""}
     </button>`;
   }

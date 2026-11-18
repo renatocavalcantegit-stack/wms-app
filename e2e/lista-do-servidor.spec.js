@@ -96,6 +96,10 @@ test("o coordenador distribui no quadro e cada coletor mostra só a fila do seu 
   // cada um vê só a sua fila, na ordem do quadro (nada da caixa de entrada, nada do outro)
   await expect.poll(() => idsDaLista(ana)).toEqual(["PV-10421", "PV-10422", "L-1", "PV-10426/1"]);
   await expect.poll(() => idsDaLista(bruna)).toEqual(["PV-10426/2"]);
+  // a etiqueta da rota no lugar da cidade (v64); o lote mostra a rota de cada pedido
+  await expect(ana.locator('button.order[data-id="PV-10421"] .order-rota')).toHaveText("Centro");
+  await expect(ana.locator('button.order[data-id="PV-10421"] .order-meta')).not.toContainText("Fortaleza");
+  await expect(ana.locator('button.order[data-lote="L-1"] .order-rota')).toHaveText(["Ceará Transporte", "Eusébio"]);
 
   // o coordenador manda o aguardando para o INÍCIO da fila da Bruna
   await arrastar(g, "PV-10423", "separador2", "inicio");
