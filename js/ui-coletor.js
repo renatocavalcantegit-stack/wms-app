@@ -42,24 +42,24 @@ if (typeof document !== "undefined") {
 }
 
 // toque de PEDIDO NOVO NA FILA (Fase 1e): o coordenador mandou pedido para este separador.
-// Só som (e vibração), sem notificação. Três notas subindo, duas vezes; bem diferente do bipe da leitura.
+// Só som (e vibração), sem notificação. Três notas subindo, uma vez; bem diferente do bipe da leitura.
 // O navegador só toca som depois de um toque na tela: no coletor isso já aconteceu no login.
 export function somDePedidoNovo() {
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === "suspended") actx.resume();
     const notas = [659, 831, 988]; // mi, sol sustenido, si
-    [0, 0.75].forEach((rodada) => notas.forEach((f, i) => {
-      const t = actx.currentTime + rodada + i * 0.16;
+    notas.forEach((f, i) => {
+      const t = actx.currentTime + i * 0.16;
       const o = actx.createOscillator(), g = actx.createGain();
       o.type = "triangle"; o.frequency.value = f;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
       o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.34);
-    }));
+    });
   } catch {}
-  vibrate([120, 80, 120, 80, 240]);
+  vibrate([120, 80, 240]);
 }
 
 // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)

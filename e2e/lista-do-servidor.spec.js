@@ -101,7 +101,7 @@ test("o coordenador distribui no quadro e cada coletor mostra só a fila do seu 
   await arrastar(g, "PV-10423", "separador2", "inicio");
   await expect.poll(async () => (await designado("PV-10423")).designado_para).toBe("separador2");
   // conta os toques de "pedido novo" (o som em si o teste não ouve)
-  await bruna.evaluate(() => { window.__toques = 0; const v = navigator.vibrate?.bind(navigator); navigator.vibrate = (p) => { if (Array.isArray(p) && p.length === 5) window.__toques++; return v ? v(p) : true; }; });
+  await bruna.evaluate(() => { window.__toques = 0; const v = navigator.vibrate?.bind(navigator); navigator.vibrate = (p) => { if (Array.isArray(p) && p.join() === "120,80,240") window.__toques++; return v ? v(p) : true; }; });
   await atualizarLista(bruna);
   await expect.poll(() => idsDaLista(bruna)).toEqual(["PV-10423", "PV-10426/2"]);
   await expect(bruna.locator("#toast")).toContainText("Pedido novo na sua fila: PV-10423");
