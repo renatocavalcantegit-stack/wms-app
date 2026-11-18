@@ -507,3 +507,7 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 .gx-intel.on i { background: #22C55E; box-shadow: 0 0 0 3px rgba(34, 197, 94, .25); }
 .gx-intel-sub { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11.5px; font-weight: 600; color: #86EFAC; }
 .gx-intel-sub i { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #22C55E; }
+
+/* card marcado na caixa da separação (para agrupar em lote): o ✓ aparece e o card ganha contorno */
+.card.sel .cb { background: var(--red-brand); border-color: var(--red-brand); }
+.card.sel:not(.cc) { box-shadow: 0 0 0 2px var(--red-brand); }

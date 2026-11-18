@@ -1296,6 +1296,24 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     if (group) moveMany(board, group, col, idx); else move(board, id, col, idx);
   });
   boardEl.addEventListener("dragend", endDrag);
+
+  // rolagem automática enquanto arrasta: perto da borda esquerda/direita do quadro, ele rola para o lado;
+  // perto do alto/fim de uma coluna, a coluna rola. Quanto mais perto da borda, mais rápido.
+  const BORDA = 90, VEL_MAX = 24;
+  let ponteiro = null, rolando = 0;
+  const velocidade = (dist) => (dist < BORDA ? Math.ceil(Math.min(1, (BORDA - Math.max(0, dist)) / BORDA) * VEL_MAX) : 0);
+  document.addEventListener("dragover", (e) => { if (dragId) ponteiro = { x: e.clientX, y: e.clientY, alvo: e.target }; });
+  function rolarArrastando() {
+    if (!dragId) { rolando = 0; ponteiro = null; return; }
+    if (ponteiro) {
+      const b = boardEl.getBoundingClientRect();
+      boardEl.scrollLeft += velocidade(b.right - ponteiro.x) - velocidade(ponteiro.x - b.left);
+      const list = ponteiro.alvo?.closest?.(".gx-list");
+      if (list) { const l = list.getBoundingClientRect(); list.scrollTop += velocidade(l.bottom - ponteiro.y) - velocidade(ponteiro.y - l.top); }
+    }
+    rolando = requestAnimationFrame(rolarArrastando);
+  }
+  boardEl.addEventListener("dragstart", () => { if (dragId && !rolando) rolando = requestAnimationFrame(rolarArrastando); });
   function endDrag() {
     ph.remove();
     $$(".dragging").forEach((x) => x.classList.remove("dragging"));
@@ -1654,11 +1672,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
           <div><b>${p.nota || "—"}</b><small>nota fiscal</small></div>`}
         </div>
         ${liveHtml}
+        ${actions}
         <section>
           <h4 class="dr-h">Itens · ordem de coleta</h4>
           <table class="dr-items"><thead><tr><th></th><th>Endereço</th><th>Produto</th><th class="r">Pedido</th><th class="r">Separado</th>${showConf ? `<th class="r">Conferido</th>` : ""}</tr></thead><tbody>${rows}</tbody></table>
         </section>
-        ${actions}
         <section><h4 class="dr-h">Histórico</h4>${timeline(p.hist)}</section>
       </div>`;
     tickTimers();
@@ -1728,11 +1746,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
           <div><b>${pc}%</b><small>separado</small></div>
         </div>
         ${isL ? `<div class="dr-live"><div class="cl-row"><span class="cl-tag"><i></i>Separando agora · ${esc(nameOf(l.sep.resp))}</span><span class="timer" data-since="${l.sep.inicio}">00:00</span></div><div class="cl-bar"><i style="width:${pc}%"></i></div></div>` : ""}
+        ${actions}
         <section><h4 class="dr-h">Pedidos · caixa no carrinho</h4>
           <table class="dr-items"><thead><tr><th>Caixa</th><th>Pedido</th><th>Rota</th><th class="r">Itens</th><th class="r">Separado</th></tr></thead><tbody>${peds}</tbody></table></section>
         <section><h4 class="dr-h">Paradas · ordem da viagem</h4>
           <table class="dr-items"><thead><tr><th>Endereço</th><th>Produto</th><th>Por caixa</th><th class="r">Total</th></tr></thead><tbody>${pr}</tbody></table></section>
-        ${actions}
       </div>`;
     tickTimers();
     $("#drClose").onclick = closeDrawer;
