@@ -86,3 +86,10 @@ test("quadro: o lote vira um card; caixa com sem rota e aguardando no alto; fila
   assert.equal(situacaoNoQuadro(sep(), [lote], agora), "aguardando");
   assert.equal(situacaoNoQuadro(sep(), [], agora), "livre");
 });
+
+test("coletor: pedido novo na fila (o que chegou e ainda não começou) faz o coletor tocar", async () => {
+  const { pedidosNovosNaFila } = await import("../compartilhado/regras/juntar-pedidos.js");
+  const depois = [{ id: "PV-1", status: "pendente" }, { id: "PV-2", status: "pendente" }, { id: "PV-3", status: "andamento" }];
+  assert.deepEqual(pedidosNovosNaFila(["PV-1"], depois), ["PV-2"]);
+  assert.deepEqual(pedidosNovosNaFila(["PV-1", "PV-2"], depois), []);
+});

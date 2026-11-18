@@ -71,3 +71,10 @@ export function statusDoLote(pedidos) {
 // o pedido está em separação com OUTRO separador (o coletor mostra "Com Fulano" e não deixa abrir)
 export const comOutroSeparador = (o, login) =>
   o.status === "andamento" && !!o.separadorLogin && o.separadorLogin !== login;
+
+// Pedidos que CHEGARAM na fila do separador desde a última lista (o coletor toca o som de pedido novo).
+// antes = IDs que já estavam no aparelho · depois = pedidos da lista nova. Só conta o que ainda não começou.
+export const pedidosNovosNaFila = (antes, depois) => {
+  const tinha = new Set(antes);
+  return depois.filter((o) => o.status === "pendente" && !tinha.has(o.id)).map((o) => o.id);
+};

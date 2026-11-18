@@ -12,14 +12,14 @@ import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { sairDoAparelho } from "./js/sair.js";
 import { MOTIVOS_DE_FIM } from "./compartilhado/regras/login-unico.js";
 import { carregarPedidos, salvarPedidos, pedidosDeDemonstracao, carregarLotes, salvarLotes, lotesDeDemonstracao, aoMudarPedidos, baixarDoServidor } from "./js/dados/separacao.js";
-import { juntarComServidor, comOutroSeparador } from "./compartilhado/regras/juntar-pedidos.js";
+import { juntarComServidor, comOutroSeparador, pedidosNovosNaFila } from "./compartilhado/regras/juntar-pedidos.js";
 import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
-import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK, focarLeitura } from "./js/ui-coletor.js";
+import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, CHECK, focarLeitura, somDePedidoNovo } from "./js/ui-coletor.js";
 import { Embarque } from "./embarque.js";
 import { lerCodigoDoEndereco, acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import {
@@ -199,7 +199,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   // Só atualiza com a lista na tela e nenhuma janela aberta: nunca mexe no pedido que o separador está separando.
   const ATUALIZAR_LISTA_MS = 30_000;
   const podeAtualizarLista = () => visivel("viewHome") && $("#scrim").hidden;
-  let baixando = false;
+  let baixando = false, baixouNesteLogin = null; // a primeira lista depois do login não toca o som
   async function atualizarDoServidor() {
     if (!sess?.token || sess.perfil !== "sep" || !sess.setor || baixando || !podeAtualizarLista()) return;
     baixando = true;
@@ -207,8 +207,17 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       const s = setor(), r = await baixarDoServidor(sess, s);
       if (!r.ok || s !== setor() || !podeAtualizarLista()) return;
       const comFila = new Set(acoesPendentes(sess.login).map((a) => a.dados.pedido));
+      const antes = orders.map((o) => o.id);
       ({ pedidos: orders, lotes } = juntarComServidor({ locais: orders, lotesLocais: lotes, doServidor: r.pedidos, comFila }));
       save();
+      // o coordenador mandou pedido novo para a fila: toque e aviso (só som e vibração, sem notificação)
+      const novos = pedidosNovosNaFila(antes, orders);
+      const chave = `${sess.token}|${s}`;
+      if (novos.length && baixouNesteLogin === chave) {
+        somDePedidoNovo();
+        toast(novos.length === 1 ? `Pedido novo na sua fila: ${novos[0]}` : `${novos.length} pedidos novos na sua fila`);
+      }
+      baixouNesteLogin = chave;
       // na seleção de "Separar vários", tira o pedido que outro separador pegou nesse meio-tempo
       [...selecionados].forEach((id) => { const o = pedido(id); if (!o || !podeSelecionar(o)) selecionados.delete(id); });
       renderHome();
