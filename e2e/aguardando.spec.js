@@ -15,7 +15,8 @@ test("aguardando: entra como prioridade, sem rota; a distribuição inteligente 
   await expect(caixa(page).locator('.gchip[data-filter="aguardando"]')).toBeVisible();
   const ag = caixa(page).locator(".card", { has: page.locator(".rt.aguard") });
   await expect(ag).toHaveCount(1);
-  await expect(ag).toContainText("PRIORIDADE");
+  // sem a etiqueta PRIORIDADE: na expedição a rota já diz a urgência (e o aguardando tem a etiqueta dele)
+  await expect(ag.locator(".c-prio")).toHaveCount(0);
 
   await page.locator('[data-act="intel"]').click();
   await expect(page.locator('[data-act="intel"]')).toContainText("ligada");

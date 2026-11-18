@@ -903,7 +903,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       ${liveHtml}
     </article>`;
     return `<article class="${cls}" draggable="${draggable}" data-id="${p.id}" style="--rc:${corDe(p) || "var(--red-brand)"}">
-      <div class="c-top">${cbL}${destinoTag(p)}${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-top">${cbL}${destinoTag(p)}${parteTag}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${nomeP(p)}</p>${embTag(p)}</div>
       <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
       <p class="c-vend">${ICON_USER}Vend.: ${esc(p.vendedor)}</p>
@@ -929,7 +929,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       </div>`;
     } else if (waiting) liveHtml = `<div class="c-live"><div class="cl-row"><span class="cl-tag"><i></i>Aguardando início</span><span class="timer" data-since="${l.sep.atrib || now()}">00:00</span></div></div>`;
     return `<article class="${cls}" draggable="${!isL}" data-id="${l.id}" style="--rc:${corDe(v) || "var(--ink)"}">
-      <div class="c-top">${v.op ? `<span class="rt op">MONTAGEM</span>` : destinos.map(destinoTag).join("")}<span class="c-lote">LOTE</span>${v.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
+      <div class="c-top">${v.op ? `<span class="rt op">MONTAGEM</span>` : destinos.map(destinoTag).join("")}<span class="c-lote">LOTE</span>${v.op && v.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${l.id} · ${l.pedidos.length} pedidos</p>${v.op ? "" : embTag(v.membros.slice().sort((a, b) => String(a.embarque).localeCompare(String(b.embarque)))[0])}</div>
       <div class="c-peds">${v.membros.map((p) => `<span><b class="lpos">${l.posicoes[p.id]}</b>${p.id}</span>`).join("")}</div>
       <div class="c-nums"><span><b>${v.itens.length}</b> SKUs</span><span><b>${units(v)}</b> un.</span>${o.col === "inbox" ? `<span class="c-age">${fmtAge(l.criado)}</span>` : ""}</div>
@@ -946,7 +946,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const right = isL ? `<span class="timer" data-since="${p.lib.inicio}">00:00</span>` : `<span class="cc-vol">${p.volumes} vol.</span>`;
     return `<article class="${cls}" draggable="${!isL}" data-id="${p.id}" style="--rc:${corDe(p) || "var(--red-brand)"}">
       <span class="cc-pos">${left}</span>
-      <span class="cc-id">${p.id}${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}${embTag(p)}</span>${right}
+      <span class="cc-id">${p.id}${embTag(p)}</span>${right}
       <span class="cc-sub"><i></i>${esc(p.aguardando ? AGUARDANDO.nome : r ? r.nome : "Sem rota")} · ${esc(p.cli.nome)}</span>${isL ? `<span class="cc-st">faturando</span>` : ""}
     </article>`;
   }
@@ -1121,7 +1121,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const cards = db.ret.map((id) => {
       const p = P(id);
       return `<article class="card ret-card ${isFlash(id) ? "flash" : ""}" draggable="false" data-id="${id}" style="--rc:${AGUARDANDO.cor}">
-        <div class="c-top">${agTag}<span class="c-prio">PRIORIDADE</span></div>
+        <div class="c-top">${agTag}</div>
         <div class="c-main"><p class="c-id">${id}</p><span class="c-age">faturado ${fmtTime(p.lib.fim || p.ret)}</span></div>
         <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
         <div class="c-nums"><span><b>${p.volumes}</b> vol.</span><span>NF <b>${p.nota}</b></span>${p.ret ? `<span class="c-age">${fmtAge(p.ret)}</span>` : ""}</div>
@@ -1711,7 +1711,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const v = vista(l), isL = live(v, "sep"), loc = locate("sep", l.id), pc = pct(v, "sep");
     const st = l.status === "concluido" ? { txt: `Separado · doca ${docaCod(l.doca)}`, cls: "" } : isL ? { txt: `Separando · ${nameOf(l.sep.resp)}`, cls: "live" }
       : loc && loc.col !== "inbox" ? { txt: `Na fila de ${nameOf(loc.col)} · ${loc.list.indexOf(l.id) + 1}º`, cls: "wait" } : { txt: "Aguardando separador", cls: "wait" };
-    const peds = v.membros.map((p) => `<tr class="click" data-pid="${p.id}"><td><b class="lpos">${l.posicoes[p.id]}</b></td><td><b>${p.id}</b>${p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}<small>${p.op ? "Montagem" : esc(p.cli.nome)}</small></td>
+    const peds = v.membros.map((p) => `<tr class="click" data-pid="${p.id}"><td><b class="lpos">${l.posicoes[p.id]}</b></td><td><b>${p.id}</b>${p.op && p.prio === "alta" ? `<span class="c-prio">PRIOR.</span>` : ""}<small>${p.op ? "Montagem" : esc(p.cli.nome)}</small></td>
       <td>${p.op ? "—" : destinoTag(p)}</td><td class="r">${p.itens.length}</td><td class="r">${doneU(p, "sep")}/${units(p)}</td></tr>`).join("");
     // paradas: o mesmo produto no mesmo endereço é uma parada só, com a quantidade de cada caixa
     const paradas = montarParadas(v.membros.map((p) => ({ ...p, itens: p.itens.map((i) => ({ ...i, status: i.sep >= i.qtd ? "ok" : "pendente" })) })), l.posicoes);
