@@ -9,6 +9,7 @@ import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPos
 import { enfileirar, acoesPendentes } from "./js/dados/fila.js";
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { juntarConferencia } from "./compartilhado/regras/juntar-pedidos.js";
+import { sobrasDaConferencia } from "./compartilhado/regras/acoes-conferencia.js";
 import { somDePedidoNovo } from "./js/som.js";
 import { registrarDevolucao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -148,7 +149,7 @@ import { $, $$, esc } from "./js/util.js";
   });
 
   function showQueue() {
-    cur = null; devolvendo = false; document.body.classList.remove("cf-devolvendo");
+    cur = null; devolvendo = false; retirando = false; document.body.classList.remove("cf-devolvendo");
     $("#queue").hidden = false; $("#order").hidden = true;
     $("#scan").placeholder = "Bipe o pedido…";
     setLast({ label: "Aguardando leitura", desc: "Bipe o código do pedido para começar", code: " ", conf: "—", exp: "—" });
@@ -198,7 +199,7 @@ import { $, $$, esc } from "./js/util.js";
   $("#sGo").addEventListener("click", iniciar);
 
   function abrirPedido(o) {
-    cur = o; devolvendo = false; document.body.classList.remove("cf-devolvendo");
+    cur = o; devolvendo = false; retirando = false; document.body.classList.remove("cf-devolvendo");
     $("#queue").hidden = true; $("#order").hidden = false;
     $("#oId").textContent = o.id;
     $("#oClient").textContent = o.cliente;
@@ -209,7 +210,8 @@ import { $, $$, esc } from "./js/util.js";
     $("#scan").placeholder = "Bipe o produto…";
     setLast({ label: "Pedido aberto", desc: `${o.cliente}`, code: o.id, conf: "—", exp: "—" });
     const dev = devolucaoPendente(o.itens, o.conf.postado);
-    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : `Pedido ${o.id} carregado · bipe os produtos`, dev ? "err" : "ok");
+    const sobra = !dev && sobras(o).length > 0;
+    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : sobra ? `Pedido ${o.id}: tem excesso, retire do volume (F9)` : `Pedido ${o.id} carregado · bipe os produtos`, dev || sobra ? "err" : "ok");
     beep(true);
     renderItems(); renderTotals(); focusScan();
   }
@@ -271,6 +273,7 @@ import { $, $$, esc } from "./js/util.js";
     const informada = !!m || q !== 1; // o conferente informou quantidade (F4 ou 5*código)?
     resetMult();
     if (cur && devolvendo) return lerNaDevolucao(code, q);
+    if (cur && retirando) return lerNaRetirada(code, q);
 
     // código de pedido?
     const num = (x) => x.trim().toUpperCase().replace(/^(PV|OP)-?/, "");
@@ -327,7 +330,7 @@ import { $, $$, esc } from "./js/util.js";
         label: s === "ok" ? "Item completo ✓" : s === "excesso" ? "Excesso — retire do volume" : `Lido +${fq(q)}`,
         desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: c, exp: it.sep, kind: okish ? "ok" : "err",
       });
-      setMsg(s === "excesso" ? `Excesso de ${fq(arr(c - it.sep))} un. em ${p.sku}` : s === "ok" ? "Item conferido" : `Faltam ${fq(arr(it.sep - c))} un.`, okish ? "ok" : "err");
+      setMsg(s === "excesso" ? `Excesso de ${fq(arr(c - it.sep))} un. em ${p.sku} · retire do volume (F9)` : s === "ok" ? "Item conferido" : `Faltam ${fq(arr(it.sep - c))} un.`, okish ? "ok" : "err");
       beep(okish);
     } else {
       let f = cur.conf.fora.find((x) => x.sku === p.sku);
@@ -335,7 +338,7 @@ import { $, $$, esc } from "./js/util.js";
       f.q = arr(f.q + q);
       cur.conf.log.push({ sku: p.sku, q, fora: true });
       setLast({ label: "Produto fora do pedido", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: f.q, exp: 0, kind: "err" });
-      setMsg("Este produto não pertence ao pedido — separe para devolução.", "err");
+      setMsg("Este produto não pertence ao pedido — retire do volume (F9).", "err");
       beep(false);
     }
     save(); marcarContagem(cur, p.sku); renderItems(p.sku); renderTotals();
@@ -364,7 +367,7 @@ import { $, $$, esc } from "./js/util.js";
     const l = cur.conf.log.pop();
     if (l.fora) {
       const f = cur.conf.fora.find((x) => x.sku === l.sku);
-      f.q = arr(f.q - l.q); if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
+      if (f) { f.q = arr(f.q - l.q); if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1); } // já pode ter saído pelo F9
     } else cur.conf.itens[l.sku] = Math.max(0, arr(cur.conf.itens[l.sku] - l.q));
     save(); marcarContagem(cur, l.sku); renderItems(); renderTotals();
     const p = produto(l.sku) || { sku: l.sku, desc: l.sku };
@@ -396,8 +399,47 @@ import { $, $$, esc } from "./js/util.js";
   }
   $("#cfDev").addEventListener("click", (e) => { if (e.target.closest("#btnDevolver")) alternarDevolucao(); });
 
+  // ---------- excesso (v68): o que sobra na caixa trava o pedido ----------
+  // Contou a mais que o separado, ou bipou produto que não é do pedido: não finaliza até a peça sair do volume.
+  // F9 liga o modo "retirar": cada bipe tira 1 unidade (ou a quantidade do F4) do que sobra. O servidor também recusa.
+  let retirando = false;
+  const sobras = (o) => sobrasDaConferencia(o.itens.map((i) => ({ produto: i.sku, qtd: i.sep })),
+    [...o.itens.map((i) => ({ produto: i.sku, qtd: o.conf.itens[i.sku] || 0 })), ...o.conf.fora.map((f) => ({ produto: f.sku, qtd: f.q }))]);
+
+  function alternarRetirada() {
+    retirando = !retirando;
+    document.body.classList.toggle("cf-devolvendo", retirando);
+    $("#scan").placeholder = retirando ? "Bipe o que SAI do volume…" : "Bipe o produto…";
+    setMsg(retirando ? "Retirar excesso: bipe cada unidade que sai do volume" : "Modo conferência", retirando ? "err" : "ok");
+    focusScan();
+  }
+
+  function lerNaRetirada(code, q) {
+    const p = produto(code);
+    if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
+    const sobra = sobras(cur).find((x) => x.produto === p.sku)?.qtd || 0;
+    if (!sobra) { setMsg(`${p.sku} não tem excesso: não tire do volume.`, "err"); beep(false); return; }
+    if (q > sobra) { setMsg(`Sobra só ${fq(sobra)} un. de ${p.sku}.`, "err"); beep(false); return; }
+    const it = cur.itens.find((i) => i.sku === p.sku);
+    if (it) cur.conf.itens[p.sku] = arr(cur.conf.itens[p.sku] - q);
+    else {
+      const f = cur.conf.fora.find((x) => x.sku === p.sku);
+      f.q = arr(f.q - q); if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
+    }
+    save(); marcarContagem(cur, p.sku); renderItems(p.sku); renderTotals();
+    setLast({ label: `Saiu do volume −${fq(q)}`, desc: p.desc, code: p.sku, conf: it ? cur.conf.itens[p.sku] : "—", exp: it ? it.sep : 0, kind: "ok" });
+    const resta = sobras(cur);
+    if (!resta.length) {
+      retirando = false; document.body.classList.remove("cf-devolvendo"); $("#scan").placeholder = "Bipe o produto…";
+      setMsg("Excesso retirado · continue a conferência", "ok");
+    } else setMsg(`Ainda sobra no volume: ${resta.map((x) => `${fq(x.qtd)} un. de ${x.produto}`).join(", ")}`, "err");
+    beep(true);
+  }
+
   function alternarDevolucao() {
-    if (!cur || !devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Este pedido não tem nada a devolver.", "err"); beep(false); return; }
+    // F9: primeiro a devolução do gestor (corte/cancelamento); sem ela, o excesso
+    if (cur && !devolvendo && !devolucaoPendente(cur.itens, cur.conf.postado) && (retirando || sobras(cur).length)) return alternarRetirada();
+    if (!cur || !devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Este pedido não tem nada a devolver nem excesso.", "err"); beep(false); return; }
     devolvendo = !devolvendo;
     document.body.classList.toggle("cf-devolvendo", devolvendo);
     $("#scan").placeholder = devolvendo ? "Bipe o que SAI da caixa… depois o QR da doca de devolução" : "Bipe o produto…";
@@ -480,6 +522,7 @@ import { $, $$, esc } from "./js/util.js";
     // o que o gestor cortou tem que sair da caixa e entrar na doca de devolução antes de fechar
     if (devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Faça a devolução antes de finalizar (F9).", "err"); beep(false); return; }
     if (cur.cancelado) return encerrarCancelado();
+    if (sobras(cur).length) { setMsg("Retire o excesso do volume antes de finalizar (F9).", "err"); beep(false); return; }
     fin = { o: cur, fix: false, vol: 0 };
     const s = stats(cur);
     const rows = [];

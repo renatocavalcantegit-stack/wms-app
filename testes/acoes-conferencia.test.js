@@ -1,7 +1,7 @@
 // Ações da Conferência (Fase 2): o que o servidor faz com cada ação que chega do posto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { avaliarAcaoDaConferencia, temDivergencia } from "../compartilhado/regras/acoes-conferencia.js";
+import { avaliarAcaoDaConferencia, temDivergencia, sobrasDaConferencia } from "../compartilhado/regras/acoes-conferencia.js";
 import { avaliarAcaoDaSeparacao } from "../compartilhado/regras/acoes-separacao.js";
 
 const T = "2026-11-19T08:00:00.000Z";
@@ -53,6 +53,22 @@ test("divergência: falta, excesso ou produto fora do pedido", () => {
   assert.equal(temDivergencia(esperado, [{ produto: "176", qtd: "10" }, { produto: "536", qtd: 4 }]), false);
   assert.equal(temDivergencia(esperado, [{ produto: "176", qtd: 11 }, { produto: "536", qtd: 4 }]), true);
   assert.equal(temDivergencia(esperado, [{ produto: "176", qtd: 10 }, { produto: "536", qtd: 4 }, { produto: "9", qtd: 1, fora: true }]), true);
+});
+
+test("excesso trava: com sobra na caixa o servidor recusa o finalizar (v68)", () => {
+  assert.deepEqual(sobrasDaConferencia(esperado, [{ produto: "176", qtd: 10 }, { produto: "536", qtd: 3 }]), []); // falta não é sobra
+  assert.deepEqual(sobrasDaConferencia(esperado, [{ produto: "176", qtd: "10.5" }, { produto: "536", qtd: 4 }, { produto: "9", qtd: 2, fora: true }]),
+    [{ produto: "176", qtd: 0.5 }, { produto: "9", qtd: 2 }]);
+  // pedido dividido: o separado das partes soma
+  assert.deepEqual(sobrasDaConferencia([{ produto: "A", qtd: 1 }, { produto: "A", qtd: 2 }], [{ produto: "A", qtd: 3 }]), []);
+  const c = conf({ status: "andamento", conferente: "conferente" });
+  const excesso = avaliarAcaoDaConferencia(acao("conferencia.finalizar", { volumes: 1, observacao: OBS, contagens: [{ produto: "176", qtd: 11 }, { produto: "536", qtd: 4 }] }), c, esperado);
+  assert.deepEqual(excesso, { resultado: "recusada", motivo: "PV-1 TEM EXCESSO: RETIRE DO VOLUME ANTES DE FINALIZAR." });
+  const fora = avaliarAcaoDaConferencia(acao("conferencia.finalizar", { volumes: 1, observacao: OBS, contagens: [{ produto: "176", qtd: 10 }, { produto: "9", qtd: 1 }] }), c, esperado);
+  assert.equal(fora.resultado, "recusada");
+  // produto fora do pedido que já saiu da caixa (contagem 0) não trava
+  const zerado = avaliarAcaoDaConferencia(acao("conferencia.finalizar", { volumes: 1, observacao: OBS, contagens: [{ produto: "176", qtd: 10 }, { produto: "536", qtd: 4 }, { produto: "9", qtd: 0 }] }), c, esperado);
+  assert.equal(zerado.conferencia.status, "conferido");
 });
 
 test("corrigir volumes e conferir novamente: só pedido conferido", () => {

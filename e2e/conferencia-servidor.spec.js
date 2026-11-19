@@ -190,3 +190,33 @@ test("Montagem: pular conferência entrega o pedido direto à montagem", async (
   await arrastar(m, "OP-3208", "done");
   await expect.poll(async () => (await conferencia("OP-3208")).status).toBe("dispensada");
 });
+
+// ---------- excesso trava o pedido (v68) ----------
+test("excesso: o pedido não finaliza até a peça sair do volume (F9)", async ({ browser }) => {
+  const { page: bruna } = await posto(browser, "conferente2");
+  await expect.poll(() => idsDaFila(bruna)).toContain("PV-10403");
+  await bruna.locator('#queueBody tr[data-id="PV-10403"]').click();
+  await bruna.locator("#sGo").click();
+  const o = await conferirTudo(bruna, "PV-10403");
+  const db = await estoque(bruna);
+  const i = o.itens.find((x) => x.sep > 0 && db.produtos.find((p) => p.codigo === x.sku)?.checkout !== false);
+  // uma unidade a mais: F10 não abre a finalização
+  await bipar(bruna, i.ean || i.sku);
+  await expect(bruna.locator("#scanMsg")).toContainText("retire do volume (F9)");
+  await bruna.keyboard.press("F10");
+  await expect(bruna.locator("#mFinish")).toBeHidden();
+  await expect(bruna.locator("#scanMsg")).toHaveText("Retire o excesso do volume antes de finalizar (F9).");
+  await expect.poll(async () => (await contagem("PV-10403")).find((x) => x.produto === i.sku)?.qtd).toBe(i.sep + 1);
+  // F9: bipar o que sai do volume; o que não sobra é recusado
+  await bruna.keyboard.press("F9");
+  const outro = o.itens.find((x) => x.sku !== i.sku && x.sep > 0);
+  if (outro && db.produtos.find((p) => p.codigo === outro.sku)?.checkout !== false) {
+    await bipar(bruna, outro.ean || outro.sku);
+    await expect(bruna.locator("#scanMsg")).toHaveText(`${outro.sku} não tem excesso: não tire do volume.`);
+  }
+  await bipar(bruna, i.ean || i.sku);
+  await expect(bruna.locator("#scanMsg")).toHaveText("Excesso retirado · continue a conferência");
+  await expect.poll(async () => (await contagem("PV-10403")).find((x) => x.produto === i.sku)?.qtd).toBe(i.sep);
+  await finalizarConferencia(bruna, 1);
+  await expect.poll(async () => (await conferencia("PV-10403")).status).toBe("conferido");
+});

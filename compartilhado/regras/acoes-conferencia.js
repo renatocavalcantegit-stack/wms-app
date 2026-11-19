@@ -44,6 +44,17 @@ export function temDivergencia(esperado, contagens) {
   return esperado.some((e) => arredondarQtd(Number(e.qtd)) !== (contado.get(e.produto) ?? 0));
 }
 
+// Sobra na caixa (v68): o que foi contado A MAIS que o separado, e o que nem é do pedido.
+// Com sobra o pedido NÃO finaliza: a peça tem que sair do volume antes (no posto, F9).
+// Devolve [{ produto, qtd }] só com o que sobra (vazio = pode finalizar). Falta não é sobra.
+export function sobrasDaConferencia(esperado, contagens) {
+  const separado = new Map();
+  esperado.forEach((e) => separado.set(e.produto, arredondarQtd((separado.get(e.produto) || 0) + Number(e.qtd))));
+  const contado = new Map();
+  contagens.forEach((x) => contado.set(x.produto, arredondarQtd((contado.get(x.produto) || 0) + Number(x.qtd))));
+  return [...contado].map(([produto, qtd]) => ({ produto, qtd: arredondarQtd(qtd - (separado.get(produto) || 0)) })).filter((x) => x.qtd > 0);
+}
+
 // lê uma contagem que veio do posto: { produto, qtd } → { produto, qtd, fora } ou a mensagem de erro
 function lerContagem(x, esperado) {
   const produto = String(x?.produto ?? "").trim();
@@ -103,6 +114,7 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
     const lidas = (Array.isArray(dados.contagens) ? dados.contagens : []).map((x) => lerContagem(x, esperado));
     const erro = lidas.find((x) => typeof x === "string");
     if (erro) return recusada(erro);
+    if (sobrasDaConferencia(esperado, lidas).length) return recusada(`${c.pedido} TEM EXCESSO: RETIRE DO VOLUME ANTES DE FINALIZAR.`);
     const status = temDivergencia(esperado, lidas) ? "divergente" : "conferido";
     return aplicada({ status, fim: feitaEm, posto: dados.posto ? String(dados.posto) : null, ...v }, lidas, { zerar: true });
   }

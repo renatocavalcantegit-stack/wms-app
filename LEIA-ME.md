@@ -33,6 +33,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v64 | coletor · lista | etiqueta da **rota** (bolinha com a cor e o nome, a mesma da Gestão) no lugar da cidade · UF no card; o aguardando continua com a cidade; no lote, uma etiqueta por rota (quebra a linha quando não cabe) |
 | v65 | conferência · fila | clicar no pedido (ou bipar) abre o resumo **"Iniciar conferência"**: quem separou, a doca, itens e unidades, e os itens separados; **Iniciar conferência** (Enter) ou **Voltar** (Esc). O conferente não precisa bipar o pedido. Pedido em conferência abre direto; conferido continua perguntando "Conferir novamente?" |
 | v67 | Gestão · Conferência | com o servidor, a aba Conferência é o **quadro de verdade**, igual ao da demonstração: "Separados" + uma coluna por conferente, arrastar para a fila (o posto mostra na mesma ordem), card e gaveta ao vivo com o conferido de cada item. Na Montagem, "Pular conferência" e "Entregues à montagem". O que o servidor ainda não tem (vendedor, embarque, setor de cada conferente) não aparece ou fica "—" |
+| v68 | Conferência · posto | **excesso trava o pedido**: contou a mais que o separado, ou bipou produto que não é do pedido → o F10 não finaliza ("Retire o excesso do volume antes de finalizar (F9)"). O F9 liga "retirar": cada bipe tira 1 unidade do que sobra; quando não sobra nada, destrava. Falta continua finalizando com divergência. O servidor também recusa finalizar com excesso |
 
 ## Estrutura
 
