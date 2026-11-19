@@ -28,7 +28,8 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 006 passo do item da vez (a bolinha do item na gaveta da Gestão)
                             · 007 conferência: um registro por pedido (fila do conferente, volumes, observação) e o que foi contado
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
-db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
+db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
+                            na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
 
 src/banco.js                conexão com o PostgreSQL e transação
 src/senha.js                PIN guardado com hash (scrypt), nunca o PIN

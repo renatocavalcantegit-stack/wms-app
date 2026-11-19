@@ -12,6 +12,6 @@ export async function prepararBancoDeTeste() {
   // apaga todas as tabelas do banco de teste e recomeça
   await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await migrar(pool);
-  await semear(pool);
+  await semear(pool, { conferencia: true }); // com os pedidos já na conferência (testes da Fase 2)
   return pool;
 }

@@ -46,17 +46,20 @@ function horaDeHoje(hhmm) {
 }
 const dataOuNada = (ms) => (ms ? new Date(ms).toISOString() : null);
 
-export async function semear(pool) {
+// conferencia = true: também os pedidos já separados, na caixa e nas filas da conferência (os testes usam).
+// Pelo terminal (npm run semear), sem eles: o teste operacional começa na Separação e o pedido chega
+// na conferência pelo caminho de verdade (o separador termina → caixa "Separados" da Gestão).
+export async function semear(pool, { conferencia = false } = {}) {
   const estoque = estoqueDeDemonstracao();
   const pedidos = [
     ...seedSeparacao().map((o) => ({ ...o, setor: "exp" })),
     ...seedSeparacaoMont().map((o) => ({ ...o, setor: "mont" })),
   ];
   // já separados: entram direto na caixa de entrada (ou na fila) da conferência
-  const separados = [
+  const separados = conferencia ? [
     ...seedConferencia().map((o) => ({ ...o, setor: "exp" })),
     ...seedConferenciaMont().map((o) => ({ ...o, setor: "mont" })),
-  ];
+  ] : [];
   pedidos.push(...separados);
 
   await emTransacao(pool, async (c) => {
