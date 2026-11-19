@@ -32,6 +32,16 @@ export const desfazerLote = (sessao, setor, lote, buscar) =>
 // o pedido com os itens (a gaveta do pedido)
 export const buscarPedido = (sessao, id, buscar) => chamar(sessao, `api/pedidos/${encodeURIComponent(id)}`, {}, buscar);
 
+// ---------- quadro da Conferência (Fase 2, v67) ----------
+export const buscarQuadroDaConferencia = (sessao, setor, buscar) =>
+  chamar(sessao, `api/quadro/conferencia?setor=${encodeURIComponent(setor)}`, {}, buscar);
+// para = login do conferente (null = caixa de entrada) · ordem = a coluna de destino depois de soltar
+export const moverNaConferencia = (sessao, setor, pedido, para, ordem, buscar) =>
+  chamar(sessao, "api/quadro/conferencia/mover", { corpo: { setor, pedido, para, ordem } }, buscar);
+// Montagem: dispensa a conferência (o pedido vai direto para a montagem) · devolve { feitos, erros }
+export const pularConferencia = (sessao, setor, pedidos, buscar) =>
+  chamar(sessao, "api/quadro/conferencia/pular", { corpo: { setor, pedidos } }, buscar);
+
 // ---------- Dispositivos (login único) ----------
 export const buscarDispositivos = (sessao, buscar) => chamar(sessao, "api/dispositivos", {}, buscar);
 export const desconectarDispositivo = (sessao, id, buscar) =>

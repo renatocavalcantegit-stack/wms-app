@@ -85,8 +85,8 @@ test("o coordenador distribui no quadro e cada coletor mostra só a fila do seu 
   await expect(caixa.locator('.card[data-id="PV-10423"] .rt.aguard')).toBeVisible();
   await expect(caixa.locator('.card[data-id="PV-10428"] .rt.none')).toHaveText("SEM ROTA");
   await expect(g.locator('#board .gx-list[data-col="separador2"] .card[data-id="PV-10426/2"]')).toBeVisible();
-  // as outras abas continuam simulação, e avisam
-  await g.locator('.gx-tab[data-board="conf"]').click();
+  // as outras abas continuam simulação, e avisam (a Conferência passou para o servidor na v67)
+  await g.locator('.gx-tab[data-board="lib"]').click();
   await expect(g.locator("#actions .gx-sim-aviso")).toHaveText("Simulação");
   await g.locator('.gx-tab[data-board="sep"]').click();
   await expect(g.locator("#actions .gx-sim-aviso")).toHaveCount(0);

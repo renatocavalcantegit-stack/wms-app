@@ -90,7 +90,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   function aposEnvio(r) {
     r.recusadas.forEach((x) => { toast(`${x.pedido || "Ação"}: ${x.motivo}`); beep(false); vibrate([80, 50, 80]); });
     // o coordenador passou o pedido aberto na tela para outra pessoa (ou devolveu para a caixa): volta para a lista
-    const tirados = new Set(r.recusadas.filter((x) => /^O COORDENADOR/.test(x.motivo || "")).map((x) => x.pedido));
+    // ou o "separar novamente" foi recusado porque a conferência já começou (v66): o pedido volta a ser o do servidor
+    const tirados = new Set(r.recusadas.filter((x) => /^O COORDENADOR/.test(x.motivo || "") || x.tipo === "separacao.reabrir").map((x) => x.pedido));
     if (tirados.size && (tirados.has(current?.id) || (lote && lote.pedidos.some((id) => tirados.has(id))))) {
       current = null; lote = null; closeSheets(); goHome();
     }

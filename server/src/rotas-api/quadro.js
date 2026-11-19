@@ -4,11 +4,15 @@
 // POST /api/quadro/rota                          — { setor, pedido, rota }: define a rota do pedido sem rota
 // POST /api/quadro/lotes                         — { setor, pedidos }: agrupa pedidos da caixa num lote
 // POST /api/quadro/lotes/:id/desfazer            — { setor }: desfaz o lote que ainda não começou
+// GET  /api/quadro/conferencia?setor=exp         — o quadro da Conferência (Fase 2): caixa, filas e conferentes
+// POST /api/quadro/conferencia/mover             — { setor, pedido, para, ordem }: muda o pedido de fila
+// POST /api/quadro/conferencia/pular             — { setor, pedidos }: Montagem, dispensa a conferência
 //
 // Só o coordenador do setor mexe: o de expedição no quadro da expedição, o de montagem no da montagem.
 // Cada mudança avisa as telas pelo canal de tempo real (evento "quadro"): as outras Gestões redesenham.
 // O coletor fica sabendo na próxima vez que baixa a lista (a cada 30 s, ou quando volta para a lista).
 import { quadroDaSeparacao, moverNoQuadro, definirRota, criarLote, desfazerLote, ErroDoQuadro } from "../consultas/quadro.js";
+import { quadroDaConferencia, moverNaConferencia, pularConferencia } from "../consultas/quadro-conferencia.js";
 
 const SETOR_DO_PERFIL = { coord: "exp", coordmont: "mont" };
 const setor = { type: "string", enum: ["exp", "mont"] };
@@ -68,6 +72,32 @@ export function rotasDoQuadro(app, { pool, exigirLogin, tempoReal }) {
     ...protegida,
     schema: { body: { type: "object", required: ["setor", "pedidos"], properties: { setor, pedidos: { type: "array", maxItems: 20, items: codigo } } } },
   }, (request, reply) => executar(reply, () => criarLote(pool, request.body), { lote: true }));
+
+  // ---------- Conferência (Fase 2) ----------
+  app.get("/api/quadro/conferencia", {
+    ...protegida,
+    schema: { querystring: { type: "object", required: ["setor"], properties: { setor } } },
+  }, async (request) => quadroDaConferencia(pool, request.query.setor));
+
+  app.post("/api/quadro/conferencia/mover", {
+    ...protegida,
+    schema: {
+      body: {
+        type: "object",
+        required: ["setor", "pedido"],
+        properties: { setor, pedido: codigo, para: { type: ["string", "null"], maxLength: 50 }, ordem: { type: "array", maxItems: 500, items: codigo } },
+      },
+    },
+  }, (request, reply) => {
+    const { setor: s, pedido, para = null, ordem = [] } = request.body;
+    return executar(reply, () => moverNaConferencia(pool, { setor: s, pedido, para, ordem, por: request.usuario.login }), { conferencia: pedido, para });
+  });
+
+  app.post("/api/quadro/conferencia/pular", {
+    ...protegida,
+    schema: { body: { type: "object", required: ["setor", "pedidos"], properties: { setor, pedidos: { type: "array", minItems: 1, maxItems: 200, items: codigo } } } },
+  }, (request, reply) => executar(reply,
+    () => pularConferencia(pool, { setor: request.body.setor, pedidos: request.body.pedidos, por: request.usuario.login }), { conferencia: true }));
 
   app.post("/api/quadro/lotes/:id/desfazer", {
     ...protegida,

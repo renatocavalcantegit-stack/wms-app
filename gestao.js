@@ -11,6 +11,7 @@ import { CLIENTES } from "./js/demo-clientes.js";
 import { telaOcorrencias, ligarOcorrencias } from "./gestao-ocorrencias.js";
 import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
 import { ligarQuadroReal, desenhar as desenharQuadroReal, resumoDoQuadroReal, textoDaBusca } from "./gestao-separacao-real.js";
+import { ligarQuadroDaConferencia, desenhar as desenharConferenciaReal, resumoDaConferenciaReal, textoDaBuscaDaConferencia } from "./gestao-conferencia-real.js";
 import { abrirDispositivos } from "./gestao-dispositivos.js";
 import { AGUARDANDO, precisaDeRota } from "./compartilhado/regras/aguardando.js";
 import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regras/distribuicao.js";
@@ -474,8 +475,12 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   let comServidor = false; // a aba Ao vivo (gestao-ao-vivo.js) diz se o app foi aberto pelo servidor
   // Fase 1e: com o servidor, a aba Separação é o quadro de verdade (gestao-separacao-real.js); as outras abas
   // continuam a simulação, com o aviso "Simulação" no topo
-  let quadroReal = false;
-  const real = () => quadroReal && board === "sep";
+  // Fase 2 (v67): com o servidor, a aba Conferência também é o quadro de verdade (gestao-conferencia-real.js)
+  let quadroReal = false, conferenciaReal = false;
+  const realSep = () => quadroReal && board === "sep";
+  const realConf = () => conferenciaReal && board === "conf";
+  // a aba aberta é um quadro do servidor (os eventos e o desenho da simulação ficam de fora)
+  const real = () => realSep() || realConf();
   let flashId = null; // id ou lista de ids destacados no próximo render
   const intelOn = (k) => !MONT && !!db.intel?.[k]; // distribuição inteligente ligada neste quadro?
   const isFlash = (id) => flashId === id || (Array.isArray(flashId) && flashId.includes(id));
@@ -789,7 +794,8 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       renderTop(); return;
     }
     // aba Separação com o servidor: o quadro de verdade se desenha sozinho (e redesenha quando o servidor avisa)
-    if (real()) { desenharQuadroReal(); applySearch(); tickTimers(); return; }
+    if (realSep()) { desenharQuadroReal(); applySearch(); tickTimers(); return; }
+    if (realConf()) { desenharConferenciaReal(); applySearch(); tickTimers(); return; }
     [...sel].forEach((id) => { if (!db[SELB].inbox.includes(id)) sel.delete(id); });
     [...selSep].forEach((id) => { if (!db.sep.inbox.includes(id)) selSep.delete(id); });
     const b = $("#board");
@@ -810,7 +816,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   function renderTop() {
     $$(".gx-tab").forEach((x) => x.classList.toggle("active", x.dataset.board === board));
     $("#tbSep").textContent = quadroReal ? resumoDoQuadroReal().caixa : db.sep.inbox.length;
-    $("#tbConf").textContent = db.conf.inbox.length;
+    $("#tbConf").textContent = conferenciaReal ? resumoDaConferenciaReal().caixa : db.conf.inbox.length;
     $("#simBtn").classList.toggle("on", sim);
     // com o servidor, "Ao vivo" é a aba de verdade: o botão da simulação passa a dizer "Simulação"
     $("#simBtn span").textContent = sim ? (comServidor ? "Simulação" : "Ao vivo") : "Pausada";
@@ -827,7 +833,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const T = { sep: "Distribuição da separação", conf: "Distribuição da conferência", lib: "Liberação para faturamento", emb: "Embarque · cargas do ERP", rota: "Acompanhamento por rota" };
     $("#boardTitle").textContent = T[board];
     let k = "", a = "";
-    if (real()) {
+    if (realConf()) {
+      const q = resumoDaConferenciaReal();
+      k = kp(q.caixa, "na caixa de entrada") + kp(q.conferindo, "em conferência") + kp(q.naFila, "na fila") + kp(q.hoje, "conferidos hoje", "green");
+      a = `<span class="hint show">Com o servidor · arraste para a fila do conferente: o posto dele mostra na mesma ordem</span>`;
+    } else if (realSep()) {
       const q = resumoDoQuadroReal();
       k = kp(q.caixa, "na caixa de entrada") + kp(q.semRota, "sem rota", "red") + kp(q.separando, "em separação") + kp(q.naFila, "na fila") + kp(q.hoje, "separados hoje", "green");
       a = `<span class="hint show">Com o servidor · arraste para a fila do separador: o coletor dele mostra na mesma ordem</span>`;
@@ -865,7 +875,14 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   const entreguesHoje = () => db.entregues.filter((id) => sameDay(P(id).entregue));
   function renderTopMont() {
     $("#boardTitle").textContent = board === "sep" ? "Separação · pedidos de montagem" : "Conferência · pedidos de montagem";
-    if (real()) {
+    if (realConf()) {
+      const q = resumoDaConferenciaReal();
+      $("#kpis").innerHTML = kp(q.caixa, "na caixa de entrada") + kp(q.conferindo, "em conferência") + kp(q.naFila, "na fila")
+        + kp(q.entregues, "entregues à montagem hoje", "green") + (q.semConferencia ? kp(q.semConferencia, "sem conferência") : "");
+      $("#actions").innerHTML = `<span class="hint show">Com o servidor · arraste para "Entregues à montagem" ou use "Pular conferência" para dispensar a conferência</span>`;
+      return;
+    }
+    if (realSep()) {
       const q = resumoDoQuadroReal();
       $("#kpis").innerHTML = kp(q.caixa, "na caixa de entrada") + kp(q.separando, "em separação") + kp(q.naFila, "na fila") + kp(q.hoje, "separados hoje", "green");
       $("#actions").innerHTML = `<span class="hint show">Com o servidor · arraste para a fila do separador: o coletor dele mostra na mesma ordem</span>`;
@@ -1228,7 +1245,10 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   function applySearch() {
     const q = query.trim().toLowerCase();
     const hayP = (p) => p.op ? `${p.id} montagem ${nameOf(p.sep.resp)} ${nameOf(p.conf.resp)}` : `${p.id} ${p.cli.cod} ${p.cli.nome} ${p.vendedor} ${p.aguardando ? "aguardando retirada" : rotaOf(p.rota)?.nome || "sem rota"} ${p.cli.cidade} ${p.cli.bairro} ${p.nota || ""} ${p.carga || ""}`;
-    if (real()) { $$(".card").forEach((el) => el.classList.toggle("q-miss", !!q && !textoDaBusca(el.dataset.id).toLowerCase().includes(q))); return; }
+    if (real()) {
+      const texto = realConf() ? textoDaBuscaDaConferencia : textoDaBusca;
+      $$(".card").forEach((el) => el.classList.toggle("q-miss", !!q && !texto(el.dataset.id).toLowerCase().includes(q))); return;
+    }
     $$(".card").forEach((el) => {
       const id = el.dataset.id, c = board === "emb" && C(id);
       const hay = c ? `${c.id} ${rotaOf(c.rota).nome} ${nameOf(c.motorista)} ${c.placa} ${c.pedidos.map((x) => hayP(P(x))).join(" ")}`
@@ -2056,7 +2076,9 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   }
 
   // Fase 1e: com o servidor, a aba Separação vira o quadro de verdade
-  ligarQuadroReal({ sess, setor: SETOR, container: $("#board"), ativa: () => real(), toast, aoMudar: () => renderTop() })
+  ligarQuadroDaConferencia({ sess, setor: SETOR, container: $("#board"), ativa: () => realConf(), toast, aoMudar: () => renderTop() })
+    .then((ligou) => { conferenciaReal = ligou; if (ligou) render(true); });
+  ligarQuadroReal({ sess, setor: SETOR, container: $("#board"), ativa: () => realSep(), toast, aoMudar: () => renderTop() })
     .then((ligou) => { quadroReal = ligou; if (ligou) render(true); });
 
   // ---------- início ----------

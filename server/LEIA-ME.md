@@ -40,6 +40,7 @@ src/consultas/              TODO o SQL, separado por assunto
   aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
   aplicar-conferencia.js    o mesmo para as ações da Conferência; o pedido separado entrando na conferência
   conferencia.js            a lista do posto do conferente (pedido inteiro, com as partes e os itens separados)
+  quadro-conferencia.js     o quadro da Conferência: caixa, filas dos conferentes, mover e pular conferência (Montagem)
   painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas (em standby)
   quadro.js                 o quadro da Separação: caixa de entrada, fila de cada separador, rota e lotes
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
@@ -121,6 +122,9 @@ npm test
 | `POST /api/quadro/rota` | coordenador do setor | `{ setor, pedido, rota }`: define a rota do pedido que chegou sem rota |
 | `POST /api/quadro/lotes` | coordenador do setor | `{ setor, pedidos }` → `{ id, posicoes }`: agrupa pedidos da caixa num lote |
 | `POST /api/quadro/lotes/:id/desfazer` | coordenador do setor | `{ setor }`: desfaz o lote que ainda não começou |
+| `GET /api/quadro/conferencia?setor=exp` | coordenador do setor | `{ agora, pedidos, conferentes }`: o que ainda não foi conferido (caixa e filas, com o `andamento`: itens e unidades conferidos) e todos os conferentes, com o contato e quantos conferiram hoje. Na Montagem, também os entregues à montagem hoje |
+| `POST /api/quadro/conferencia/mover` | coordenador do setor | `{ setor, pedido, para, ordem }`: muda o pedido de fila (`para` = login do conferente, `null` = caixa). **409** em conferência |
+| `POST /api/quadro/conferencia/pular` | coordenador da Montagem | `{ setor: "mont", pedidos }` → `{ feitos, erros }`: dispensa a conferência (status `dispensada`); o pedido vai direto para a montagem |
 | `GET /api/dispositivos` | coordenador | `{ agora, esta, dispositivos }`: os aparelhos conectados (o token nunca sai do servidor) |
 | `POST /api/dispositivos/:id/desconectar` | coordenador | encerra a sessão do aparelho (coletor perdido ou quebrado) |
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
@@ -221,7 +225,12 @@ e manda tudo quando a rede volta. A lista é baixada ao voltar para a fila, a ca
 O que muda com cada ação é decidido por `compartilhado/regras/acoes-conferencia.js`.
 
 Ainda só no posto: devolução de corte/cancelamento (F9) e o envio da observação dos volumes ao Sankhya.
-O quadro da Conferência na Gestão entra na v67 (até lá, a aba continua "Simulação"; o seed já monta as filas).
+Na Gestão (v67), a aba **Conferência** é o quadro de verdade (`gestao-conferencia-real.js`, regras em
+`compartilhado/regras/fila-do-conferente.js`): arrastar para a fila do conferente, ao vivo o que ele já conferiu,
+e na Montagem "Pular conferência" (status `dispensada`). Travas no servidor: em conferência não muda de fila;
+conferido ou dispensado não volta. O posto que estava com um pedido dispensado é avisado
+("O COORDENADOR DISPENSOU A CONFERÊNCIA DO …") e volta para a fila.
+O coletor que mandou "separar novamente" de um pedido que já está sendo conferido recebe a recusa e volta para a lista.
 Para testar dois postos, a demonstração tem um segundo conferente (`conferente2`, PIN em `js/sessao.js`).
 
 ## Quadro da Separação e fila do separador (Fase 1e)

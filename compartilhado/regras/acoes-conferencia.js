@@ -71,6 +71,8 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
   if (!TIPOS_DA_CONFERENCIA.includes(tipo)) return null;
   const c = conferencia;
   if (!c) return recusada(`PEDIDO ${dados.pedido ?? ""} NÃO ESTÁ NA CONFERÊNCIA (A SEPARAÇÃO AINDA NÃO TERMINOU).`);
+  // Montagem: o coordenador pulou a conferência pelo quadro (v67); o posto volta para a fila
+  if (c.status === "dispensada") return recusada(`O COORDENADOR DISPENSOU A CONFERÊNCIA DO ${c.pedido}.`);
 
   if (tipo === "conferencia.iniciar") {
     if (FINALIZADA.includes(c.status)) return recusada("PEDIDO JÁ CONFERIDO. USE CONFERIR NOVAMENTE.");

@@ -120,3 +120,73 @@ test("sem rede, o posto segue conferindo; quando a rede volta, o servidor recebe
   await expect.poll(async () => (await conferencia("PV-10402")).status, { timeout: 15_000 }).toBe("andamento");
   await expect.poll(() => contagem("PV-10402"), { timeout: 15_000 }).toContainEqual({ produto: i.sku, qtd: 1 });
 });
+
+// ---------- quadro da Conferência na Gestão (v67) ----------
+async function gestao(browser, login) {
+  const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  abertos.push(context);
+  const page = await context.newPage();
+  await page.goto(`${endereco}/`);
+  await page.locator("#loginName").fill(login);
+  await page.locator("#loginPin").fill(usuario(login).pin);
+  await page.locator("#loginForm button[type=submit]").click();
+  await expect(page).toHaveURL(login === "montagem" ? /montagem\.html/ : /gestao\.html/);
+  await page.evaluate(() => localStorage.setItem("wms-bb-gx-sim", "off"));
+  await page.locator('.gx-tab[data-board="conf"]').click();
+  // espera a Gestão trocar a simulação pelo quadro de verdade (a caixa "Separados" do servidor)
+  await expect(page.locator('#board .gx-list[data-col="conferente"]')).toBeVisible();
+  return page;
+}
+// o Playwright não gera os eventos de arrastar do navegador: o teste dispara os mesmos eventos
+async function arrastar(page, id, coluna, posicao = "fim") {
+  await page.evaluate(({ id, coluna, posicao }) => {
+    const dt = new DataTransfer();
+    const card = document.querySelector(`#board .card[data-id="${id}"]`);
+    const lista = document.querySelector(`#board .gx-list[data-col="${coluna}"]`);
+    card.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const r = lista.getBoundingClientRect();
+    const y = posicao === "inicio" ? r.top + 2 : r.bottom - 2;
+    lista.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: y }));
+    lista.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: y }));
+    card.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+  }, { id, coluna, posicao });
+}
+const designado = async (id) => (await pool.query("SELECT designado_para, ordem_fila FROM conferencias WHERE pedido = $1", [id])).rows[0];
+
+test("Gestão: o quadro da Conferência distribui para o posto e mostra quem está conferindo", async ({ browser }) => {
+  const g = await gestao(browser, "coordenador");
+  await expect(g.locator("#actions .gx-sim-aviso")).toHaveCount(0);
+  await expect(g.locator('#board .gx-list[data-col="inbox"] .card[data-id="PV-10404"]')).toBeVisible();
+  // o PV-10402 está sendo conferido pela Ana (teste anterior): ao vivo e preso na fila dela
+  const vivo = g.locator('#board .gx-list[data-col="conferente"] .card[data-id="PV-10402"]');
+  await expect(vivo).toHaveClass(/live/);
+  await expect(vivo).toContainText("Conferindo agora");
+  await expect(vivo).toHaveAttribute("draggable", "false");
+
+  // o coordenador manda o PV-10404 para o INÍCIO da fila da Bruna; o posto dela mostra na mesma ordem
+  await arrastar(g, "PV-10404", "conferente2", "inicio");
+  await expect.poll(() => designado("PV-10404")).toEqual({ designado_para: "conferente2", ordem_fila: 1 });
+  const { page: bruna } = await posto(browser, "conferente2");
+  await expect.poll(() => idsDaFila(bruna)).toEqual(["PV-10404", "PV-10403"]);
+
+  // a gaveta: o andamento da conferência e o conferido de cada item
+  await vivo.click();
+  const gav = g.locator("#drawer");
+  await expect(gav.locator(".dr-head h2")).toHaveText("PV-10402");
+  await expect(gav.locator(".dr-head .stage")).toHaveText(/Em conferência/);
+  await expect(gav.locator(".dr-items thead")).toContainText("Conferido");
+  await expect(gav.locator(".timeline")).toContainText("Conferência iniciada por");
+  await expect(gav.locator("#gcMover")).toHaveCount(0); // em conferência não muda de fila
+});
+
+test("Montagem: pular conferência entrega o pedido direto à montagem", async ({ browser }) => {
+  const m = await gestao(browser, "montagem");
+  const card = m.locator('#board .gx-list[data-col="inbox"] .card[data-id="OP-3209"]');
+  await expect(card).toBeVisible();
+  await card.locator("[data-gcpular]").click();
+  await expect(m.locator('#board .gx-list[data-col="done"] .card[data-id="OP-3209"]')).toContainText("Sem conferência");
+  expect((await conferencia("OP-3209")).status).toBe("dispensada");
+  // soltar em "Entregues à montagem" também dispensa
+  await arrastar(m, "OP-3208", "done");
+  await expect.poll(async () => (await conferencia("OP-3208")).status).toBe("dispensada");
+});
