@@ -24,7 +24,7 @@ export async function quadroDaConferencia(pool, setor) {
       ORDER BY c.designado_para NULLS FIRST, c.ordem_fila NULLS LAST, c.chegou_em, c.pedido`,
     [setor],
   )).rows;
-  const pedidos = (await montarConferencias(pool, linhas)).map((c) => ({ ...c, andamento: andamentoDaConferencia(c.itens, c.contagens) }));
+  const pedidos = (await montarConferencias(pool, linhas)).map((c) => ({ ...c, andamento: andamentoDaConferencia(c.itens.filter((i) => !i.em_separacao), c.contagens) }));
 
   const conferentes = (await pool.query(
     `SELECT u.login, u.nome,

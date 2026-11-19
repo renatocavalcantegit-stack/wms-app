@@ -10,6 +10,7 @@ import { enfileirar, acoesPendentes } from "./js/dados/fila.js";
 import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { juntarConferencia } from "./compartilhado/regras/juntar-pedidos.js";
 import { sobrasDaConferencia } from "./compartilhado/regras/acoes-conferencia.js";
+import { partesEmSeparacao, itemEmEspera, msgAguardandoPartes, msgItemEmEspera, rotuloDasPartes } from "./compartilhado/regras/partes-da-conferencia.js";
 import { somDePedidoNovo } from "./js/som.js";
 import { registrarDevolucao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
@@ -87,13 +88,15 @@ import { $, $$, esc } from "./js/util.js";
     if (c > i.sep) return "excesso";
     return c === 0 ? "pendente" : "parcial";
   }
+  // pedido dividido (v72): o item que só existe na parte ainda em separação não entra nos totais
   function stats(o) {
-    const st = o.itens.map((i) => itemState(o, i));
+    const itens = o.itens.filter((i) => !itemEmEspera(i));
+    const st = itens.map((i) => itemState(o, i));
     return {
       itensOk: st.filter((s) => s === "ok").length,
-      itens: o.itens.length,
-      un: arr(sum(o.itens, (i) => o.conf.itens[i.sku] || 0) + sum(o.conf.fora, (f) => f.q)),
-      unT: arr(sum(o.itens, (i) => i.sep)),
+      itens: itens.length,
+      un: arr(sum(itens, (i) => o.conf.itens[i.sku] || 0) + sum(o.conf.fora, (f) => f.q)),
+      unT: arr(sum(itens, (i) => i.sep)),
       div: st.filter((s) => s === "excesso").length + o.conf.fora.length,
       pend: st.filter((s) => s === "pendente" || s === "parcial").length,
     };
@@ -102,7 +105,9 @@ import { $, $$, esc } from "./js/util.js";
   // ---------- fila ----------
   // onde o separador deixou a mercadoria. Pedido dividido: uma doca por parte.
   function docasDo(o) {
-    if (o.partes && o.partes.length) return o.partes.map((p) => `<span class="doca-chip" title="Parte ${p.n}/${p.de} · ${esc(p.operador || "")}">${p.n}/${p.de} ${p.doca ? p.doca.codigo : "—"}</span>`).join("");
+    if (o.partes && o.partes.length) return o.partes.map((p) => (p.pronta === false
+      ? `<span class="doca-chip cf-parte-espera" title="Parte ${p.n}/${p.de} ainda em separação">${p.n}/${p.de} em separação${p.operador ? ` · ${esc(p.operador)}` : ""}</span>`
+      : `<span class="doca-chip" title="Parte ${p.n}/${p.de} · ${esc(p.operador || "")}">${p.n}/${p.de} ${p.doca ? p.doca.codigo : "—"}</span>`)).join("");
     return o.doca ? `<span class="doca-chip">${o.doca.codigo}</span>` : `<span class="muted">—</span>`;
   }
   function renderQueue() {
@@ -118,9 +123,12 @@ import { $, $$, esc } from "./js/util.js";
 
     $("#queueBody").innerHTML = list.map((o) => {
       const faltaSep = o.itens.some((i) => i.status === "falta");
+      const espera = partesEmSeparacao(o.partes);
+      const emSep = espera.length ? `Parte${espera.length > 1 ? "s" : ""} ${rotuloDasPartes(espera)} em separação` : "";
       const tag = o.cancelado ? `<span class="tag div">Cancelado · devolver</span>`
         : o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">Reaberto pelo gestor</span>`
-        : o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência</span>`
+        : o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência${emSep ? ` · ${emSep.toLowerCase()}` : ""}</span>`
+        : emSep ? `<span class="tag parcial">${emSep}</span>`
         : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
         : o.conf.status === "divergente" ? `<span class="tag div">Com divergência${MONT ? "" : ` · ${o.conf.volumes} vol.`}</span>`
         : faltaSep ? `<span class="tag parcial">Falta na separação</span>`
@@ -185,7 +193,7 @@ import { $, $$, esc } from "./js/util.js";
     t.textContent = ehAguardando(o) ? "Aguardando" : prioridade(o) ? "Prioridade" : "Na fila";
     const doca = o.partes && o.partes.length ? "pegar nas docas" : "pegar na doca";
     $("#sSub").innerHTML = `Separado por ${esc(o.operador || "—")} · ${doca} ${docasDo(o)} · ${o.itens.length} itens · ${fq(arr(sum(o.itens, (i) => i.sep)))} un.`;
-    $("#sItens").innerHTML = o.itens.map((i) => `<div class="f-row"><span class="muted">${esc(i.sku)}</span><span>${esc(i.desc)}</span><b>${fq(i.sep)}</b></div>`).join("");
+    $("#sItens").innerHTML = o.itens.map((i) => `<div class="f-row"><span class="muted">${esc(i.sku)}</span><span>${esc(i.desc)}</span>${itemEmEspera(i) ? `<span class="muted">parte ${i.espera.join(" e ")} em separação</span>` : `<b>${fq(i.sep)}</b>`}</div>`).join("");
     openModal("mStart");
     if (document.activeElement) document.activeElement.blur();
   }
@@ -211,17 +219,29 @@ import { $, $$, esc } from "./js/util.js";
     setLast({ label: "Pedido aberto", desc: `${o.cliente}`, code: o.id, conf: "—", exp: "—" });
     const dev = devolucaoPendente(o.itens, o.conf.postado);
     const sobra = !dev && sobras(o).length > 0;
-    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : sobra ? `Pedido ${o.id}: tem excesso, retire do volume (F9)` : `Pedido ${o.id} carregado · bipe os produtos`, dev || sobra ? "err" : "ok");
+    const espera = !dev && !sobra && partesEmSeparacao(o.partes).length > 0;
+    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : sobra ? `Pedido ${o.id}: tem excesso, retire do volume (F9)`
+      : espera ? `Pedido ${o.id} · confira o que já chegou · ${msgAguardandoPartes(o.partes)}` : `Pedido ${o.id} carregado · bipe os produtos`, dev || sobra ? "err" : "ok");
     beep(true);
     renderItems(); renderTotals(); focusScan();
   }
 
   function renderItems(flashSku) {
     const o = cur, checkout = consultaDeCheckout();
-    const rows = o.itens.map((i) => {
+    // pedido dividido (v72): o que ainda está em separação vai para o fim da lista (o que dá para conferir fica em cima)
+    const ordem = [...o.itens.filter((i) => !itemEmEspera(i)), ...o.itens.filter(itemEmEspera)];
+    const rows = ordem.map((i) => {
       const s = itemState(o, i), c = o.conf.itens[i.sku] || 0;
       const label = { ok: "Conferido", parcial: `Faltam ${fq(arr(i.sep - c))}`, excesso: `Excesso +${fq(arr(c - i.sep))}`, pendente: "Pendente" }[s];
-      const sepWarn = (i.sep < i.qtd ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "")
+      if (itemEmEspera(i)) return `<tr class="cf-espera" data-sku="${i.sku}">
+        <td><span class="s-dot"></span></td>
+        <td class="code"><b>${i.sku}</b>${i.ean}</td>
+        <td>${esc(i.desc)}${checkout(i.sku) ? `<span class="ck-tag">Checkout</span>` : `<span class="ck-tag granel">Granel · digite a quantidade</span>`}</td>
+        <td><span class="addr-chip">${i.end}</span></td>
+        <td class="r">${fq(i.qtd)}</td><td class="r strong">—</td><td class="r conf">—</td>
+        <td><span class="tag cf-parte-espera">Parte ${i.espera.join(" e ")} · em separação</span></td></tr>`;
+      const sepWarn = (i.status === "falta" || (!i.espera?.length && i.sep < i.qtd) ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "")
+        + (i.espera?.length ? `<span class="sub-warn">+ parte ${i.espera.join(" e ")} em separação</span>` : "")
         + (i.devolver > 0 ? `<span class="sub-warn">sai da caixa: ${fq(i.devolver)} un. (devolução)</span>` : "");
       return `<tr class="${s} ${flashSku === i.sku ? "flash" : ""}" data-sku="${i.sku}">
         <td><span class="s-dot"></span></td>
@@ -252,6 +272,12 @@ import { $, $$, esc } from "./js/util.js";
     $(".pos-prog").classList.toggle("full", s.itens > 0 && pct === 100);
     $("#btnFinish").disabled = !cur;
     $("#btnFinishM").disabled = !cur;
+    // pedido dividido (v72): enquanto houver parte em separação, o Finalizar fica apagado (o clique explica)
+    const espera = cur ? partesEmSeparacao(cur.partes) : [];
+    $("#cfPartes").hidden = !espera.length;
+    if (espera.length) $("#cfPartes").textContent = `⏳ Parte${espera.length > 1 ? "s" : ""} ${rotuloDasPartes(espera)} em separação · finaliza quando todas as partes chegarem`;
+    $("#btnFinish").classList.toggle("cf-trava", espera.length > 0);
+    $("#btnFinishM").classList.toggle("cf-trava", espera.length > 0);
   }
 
   function setLast({ label, desc, code, conf, exp, kind = "" }) {
@@ -293,6 +319,13 @@ import { $, $$, esc } from "./js/util.js";
 
     const p = produto(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
+    // pedido dividido (v72): a peça da parte que ainda está em separação nem chegou na doca
+    const naEspera = cur.itens.find((i) => i.sku === p.sku && itemEmEspera(i));
+    if (naEspera) {
+      setMsg(msgItemEmEspera(naEspera), "err"); beep(false);
+      setLast({ label: "Parte em separação", desc: p.desc, code: `${p.sku} · ${p.ean || "sem EAN"}`, conf: "—", exp: "—", kind: "err" });
+      return;
+    }
 
     // CHECKOUT (padrão): cada bipe é 1 unidade, quantidade informada é recusada.
     // GRANEL (checkout desligado pelo gestor): sem quantidade informada, o sistema pede a quantidade.
@@ -522,6 +555,7 @@ import { $, $$, esc } from "./js/util.js";
     // o que o gestor cortou tem que sair da caixa e entrar na doca de devolução antes de fechar
     if (devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Faça a devolução antes de finalizar (F9).", "err"); beep(false); return; }
     if (cur.cancelado) return encerrarCancelado();
+    if (partesEmSeparacao(cur.partes).length) { setMsg(msgAguardandoPartes(cur.partes), "err"); beep(false); return; }
     if (sobras(cur).length) { setMsg("Retire o excesso do volume antes de finalizar (F9).", "err"); beep(false); return; }
     fin = { o: cur, fix: false, vol: 0 };
     const s = stats(cur);
@@ -858,6 +892,7 @@ import { $, $$, esc } from "./js/util.js";
   const ATUALIZAR_LISTA_MS = 30_000;
   let baixando = false, primeiraLista = true; // a primeira lista não toca o som
   async function atualizarDoServidor() {
+    if (SERVIDOR && cur && !baixando && partesEmSeparacao(cur.partes).length) return atualizarPartes();
     const pode = () => !cur && !modal;
     if (!SERVIDOR || baixando || !pode()) return;
     baixando = true;
@@ -876,6 +911,24 @@ import { $, $$, esc } from "./js/util.js";
       }
       primeiraLista = false;
       renderQueue();
+    } finally { baixando = false; }
+  }
+  // pedido dividido aberto (v72): a parte que faltava terminou? os itens dela entram nesta mesma tela,
+  // e o que o conferente já contou fica como está
+  async function atualizarPartes() {
+    baixando = true;
+    try {
+      const r = await baixarConferencia(sess, SETOR);
+      const s = r.ok && cur && r.pedidos.find((x) => x.id === cur.id);
+      if (!s) return;
+      if (partesEmSeparacao(s.partes).length === partesEmSeparacao(cur.partes).length) return;
+      Object.assign(cur, { itens: s.itens, partes: s.partes, operador: s.operador, fim: s.fim });
+      s.itens.forEach((i) => { if (!(i.sku in cur.conf.itens)) cur.conf.itens[i.sku] = 0; });
+      save(); renderItems(); renderTotals();
+      $("#oSub").innerHTML = `${esc(cur.cidade)} · separado por ${esc(cur.operador || "—")} · ${cur.itens.length} itens · pegar nas docas ${docasDo(cur)}`;
+      const falta = partesEmSeparacao(cur.partes);
+      setMsg(falta.length ? `Chegou mais uma parte · ${msgAguardandoPartes(cur.partes)}` : "Todas as partes chegaram · confira e finalize (F10)", "ok");
+      somDePedidoNovo(); toast(`${cur.id}: chegou mais uma parte`);
     } finally { baixando = false; }
   }
   if (SERVIDOR) {

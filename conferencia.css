@@ -338,3 +338,9 @@ body.cf-devolvendo .pos-scan { outline: 3px solid #A855F7; border-radius: 12px; 
 .ck-tag.granel { background: #FFF1D6; color: #9A5B00; }
 .pos-mult.granel { background: #FFF1D6; color: #9A5B00; box-shadow: 0 0 0 2px #F5B13D; }
 .pos-mult.granel input { width: 64px; }
+
+/* ---------- pedido dividido com parte em separação (v72) ---------- */
+.doca-chip.cf-parte-espera, .tag.cf-parte-espera { background: #fff; color: #8A8F98; border: 1px dashed #C9CDD3; }
+#itemsBody tr.cf-espera { opacity: .45; }
+.cf-partes { margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; border: 1px dashed rgba(255,255,255,.35); color: #E5E7EB; font: 600 13px Inter, sans-serif; }
+.btn.pos-finish.cf-trava, .btn.pos-finish-m.cf-trava { opacity: .55; }

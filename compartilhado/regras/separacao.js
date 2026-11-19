@@ -122,24 +122,30 @@ export function ruasDaParte(itens, idxs) {
   return ruas.length ? `Rua ${ruas[0]}${ruas.length > 1 ? "–" + ruas[ruas.length - 1] : ""}` : "";
 }
 
-// junta as partes separadas num pedido só para a Conferência (só quando TODAS terminaram).
+// junta as partes separadas num pedido só para a Conferência.
 // partes: os pedidos-parte ({ parte: { pai, n, de }, itens, operador, doca, fim })
-export function partesCompletas(partes) {
-  if (!partes.length) return false;
-  const de = partes[0].parte.de;
-  return partes.length === de && partes.every((p) => p.status === "concluido");
-}
+// v72: a conferência começa com a primeira parte pronta (qualquer uma)
+export const algumaParteConcluida = (partes) => partes.some((p) => p.status === "concluido");
+// Junta as partes num pedido só. Parte ainda em separação: "pronta: false", e os itens dela entram em espera
+// (sep 0, espera ["n/de"]): o conferente só confere quando ela terminar.
 export function juntarPartes(partes) {
   const ordem = [...partes].sort((a, b) => a.parte.n - b.parte.n);
-  const itens = ordem.flatMap((p) => p.itens.map((i) => ({ ...i })))
+  const pronta = (p) => p.status === "concluido";
+  const itens = ordem.flatMap((p) => p.itens.map((i) => (pronta(p) ? { ...i } : { ...i, sep: 0, status: "ok", espera: [`${p.parte.n}/${p.parte.de}`] })))
     .sort((a, b) => compararEnderecos(a.end, b.end));
-  const base = ordem[0];
+  const prontas = ordem.filter(pronta);
+  const base = prontas[0] || ordem[0];
   return {
     ...base, id: base.parte.pai, parte: null, itens,
-    operador: [...new Set(ordem.map((p) => p.operador).filter(Boolean))].join(" + "),
+    operador: [...new Set(prontas.map((p) => p.operador).filter(Boolean))].join(" + "),
     doca: base.doca,
-    partes: ordem.map((p) => ({ n: p.parte.n, de: p.parte.de, operador: p.operador, doca: p.doca, fim: p.fim })),
-    fim: Math.max(...ordem.map((p) => p.fim || 0)),
+    partes: Array.from({ length: Math.max(base.parte.de, ordem.length) }, (_, k) => {
+      const p = ordem.find((x) => x.parte.n === k + 1);
+      // parte que ainda nem apareceu neste aparelho: em separação, sem itens conhecidos
+      return p ? { n: p.parte.n, de: p.parte.de, operador: p.operador, doca: pronta(p) ? p.doca : null, fim: p.fim, pronta: pronta(p) }
+        : { n: k + 1, de: base.parte.de, operador: null, doca: null, fim: null, pronta: false };
+    }),
+    fim: Math.max(...prontas.map((p) => p.fim || 0)),
     inicio: Math.min(...ordem.map((p) => p.inicio || Infinity)),
   };
 }

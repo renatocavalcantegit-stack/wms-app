@@ -228,3 +228,67 @@ test("excesso: o pedido não finaliza até a peça sair do volume (F9)", async (
   await expect(bruna.locator("#mPrint")).toBeVisible();
   await expect(bruna.locator("#pPreview .label .lb-qr")).toHaveCount(1);
 });
+
+// ---------- pedido dividido: a conferência começa com a primeira parte e só fecha com todas (v72) ----------
+async function separarNoServidor(login, id) {
+  const tk = (await (await fetch(`${endereco}/api/login`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ login, pin: usuario(login).pin }) })).json()).token;
+  await pool.query("UPDATE pedidos SET designado_para = $2 WHERE id = $1", [id, login]);
+  const itens = (await pool.query("SELECT sequencia, qtd FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [id])).rows;
+  let t = Date.parse("2026-11-19T10:00:00Z");
+  const acao = (tipo, dados) => ({ id: crypto.randomUUID(), tipo, dados, feitaEm: new Date((t += 1000)).toISOString() });
+  const r = await (await fetch(`${endereco}/api/sincronizar`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${tk}` },
+    body: JSON.stringify({ acoes: [acao("separacao.iniciar", { pedido: id }),
+      ...itens.map((i) => acao("separacao.item", { pedido: id, sequencia: i.sequencia, qtdSeparada: Number(i.qtd), status: "ok" })),
+      acao("separacao.concluir", { pedido: id, doca: "R9002-P1-A100-AP102" })] }) })).json();
+  expect(r.recusadas).toEqual([]);
+  await fetch(`${endereco}/api/logout`, { method: "POST", headers: { authorization: `Bearer ${tk}` } });
+}
+
+test("pedido dividido: confere a parte que chegou, não finaliza até a outra parte terminar", async ({ browser }) => {
+  // a 2/2 termina antes da 1/2
+  await separarNoServidor("separador2", "PV-10426/2");
+  await pool.query("UPDATE conferencias SET designado_para = 'conferente', ordem_fila = 0 WHERE pedido = 'PV-10426'");
+  const { page: ana } = await posto(browser, "conferente");
+  await expect.poll(() => idsDaFila(ana)).toContain("PV-10426");
+  const linha = ana.locator('#queueBody tr[data-id="PV-10426"]');
+  await expect(linha).toContainText("Parte 1/2 em separação");
+  await expect(linha.locator(".doca-chip.cf-parte-espera")).toContainText("1/2 em separação");
+  await linha.click();
+  await ana.locator("#sGo").click();
+
+  const pedido = () => ana.evaluate(async () =>
+    (await import("/js/dados/conferencia.js")).carregarConferencia("exp", { servidor: true }).orders.find((x) => x.id === "PV-10426"));
+  let o = await pedido();
+  const espera = o.itens.filter((i) => !i.sep && i.espera?.length);
+  expect(espera.length).toBeGreaterThan(0);
+  await expect(ana.locator("#itemsBody tr.cf-espera")).toHaveCount(espera.length);
+  await expect(ana.locator("#cfPartes")).toBeVisible();
+  // a peça da parte em separação não conta
+  await bipar(ana, espera[0].ean || espera[0].sku);
+  await expect(ana.locator("#scanMsg")).toContainText("ainda em separação");
+  // F10 travado
+  await ana.keyboard.press("F10");
+  await expect(ana.locator("#mFinish")).toBeHidden();
+  await expect(ana.locator("#scanMsg")).toContainText("Aguardando a parte 1/2");
+  // pode voltar à fila: o pedido continua com ela, em conferência
+  await ana.keyboard.press("F2");
+  await expect(linha).toContainText("Em conferência · parte 1/2 em separação");
+  await linha.click();
+  await expect(ana.locator("#order")).toBeVisible();
+
+  // na Gestão: o card na fila da Ana, com a faixa da parte em separação e só a doca da parte pronta
+  const g = await gestao(browser, "coordenador");
+  const card = g.locator('#board .gx-list[data-col="conferente"] .card[data-id="PV-10426"]');
+  await expect(card.locator(".gc-parte-espera")).toHaveText(/Parte 1\/2 em separação/);
+  await expect(card.locator(".c-doca")).not.toContainText("1/2");
+
+  // a 1/2 termina: os itens dela entram na mesma tela, e agora finaliza
+  await separarNoServidor("separador", "PV-10426/1");
+  await ana.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(ana.locator("#cfPartes")).toBeHidden({ timeout: 15_000 });
+  await expect(ana.locator("#itemsBody tr.cf-espera")).toHaveCount(0);
+  await conferirTudo(ana, "PV-10426");
+  await finalizarConferencia(ana, 1);
+  await expect.poll(async () => (await conferencia("PV-10426")).status).toBe("conferido");
+});

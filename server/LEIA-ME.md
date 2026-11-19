@@ -231,8 +231,13 @@ Continuam só no aparelho: baixa de estoque e Ocorrências (corte e cancelamento
 ## Conferência (Fase 2)
 
 Quando a separação termina (`separacao.concluir`), o pedido entra sozinho na **caixa de entrada da conferência**
-(tabela `conferencias`, sem conferente). Pedido dividido entre separadores entra **uma vez só**, quando todas as partes
-terminaram: o pedido original (ex.: PV-10426), com os itens de todas as partes e a doca de cada uma.
+(tabela `conferencias`, sem conferente). Pedido dividido entre separadores (v72) entra **uma vez só**, já com a
+**primeira parte que terminar** (qualquer uma: a 2/2 pode chegar antes da 1/2): o pedido original (ex.: PV-10426).
+A lista manda cada parte com `pronta` e os itens da parte ainda em separação com `em_separacao: true` (o posto mostra
+apagado e não deixa bipar). O conferente confere o que chegou e pode voltar à fila; quando a outra parte termina, os
+itens dela aparecem na mesma conferência. **Finalizar com parte em separação é recusado**
+("A PARTE 1/2 DO PV-10426 AINDA ESTÁ EM SEPARAÇÃO."). Separar de novo uma parte tira o pedido da conferência só se
+ninguém começou a conferir e nenhuma outra parte continua pronta.
 
 O posto (`conferencia.html`) mostra só a **fila do conferente** (o que o coordenador mandou para ele, na ordem do quadro).
 Clicar no pedido (ou bipar) abre o resumo "Iniciar conferência"; Enter começa. Cada leitura conta na hora no posto e vai

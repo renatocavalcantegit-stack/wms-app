@@ -80,7 +80,7 @@ export const pedidosNovosNaFila = (antes, depois) => {
 };
 
 // ---------- Conferência (Fase 2) ----------
-// A mesma ideia para a lista do posto: tem ação na fila → fica a versão do POSTO; senão, a do SERVIDOR.
+// A mesma ideia para a lista do posto: tem ação na fila → fica a CONFERÊNCIA do posto; senão, a do SERVIDOR.
 // O que só o posto tem é o histórico das leituras (para o estorno, F6): fica quando o servidor tem as mesmas
 // contagens do posto (nada mudou por fora).
 const contagensIguais = (a, b) => {
@@ -93,7 +93,8 @@ export function juntarConferencia({ locais, doServidor, comFila = new Set() }) {
   const lista = doServidor.map((s) => {
     const l = local.get(s.id);
     if (!l) return s;
-    if (comFila.has(s.id)) return l;
+    // v72: o pedido (itens, partes, docas) vem do servidor (uma parte pode ter terminado); a conferência, do posto
+    if (comFila.has(s.id)) return { ...s, conf: l.conf };
     return contagensIguais(l.conf, s.conf) ? { ...s, conf: { ...s.conf, log: l.conf.log || [], obs: s.conf.obs ?? l.conf.obs } } : s;
   });
   const noServidor = new Set(doServidor.map((s) => s.id));

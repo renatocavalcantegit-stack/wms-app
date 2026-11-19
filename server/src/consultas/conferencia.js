@@ -1,6 +1,8 @@
 // SQL da Conferência (Fase 2): o que o posto do conferente e o quadro da Gestão leem.
 // Uma conferência é de um pedido inteiro. Pedido dividido: o pedido original (PV-10426), com as partes
 // (PV-10426/1, /2) juntas: os itens de todas, a doca e o separador de cada parte.
+// v72: a conferência começa com a primeira parte pronta. Parte ainda em separação: "pronta: false", e os itens
+// dela vêm com "em_separacao: true" (o separado ainda não vale; o posto mostra apagado).
 import { COLUNAS_DO_ITEM } from "./pedidos.js";
 
 // as conferências de uma lista, cada uma com o pedido (cabeçalho, partes, itens separados) e o que já foi contado
@@ -33,15 +35,18 @@ async function montar(pool, conferencias) {
     const ps = doPedido.get(c.pedido) || [];
     const base = ps[0] || {};
     const partes = ps.filter((p) => p.pedido_pai);
+    const prontas = ps.filter((p) => !p.pedido_pai || p.status === "concluido"); // quem já entregou na doca
     return {
       ...c,
       cliente: base.cliente, cidade: base.cidade, prioridade: base.prioridade, chegada: base.chegada,
       rota: base.rota ?? null, aguardando: !!base.aguardando,
-      separador_nome: [...new Set(ps.map((p) => p.separador_nome).filter(Boolean))].join(" + ") || null,
+      separador_nome: [...new Set(prontas.map((p) => p.separador_nome).filter(Boolean))].join(" + ") || null,
       doca: partes.length ? null : base.doca ?? null,
-      separado_em: ps.length ? new Date(Math.max(...ps.map((p) => +new Date(p.fim || 0)))) : null,
-      partes: partes.map((p) => ({ numero: p.parte_numero, de: p.partes_total, separador_nome: p.separador_nome, doca: p.doca, fim: p.fim })),
-      itens: ps.flatMap((p) => itensDe.get(p.id) || []),
+      separado_em: prontas.length ? new Date(Math.max(...prontas.map((p) => +new Date(p.fim || 0)))) : null,
+      partes: partes.map((p) => ({ numero: p.parte_numero, de: p.partes_total, separador_nome: p.separador_nome, doca: p.doca, fim: p.fim,
+        pronta: p.status === "concluido" })),
+      itens: ps.flatMap((p) => (itensDe.get(p.id) || []).map((i) => (p.pedido_pai && p.status !== "concluido"
+        ? { ...i, em_separacao: true, parte: `${p.parte_numero}/${p.partes_total}` } : i))),
       contagens: (contagensDe.get(c.pedido) || []).map(({ pedido, ...x }) => x),
     };
   });

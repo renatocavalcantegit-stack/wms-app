@@ -83,7 +83,7 @@ test("dois postos no mesmo pedido: o segundo é conflito; perfil que não é con
   assert.match(sep.recusadas[0].motivo, /PERFIL SEM PERMISSÃO/);
 });
 
-test("pedido que acabou de ser separado entra na caixa de entrada da conferência; dividido, só com todas as partes", async () => {
+test("pedido que acabou de ser separado entra na caixa de entrada da conferência; dividido, já com a primeira parte (v72)", async () => {
   const itens = async (id) => (await pool.query("SELECT sequencia, qtd FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [id])).rows;
   const separar = async (login, id) => {
     await pool.query("UPDATE pedidos SET designado_para = $2 WHERE id = $1", [id, login]);
@@ -98,16 +98,35 @@ test("pedido que acabou de ser separado entra na caixa de entrada da conferênci
   assert.equal(c.status, "aguardando");
   assert.equal(c.designado_para, null); // caixa de entrada: o coordenador decide quem confere
 
-  await separar("separador", "PV-10426/1");
-  assert.equal(await conferencia("PV-10426"), undefined); // a parte 2 ainda não terminou
+  // a 2/2 termina ANTES da 1/2: o pedido original já entra na conferência
   await separar("separador2", "PV-10426/2");
   assert.equal((await conferencia("PV-10426")).status, "aguardando");
-  // na conferência é um pedido só, com os itens das duas partes e a doca de cada uma
   await pool.query("UPDATE conferencias SET designado_para = 'conferente2', ordem_fila = 9 WHERE pedido = 'PV-10426'");
-  const junto = (await lista("conferente2")).find((x) => x.pedido === "PV-10426");
-  assert.equal(junto.partes.length, 2);
-  const total = (await itens("PV-10426/1")).length + (await itens("PV-10426/2")).length;
-  assert.equal(junto.itens.length, total);
+  let junto = (await lista("conferente2")).find((x) => x.pedido === "PV-10426");
+  assert.deepEqual(junto.partes.map((x) => [x.numero, x.pronta]), [[1, false], [2, true]]);
+  assert.equal(junto.separador_nome, "Segundo Separador"); // só quem já entregou na doca
+  const n1 = (await itens("PV-10426/1")).length, n2 = (await itens("PV-10426/2")).length;
+  assert.equal(junto.itens.length, n1 + n2);
+  assert.equal(junto.itens.filter((i) => i.em_separacao && i.parte === "1/2").length, n1);
+
+  // o conferente confere o que chegou, mas não finaliza: a parte 1/2 ainda está em separação
+  const contagens = () => junto.itens.map((i) => ({ produto: i.produto, qtd: i.em_separacao ? 0 : i.qtd_separada }));
+  const cedo = await sincronizar("conferente2", [
+    acao("conferencia.iniciar", { pedido: "PV-10426" }),
+    acao("conferencia.finalizar", { pedido: "PV-10426", volumes: 1, observacao: OBS, contagens: contagens() }),
+  ]);
+  assert.deepEqual(cedo.recusadas.map((x) => x.motivo), ["A PARTE 1/2 DO PV-10426 AINDA ESTÁ EM SEPARAÇÃO."]);
+  assert.equal((await conferencia("PV-10426")).status, "andamento");
+
+  // a 1/2 termina: os itens dela entram na mesma conferência, e agora finaliza (uma conferência só)
+  await separar("separador", "PV-10426/1");
+  junto = (await lista("conferente2")).find((x) => x.pedido === "PV-10426");
+  assert.ok(junto.partes.every((x) => x.pronta) && junto.itens.every((i) => !i.em_separacao));
+  const fim = await sincronizar("conferente2", [
+    acao("conferencia.finalizar", { pedido: "PV-10426", volumes: 2, observacao: OBS, contagens: contagens() }),
+  ]);
+  assert.deepEqual(fim.recusadas, []);
+  assert.equal((await conferencia("PV-10426")).status, "conferido");
 });
 
 test("separar novamente: sai da conferência que ninguém começou; recusado depois que a conferência começou", async () => {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validarDocaExpedicao, MSG_NAO_E_DOCA_EXPEDICAO, compararAtendimento, validarLote, posicoesDoLote, montarParadas, paradaConcluida,
-  destinoDaLeitura, caixaDaVez, outrasCaixasPendentes, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, partesCompletas, juntarPartes,
+  destinoDaLeitura, caixaDaVez, outrasCaixasPendentes, validarDivisao, sugerirDivisao, validarPartes, ruasDaParte, algumaParteConcluida, juntarPartes,
   podeSepararNovamente, MSG_JA_NA_CONFERENCIA,
 } from "../compartilhado/regras/separacao.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "../compartilhado/regras/enderecos.js";
@@ -97,15 +97,24 @@ test("sugestão de divisão: blocos de endereços seguidos, unidades equilibrada
   assert.match(validarPartes(itens, [[0, 1], [1, 2, 3]]), /exatamente/);
 });
 
-test("junção das partes: só com todas concluídas; vira um pedido com as docas de cada parte", () => {
+test("junção das partes (v72): entra com a primeira pronta; a outra fica em espera; com todas, as docas de cada parte", () => {
   const p1 = { id: "PV-9-1", prio: "normal", parte: { pai: "PV-9", n: 1, de: 2 }, status: "concluido", operador: "Ana", doca: { codigo: "R9002-P1-A100-AP101" }, fim: 100, inicio: 10,
     itens: [it("b", "R3002-P1-A100-AP101", 2)] };
   const p2 = { id: "PV-9-2", prio: "normal", parte: { pai: "PV-9", n: 2, de: 2 }, status: "andamento", operador: "Bruno", doca: null, fim: null, inicio: 20,
     itens: [it("a", "R3001-P1-A100-AP101", 3)] };
-  assert.equal(partesCompletas([p1, p2]), false);
-  assert.equal(partesCompletas([p1]), false);
+  assert.equal(algumaParteConcluida([{ ...p1, status: "andamento" }, p2]), false);
+  assert.equal(algumaParteConcluida([p1, p2]), true);
+  // a 1/2 pronta, a 2/2 em separação: os itens da 2/2 entram em espera (sep 0) e só a doca da 1/2 aparece
+  const meio = juntarPartes([p2, p1]);
+  assert.equal(meio.id, "PV-9");
+  assert.deepEqual(meio.itens.map((i) => [i.sku, i.sep, i.espera]), [["a", 0, ["2/2"]], ["b", 0, undefined]]);
+  assert.deepEqual(meio.partes.map((x) => [x.n, x.pronta, x.doca?.codigo ?? null]), [[1, true, "R9002-P1-A100-AP101"], [2, false, null]]);
+  assert.equal(meio.operador, "Ana"); assert.equal(meio.fim, 100);
+  // a 2/2 pode chegar antes: só ela pronta, e a 1/2 que nem apareceu ainda conta como em separação
+  const so2 = juntarPartes([{ ...p2, status: "concluido", doca: { codigo: "R9002-P1-A100-AP102" }, fim: 150 }]);
+  assert.deepEqual(so2.partes.map((x) => [x.n, x.pronta]), [[1, false], [2, true]]);
+  assert.equal(so2.doca.codigo, "R9002-P1-A100-AP102");
   Object.assign(p2, { status: "concluido", doca: { codigo: "R9002-P1-A100-AP102" }, fim: 200 });
-  assert.equal(partesCompletas([p2, p1]), true);
   const j = juntarPartes([p2, p1]);
   assert.equal(j.id, "PV-9");
   assert.deepEqual(j.itens.map((i) => i.sku), ["a", "b"]);

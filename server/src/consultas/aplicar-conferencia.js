@@ -7,41 +7,44 @@ const PERFIS_DA_CONFERENCIA = ["conf"];
 // nome do campo na regra → coluna no banco
 const COLUNAS = { status: "status", conferente: "conferente", inicio: "inicio", fim: "fim", posto: "posto", volumes: "volumes", observacao: "observacao" };
 
+// partesEmSeparacao (v72): pedido dividido, as partes que ainda não terminaram ("1/2", ...). Com alguma, não finaliza.
 export const conferenciaDoPedido = async (conexao, pedido, travar = false) =>
   (await conexao.query(
-    `SELECT pedido, setor, status, conferente, designado_para AS "designadoPara" FROM conferencias WHERE pedido = $1${travar ? " FOR UPDATE" : ""}`,
+    `SELECT c.pedido, c.setor, c.status, c.conferente, c.designado_para AS "designadoPara",
+            coalesce((SELECT array_agg(p.parte_numero || '/' || p.partes_total ORDER BY p.parte_numero)
+                        FROM pedidos p WHERE p.pedido_pai = c.pedido AND p.status <> 'concluido'), '{}') AS "partesEmSeparacao"
+       FROM conferencias c WHERE c.pedido = $1${travar ? " FOR UPDATE OF c" : ""}`,
     [pedido],
   )).rows[0] || null;
 
-// o que foi separado, por produto (pedido dividido: somando todas as partes)
+// o que foi separado, por produto (pedido dividido: somando as partes que já terminaram a separação)
 export async function separadoDoPedido(conexao, pedido) {
   return (await conexao.query(
     `SELECT i.produto, sum(i.qtd_separada) AS qtd
        FROM itens_pedido i JOIN pedidos p ON p.id = i.pedido_id
-      WHERE (p.id = $1 AND p.pedido_pai IS NULL) OR p.pedido_pai = $1
+      WHERE (p.id = $1 AND p.pedido_pai IS NULL) OR (p.pedido_pai = $1 AND p.status = 'concluido')
       GROUP BY i.produto ORDER BY i.produto`,
     [pedido],
   )).rows;
 }
 
 // A separação terminou: o pedido entra na caixa de entrada da conferência.
-// Parte de pedido dividido: só quando TODAS as partes terminaram, e entra o pedido original (uma conferência só).
+// Parte de pedido dividido (v72): entra o pedido original (uma conferência só) já com a PRIMEIRA parte que terminar,
+// qualquer que seja. As outras partes aparecem nessa mesma conferência quando terminarem; ela só finaliza com todas.
 // pedido = { id, setor, pedidoPai }
 export async function entrarNaConferencia(conexao, pedido) {
-  let id = pedido.id;
-  if (pedido.pedidoPai) {
-    const faltam = (await conexao.query(
-      "SELECT count(*)::int AS n FROM pedidos WHERE pedido_pai = $1 AND status <> 'concluido'", [pedido.pedidoPai],
-    )).rows[0].n;
-    if (faltam) return;
-    id = pedido.pedidoPai;
-  }
+  const id = pedido.pedidoPai || pedido.id;
   await conexao.query("INSERT INTO conferencias (pedido, setor) VALUES ($1, $2) ON CONFLICT (pedido) DO NOTHING", [id, pedido.setor]);
 }
 
-// "Separar novamente" antes de alguém começar a conferir: sai da conferência (volta quando a separação terminar)
+// "Separar novamente" antes de alguém começar a conferir: sai da conferência (volta quando a separação terminar).
+// Pedido dividido: só sai se nenhuma outra parte continua pronta (senão a conferência fica, esperando esta parte).
 export async function sairDaConferencia(conexao, pedido) {
-  await conexao.query("DELETE FROM conferencias WHERE pedido = $1 AND status = 'aguardando'", [pedido]);
+  await conexao.query(
+    `DELETE FROM conferencias WHERE pedido = $1 AND status = 'aguardando'
+        AND NOT EXISTS (SELECT 1 FROM pedidos WHERE pedido_pai = $1 AND status = 'concluido')`,
+    [pedido],
+  );
 }
 
 // conexao: a da transação do lote · usuario: { login, perfil } · acao: { tipo, dados, feitaEm }

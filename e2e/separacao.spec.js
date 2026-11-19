@@ -96,13 +96,16 @@ test("endereço vazio no lote: falta com 0 na caixa A marca as outras caixas da 
   expect([itemB.sep, itemB.status, itemB.motivo]).toEqual([0, "falta", "Endereço vazio"]);
 });
 
-test("pedido dividido: a conferência só recebe quando todas as partes terminam, já juntas", async ({ page }) => {
+test("pedido dividido (v72): a conferência recebe com a primeira parte; a outra entra junto quando terminar", async ({ page }) => {
   await entrar(page, "separador");
   await separarPedido(page, "PV-10426/1", "R9002-P1-A100-AP103");
   await page.locator("#doneBack").click();
 
+  // já chega com a parte 1/2; a 2/2 aparece em separação
   await entrar(page, "conferente", "conferencia.html");
-  await expect(page.locator("#queueBody")).not.toContainText("PV-10426");
+  const antes = page.locator('#queueBody tr[data-id="PV-10426"]');
+  await expect(antes).toContainText("Parte 2/2 em separação");
+  await expect(antes).toContainText("R9002-P1-A100-AP103");
 
   await entrar(page, "separador");
   await separarPedido(page, "PV-10426/2", "R9002-P1-A100-AP104");
@@ -116,6 +119,7 @@ test("pedido dividido: a conferência só recebe quando todas as partes terminam
   // as duas docas onde as partes ficaram
   await expect(linha).toContainText("R9002-P1-A100-AP103");
   await expect(linha).toContainText("R9002-P1-A100-AP104");
+  await expect(linha).not.toContainText("em separação");
 });
 
 test("endereço desativado na Gestão de Estoque é recusado na separação", async ({ page }) => {

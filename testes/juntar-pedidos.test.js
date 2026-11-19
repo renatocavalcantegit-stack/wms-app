@@ -87,6 +87,7 @@ test("conferência: com ação na fila fica a do posto; senão a do servidor, co
   const r = juntarConferencia({ locais: local, doServidor: servidor, comFila: new Set(["P1", "P9"]) });
   assert.deepEqual(r.map((o) => o.id), ["P1", "P2", "P3", "P4", "P9"]);
   assert.equal(r[0].conf.itens.a, 2);             // P1: na fila, a do posto
+  assert.notEqual(r[0], local[0]); // …mas o pedido é o do servidor (v72: parte nova entra)
   assert.deepEqual(r[1].conf.log, [{ sku: "a", q: 1 }]); // P2: mesmas contagens, fica o histórico
   assert.equal(r[2].conf.itens.a, 5);             // P3: mudou por fora, a do servidor
 });

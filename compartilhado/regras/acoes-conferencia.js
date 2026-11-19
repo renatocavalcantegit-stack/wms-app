@@ -14,6 +14,7 @@
 //            { resultado: "recusada", motivo }   ação inválida
 // Por que gravar o VALOR e não somar? Se o posto reenviar a mesma ação, o resultado é o mesmo.
 import { lerQuantidade, quantidadeValida, arredondarQtd } from "./quantidade.js";
+import { msgFinalizarComPartes } from "./partes-da-conferencia.js";
 
 export const TIPOS_DA_CONFERENCIA = ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar", "conferencia.volumes", "conferencia.reabrir"];
 export const FINALIZADA = ["conferido", "divergente"];
@@ -108,6 +109,8 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
     if (dono) return dono;
     if (FINALIZADA.includes(c.status)) return aplicada(); // reenvio
     if (c.status !== "andamento") return recusada("PEDIDO NÃO ESTÁ EM CONFERÊNCIA.");
+    // pedido dividido (v72): só finaliza quando todas as partes terminaram a separação
+    if (c.partesEmSeparacao?.length) return recusada(msgFinalizarComPartes(c.pedido, c.partesEmSeparacao));
     const v = lerVolumes(c.setor, dados);
     if (typeof v === "string") return recusada(v);
     // as contagens da finalização valem por tudo (o posto manda o que contou de cada produto)

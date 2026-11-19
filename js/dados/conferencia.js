@@ -4,7 +4,7 @@
 // Na Fase 1: banco local (IndexedDB) + fila de sincronização; os pedidos separados chegam pelo servidor.
 import { seedConferencia, seedConferenciaMont } from "../demo-dados.js";
 import { lerPedidosSalvos as lerPedidosDaSeparacao } from "./separacao.js";
-import { partesCompletas, juntarPartes } from "../../compartilhado/regras/separacao.js";
+import { algumaParteConcluida, juntarPartes } from "../../compartilhado/regras/separacao.js";
 
 // v4: doca de expedição e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
@@ -69,22 +69,31 @@ export function retirarDaConferencia(setor, id) {
 }
 
 // traz pedidos concluídos na Separação (mesmo navegador).
-// Pedido dividido entre separadores só chega quando TODAS as partes terminaram, já juntado num pedido só.
+// Pedido dividido (v72): chega com a PRIMEIRA parte que terminar, já juntado num pedido só; as partes que
+// ainda estão em separação vêm com "pronta: false" e os itens delas em espera.
 // Pedido que já está na fila só é substituído se foi separado de novo (horário de fim diferente).
+// Se a conferência dele já começou e chegou outra parte, só entram os itens novos: o que já foi contado fica.
 function importarConcluidosDaSeparacao(d, setor) {
   const separados = lerPedidosDaSeparacao(setor);
   const partesPorPai = {};
   separados.filter((o) => o.parte).forEach((o) => (partesPorPai[o.parte.pai] ||= []).push(o));
   const prontos = [
     ...separados.filter((o) => !o.parte && o.status === "concluido"),
-    ...Object.values(partesPorPai).filter(partesCompletas).map(juntarPartes),
+    ...Object.values(partesPorPai).filter(algumaParteConcluida).map(juntarPartes),
   ];
   prontos.forEach((o) => {
     const ex = d.orders.find((x) => x.id === o.id);
-    if (ex && ex.fim === o.fim) return;
+    const chave = (x) => `${x.fim}|${(x.partes || []).map((p) => p.pronta !== false).join()}`;
+    if (ex && chave(ex) === chave(o)) return;
     const copy = JSON.parse(JSON.stringify(o));
     // item cortado depois de separado: na conferência, "sep" é o que fica na caixa e "devolver" o que sai dela
     copy.itens.forEach((i) => { if (i.devolver > 0) i.sep -= i.devolver; });
+    if (ex && o.partes?.length && ex.conf?.status === "andamento") {
+      // chegou mais uma parte de um pedido em conferência: atualiza os itens e as partes, mantém as contagens
+      Object.assign(ex, { itens: copy.itens, partes: copy.partes, operador: copy.operador, fim: copy.fim });
+      copy.itens.forEach((i) => { if (!(i.sku in ex.conf.itens)) ex.conf.itens[i.sku] = 0; });
+      return;
+    }
     prepararParaConferencia(copy);
     if (ex) d.orders[d.orders.indexOf(ex)] = copy; else d.orders.unshift(copy);
   });
@@ -101,13 +110,22 @@ const num = (x) => Number(x ?? 0);
 // conferência como o servidor manda → pedido como o posto usa (o mesmo formato da demonstração).
 // O mesmo produto em duas partes vira uma linha só (a conferência conta por produto).
 export function conferenciaDoServidor(c) {
+  // item de parte ainda em separação (v72): o separado não vale ainda; "espera" diz de que parte ele é
   const porProduto = new Map();
   for (const i of c.itens) {
+    const sep = i.em_separacao ? 0 : num(i.qtd_separada);
+    const falta = !i.em_separacao && i.status === "falta";
     const x = porProduto.get(i.produto);
-    if (x) { x.qtd += num(i.qtd); x.sep += num(i.qtd_separada); if (i.status === "falta") { x.status = "falta"; x.motivo ||= i.motivo; } continue; }
+    if (x) {
+      x.qtd += num(i.qtd); x.sep += sep;
+      if (falta) { x.status = "falta"; x.motivo ||= i.motivo; }
+      if (i.em_separacao && !x.espera.includes(i.parte)) x.espera.push(i.parte);
+      continue;
+    }
     porProduto.set(i.produto, {
       sku: i.produto, ean: i.codigos_de_barras?.[0] || "", eans: i.codigos_de_barras || [], desc: i.descricao, un: i.un,
-      end: i.endereco_codigo, qtd: num(i.qtd), sep: num(i.qtd_separada), status: i.status === "falta" ? "falta" : "ok", motivo: i.motivo || "",
+      end: i.endereco_codigo, qtd: num(i.qtd), sep, status: falta ? "falta" : "ok", motivo: falta ? i.motivo || "" : "",
+      espera: i.em_separacao ? [i.parte] : [],
     });
   }
   const itens = [...porProduto.values()];
@@ -122,7 +140,7 @@ export function conferenciaDoServidor(c) {
     id: c.pedido, cliente: c.cliente, cidade: c.cidade, prio: c.prioridade, hora: horaCurta(c.chegada), aguardando: !!c.aguardando,
     rota: c.rota || null, status: "concluido", operador: c.separador_nome || null, fim: ms(c.separado_em),
     doca: doca(c.doca),
-    partes: (c.partes || []).map((p) => ({ n: p.numero, de: p.de, operador: p.separador_nome, doca: doca(p.doca), fim: ms(p.fim) })),
+    partes: (c.partes || []).map((p) => ({ n: p.numero, de: p.de, operador: p.separador_nome, doca: doca(p.doca), fim: ms(p.fim), pronta: p.pronta !== false })),
     ordem: c.ordem_fila ?? null,
     itens,
     conf: {

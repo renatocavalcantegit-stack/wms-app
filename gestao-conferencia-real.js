@@ -115,10 +115,15 @@ const destinoTag = (c) => {
   const r = rotaPeloId(c.rota);
   return r ? `<span class="rt" style="--rc:${r.cor}"><i></i>${esc(r.nome)}</span>` : `<span class="rt none">SEM ROTA</span>`;
 };
-// onde buscar a mercadoria: a doca do separador (pedido dividido: uma doca por parte)
+// onde buscar a mercadoria: a doca do separador (pedido dividido: uma doca por parte; v72: a parte que ainda
+// está em separação não tem doca e aparece na faixa amarela do card)
+const prontas = (c) => (c.partes || []).filter((x) => x.pronta !== false);
+const emSeparacao = (c) => (c.partes || []).filter((x) => x.pronta === false);
 const docasHtml = (c) => (c.partes?.length
-  ? c.partes.map((x) => `<span class="dchip" title="Parte ${x.numero}/${x.de} · ${esc(x.separador_nome || "")}">${x.numero}/${x.de} ${esc(x.doca || "—")}</span>`).join("")
+  ? prontas(c).map((x) => `<span class="dchip" title="Parte ${x.numero}/${x.de} · ${esc(x.separador_nome || "")}">${x.numero}/${x.de} ${esc(x.doca || "—")}</span>`).join("")
   : c.doca ? `<span class="dchip">${esc(c.doca)}</span>` : "");
+const faixaDasPartes = (c) => emSeparacao(c).map((x) =>
+  `<p class="gc-parte-espera">⏳ Parte ${x.numero}/${x.de} em separação${x.separador_nome ? ` · ${esc(x.separador_nome)}` : ""}</p>`).join("");
 
 function card(c, { col, pos = "", primeiro = false }) {
   const vivo = c.status === "andamento", a = c.andamento;
@@ -147,6 +152,7 @@ function card(c, { col, pos = "", primeiro = false }) {
     <div class="c-nums"><span><b>${a.itens}</b> SKUs</span><span><b>${numero(a.unidades)}</b> un.</span>${idade}</div>
     ${!vivo && c.separador_nome ? `<p class="c-from">Separado por ${esc(c.separador_nome)}</p>` : ""}
     ${docas ? `<p class="c-doca">${c.partes?.length ? "Docas" : "Doca"} ${docas}</p>` : ""}
+    ${faixaDasPartes(c)}
     ${marcavel ? `<button class="c-skip" data-gcpular="${esc(c.pedido)}">Pular conferência</button>` : ""}
     ${vivoHtml}
   </article>`;
@@ -311,15 +317,17 @@ function itensPorProduto(c) {
   const contado = new Map((c.contagens || []).filter((x) => !x.fora).map((x) => [x.produto, Number(x.qtd)]));
   const m = new Map();
   for (const i of c.itens) {
-    const x = m.get(i.produto) || { produto: i.produto, descricao: i.descricao, endereco: i.endereco_codigo, qtd: 0, sep: 0 };
-    x.qtd += Number(i.qtd); x.sep += Number(i.qtd_separada || 0);
+    const x = m.get(i.produto) || { produto: i.produto, descricao: i.descricao, endereco: i.endereco_codigo, qtd: 0, sep: 0, espera: [] };
+    x.qtd += Number(i.qtd);
+    // parte ainda em separação (v72): o separado ainda não vale
+    if (i.em_separacao) x.espera.push(i.parte); else x.sep += Number(i.qtd_separada || 0);
     m.set(i.produto, x);
   }
   return [...m.values()].map((x) => ({ ...x, conf: contado.get(x.produto) || 0 }));
 }
 
 // o primeiro produto que ainda falta conferir (o "agora" do card, como na demonstração)
-const itemDaVez = (c) => itensPorProduto(c).find((i) => i.conf < i.sep) || null;
+const itemDaVez = (c) => itensPorProduto(c).find((i) => i.sep > 0 && i.conf < i.sep) || null;
 
 function htmlDoPedido(c) {
   const a = c.andamento, vivo = c.status === "andamento", onde = ondeEsta(c.pedido), fim = finalizada(c);
@@ -347,7 +355,7 @@ function htmlDoPedido(c) {
       <div class="dr-f"><small>Carga</small><b>—</b><span>ainda não faturado</span></div>`}`;
   const docas = docasHtml(c);
   const extras = [
-    c.partes?.length ? `<div class="dr-f"><small>Pedido dividido</small><b>${c.partes.length} partes</b><span>${c.partes.map((x) => `${x.numero}/${x.de} · ${esc(x.separador_nome || "—")}`).join("<br>")}</span></div>` : "",
+    c.partes?.length ? `<div class="dr-f"><small>Pedido dividido</small><b>${c.partes.length} partes${emSeparacao(c).length ? ` · ${prontas(c).length} pronta${prontas(c).length === 1 ? "" : "s"}` : ""}</b><span>${c.partes.map((x) => `${x.numero}/${x.de} · ${esc(x.separador_nome || "—")}${x.pronta === false ? " · em separação" : ""}`).join("<br>")}</span></div>` : "",
     docas ? `<div class="dr-f"><small>Doca de expedição</small><b class="dr-docas">${docas}</b><span>${c.partes?.length ? "uma doca por parte · lida pelo separador" : "lida pelo separador ao terminar"}</span></div>` : "",
   ].join("");
   const aoVivo = vivo ? `<div class="dr-live">
@@ -372,8 +380,9 @@ function htmlDoPedido(c) {
   const linhas = itensPorProduto(c).map((i) => {
     const ok = i.conf >= i.sep && (i.sep > 0 || i.conf > 0), agoraEste = daVez && daVez.produto === i.produto;
     const dot = ok ? `<span class="sdot ok">${CHECK}</span>` : i.conf > 0 && i.sep ? `<span class="sdot part" style="--p:${Math.round((i.conf / i.sep) * 100)}%"></span>` : `<span class="sdot"></span>`;
-    return `<tr class="${ok ? "ok" : ""} ${agoraEste ? "now" : ""}"><td>${dot}</td><td><span class="gaddr">${esc(i.endereco)}</span></td>
-      <td>${esc(i.descricao)}${agoraEste ? `<span class="now-tag">agora</span>` : ""}<small>${esc(i.produto)}</small></td><td class="r">${numero(i.qtd)}</td><td class="r">${numero(i.sep)}</td><td class="r">${numero(i.conf)}</td></tr>`;
+    const espera = !i.sep && i.espera.length; // só existe na parte em separação
+    return `<tr class="${ok ? "ok" : ""} ${agoraEste ? "now" : ""} ${espera ? "gc-espera" : ""}"><td>${dot}</td><td><span class="gaddr">${esc(i.endereco)}</span></td>
+      <td>${esc(i.descricao)}${agoraEste ? `<span class="now-tag">agora</span>` : ""}<small>${esc(i.produto)}${i.espera.length ? ` · parte ${i.espera.join(" e ")} em separação` : ""}</small></td><td class="r">${numero(i.qtd)}</td><td class="r">${espera ? "—" : numero(i.sep)}</td><td class="r">${espera ? "—" : numero(i.conf)}</td></tr>`;
   }).join("");
   return `
     <header class="dr-head">
