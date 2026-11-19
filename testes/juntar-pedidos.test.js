@@ -18,6 +18,31 @@ test("com ação na fila: fica a versão do aparelho (o feito sem rede não se p
   assert.equal(pedidos[0], meu);
 });
 
+test("andamento de tela de outra separação não fica (v73: banco re-semeado, separado de novo, concluído antes)", () => {
+  const it = (status) => ({ status });
+  const tela = { atual: 6, endOk: "R5003", prodOk: "R5003|8545" };
+  // o aparelho tinha concluído; o servidor recomeçou do zero (re-semeado) e o separador iniciou de novo
+  const reSemeado = juntarComServidor({
+    locais: [ped("PV-2", { status: "concluido", ...tela })],
+    doServidor: [ped("PV-2", { status: "andamento", itens: Array.from({ length: 7 }, () => it("pendente")) })],
+  }).pedidos[0];
+  assert.deepEqual([reSemeado.atual, reSemeado.endOk, reSemeado.prodOk], [undefined, undefined, undefined]);
+  // em andamento dos dois lados, mas os itens antes do "atual" estão pendentes no servidor: era de outra separação
+  const outra = juntarComServidor({
+    locais: [ped("PV-2", { status: "andamento", ...tela })],
+    doServidor: [ped("PV-2", { status: "andamento", itens: Array.from({ length: 7 }, () => it("pendente")) })],
+  }).pedidos[0];
+  assert.equal(outra.atual, undefined);
+  // pedido pendente no servidor: nada de andamento de tela
+  assert.equal(juntarComServidor({ locais: [ped("PV-2", { status: "andamento", ...tela })], doServidor: [ped("PV-2")] }).pedidos[0].atual, undefined);
+  // bate com o servidor (6 itens resolvidos, o 7º em separação): fica
+  const certo = juntarComServidor({
+    locais: [ped("PV-2", { status: "andamento", ...tela })],
+    doServidor: [ped("PV-2", { status: "andamento", itens: [...Array.from({ length: 6 }, () => it("ok")), it("pendente")] })],
+  }).pedidos[0];
+  assert.deepEqual([certo.atual, certo.endOk], [6, "R5003"]);
+});
+
 test("vale o servidor, mas o andamento de tela do aparelho fica (em que item parou, endereço e produto)", () => {
   const locais = [ped("PV-1", { status: "andamento", atual: 3, endOk: "R1", prodOk: "R1|176" })];
   const doServidor = [ped("PV-1", { status: "andamento", operador: "Ana" })];

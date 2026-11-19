@@ -4,13 +4,19 @@
 // o que o separador fez sem rede. Pedido por pedido:
 //   - tem ação na fila do aparelho (ainda não chegou ao servidor)  → fica a versão do APARELHO
 //   - senão                                                         → fica a versão do SERVIDOR,
-//     com o andamento de tela do aparelho (em que item parou, endereço e produto já confirmados)
+//     com o andamento de tela do aparelho (em que item parou, endereço e produto já confirmados),
+//     se ele ainda bate com o servidor
 //   - existe só no aparelho e não tem ação na fila                  → sai (ex.: concluído ontem, demonstração antiga)
 // Os lotes saem dos próprios pedidos (cada pedido diz o lote e a caixa). O lote com pedido que ficou na versão
 // do aparelho fica como está no aparelho.
 
 // andamento de tela: só existe no aparelho, o servidor não sabe (e não precisa saber)
 const ANDAMENTO_DE_TELA = ["atual", "endOk", "prodOk"];
+// v73: o andamento de tela só vale se bate com o servidor: o pedido está em separação dos dois lados e os itens
+// antes do "atual" já estão resolvidos lá. Senão (banco re-semeado, pedido separado de novo, concluído antes)
+// era de outra separação: começa do primeiro item, sem endereço nem produto confirmados.
+const telaValida = (l, s) => s.status === "andamento" && l.status !== "concluido"
+  && (s.itens || []).slice(0, l.atual || 0).every((i) => i.status !== "pendente");
 
 // locais / doServidor = pedidos no formato do coletor · lotesLocais = lotes do aparelho
 // comFila = Set com os IDs dos pedidos que têm ação na fila de envio
@@ -22,7 +28,7 @@ export function juntarComServidor({ locais, lotesLocais = [], doServidor, comFil
   const pedidos = doServidor.map((s) => {
     const l = local.get(s.id);
     if (l && comFila.has(s.id)) { vemDoAparelho.add(s.id); return l; }
-    if (!l) return s;
+    if (!l || !telaValida(l, s)) return s;
     const tela = Object.fromEntries(ANDAMENTO_DE_TELA.filter((k) => l[k] != null).map((k) => [k, l[k]]));
     return { ...s, ...tela };
   });
@@ -54,9 +60,13 @@ export function lotesDosPedidos(pedidos, lotesLocais = [], vemDoAparelho = new S
       inicio: inicios.length ? Math.min(...inicios) : null,
       fim: fins.length === ps.length ? Math.max(...fins) : null,
       operador: ps.find((o) => o.operador)?.operador ?? null,
-      atual: ll?.atual ?? 0,
+      atual: 0,
     };
-    for (const k of ["endOk", "prodOk"]) if (ll?.[k] != null) lote[k] = ll[k];
+    // o andamento de tela do lote, só enquanto o lote está em separação (v73: o mesmo cuidado dos pedidos)
+    if (ll && lote.status === "andamento") {
+      lote.atual = ll.atual ?? 0;
+      for (const k of ["endOk", "prodOk"]) if (ll[k] != null) lote[k] = ll[k];
+    }
     return lote;
   });
 }
