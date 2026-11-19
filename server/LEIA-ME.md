@@ -131,7 +131,7 @@ npm test
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
 | `POST /api/painel/nao-aplicadas/:id/vista` | coordenador | marca a ação não aplicada como vista (sai da lista); 404 se não existe ou já foi vista |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
-| `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/...) |
+| `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/, vendor/...) |
 
 Login: mande o token no cabeçalho `Authorization: Bearer <token>`.
 A sessão vale 14 horas (um turno), até a pessoa sair ou o coordenador desconectar. Sessão encerrada responde

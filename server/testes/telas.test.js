@@ -24,6 +24,8 @@ test("telas, scripts, estilos e imagens com o tipo certo", async () => {
   assert.match((await pegar("/compartilhado/regras/quantidade.js")).headers["content-type"], /javascript/);
   assert.match((await pegar("/styles.css")).headers["content-type"], /text\/css/);
   assert.match((await pegar("/assets/logo.png")).headers["content-type"], /image\/png/);
+  // a biblioteca do QR da etiqueta de volume (sem ela, imprimir e pré-visualizar falham)
+  assert.match((await pegar("/vendor/qrcode.js")).headers["content-type"], /javascript/);
 });
 
 test("modo.json diz ao app que há servidor (o arquivo do GitHub Pages diz que não)", async () => {

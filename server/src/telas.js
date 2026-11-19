@@ -4,13 +4,13 @@
 //
 // SEGURANÇA: entrega só o que é do app. Lista do que pode sair:
 //   - na raiz: telas (.html), scripts (.js), estilos (.css) e manifest.json;
-//   - nas pastas js/, compartilhado/ e assets/.
+//   - nas pastas js/, compartilhado/, assets/ e vendor/ (bibliotecas de fora, como a do QR da etiqueta).
 // Nada mais: nem server/ (tem o .env com a senha do banco), nem .git, node_modules, testes, e2e...
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 
 const RAIZ = resolve(import.meta.dirname, "..", ".."); // a pasta do projeto (acima de server/)
-const PASTAS_DO_APP = ["js", "compartilhado", "assets"];
+const PASTAS_DO_APP = ["js", "compartilhado", "assets", "vendor"];
 const TIPOS = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",

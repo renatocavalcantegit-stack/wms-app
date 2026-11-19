@@ -217,6 +217,14 @@ test("excesso: o pedido não finaliza até a peça sair do volume (F9)", async (
   await bipar(bruna, i.ean || i.sku);
   await expect(bruna.locator("#scanMsg")).toHaveText("Excesso retirado · continue a conferência");
   await expect.poll(async () => (await contagem("PV-10403")).find((x) => x.produto === i.sku)?.qtd).toBe(i.sep);
-  await finalizarConferencia(bruna, 1);
+  await bruna.locator("#btnFinish").click();
+  await bruna.locator("#fVol").fill("1");
+  await bruna.locator("#fGo").click();
+  await bruna.locator('#oTipos .o-add[data-add]').first().click();
+  await bruna.locator("#oGo").click();
   await expect.poll(async () => (await conferencia("PV-10403")).status).toBe("conferido");
+  // pré-visualizar a etiqueta: o servidor entrega a biblioteca do QR (vendor/)
+  await bruna.locator("#dPreview").click();
+  await expect(bruna.locator("#mPrint")).toBeVisible();
+  await expect(bruna.locator("#pPreview .label .lb-qr")).toHaveCount(1);
 });
