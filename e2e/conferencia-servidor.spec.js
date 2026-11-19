@@ -285,8 +285,11 @@ test("pedido dividido: confere a parte que chegou, não finaliza até a outra pa
 
   // a 1/2 termina: os itens dela entram na mesma tela, e agora finaliza
   await separarNoServidor("separador", "PV-10426/1");
-  await ana.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(ana.locator("#cfPartes")).toBeHidden({ timeout: 15_000 });
+  // o posto confere a cada 30 s; o teste avisa "rede voltou" até a parte aparecer (uma atualização pode estar no meio)
+  await expect.poll(async () => {
+    await ana.evaluate(() => window.dispatchEvent(new Event("online")));
+    return ana.locator("#cfPartes").isHidden();
+  }, { timeout: 20_000, intervals: [500, 1000, 2000] }).toBe(true);
   await expect(ana.locator("#itemsBody tr.cf-espera")).toHaveCount(0);
   await conferirTudo(ana, "PV-10426");
   await finalizarConferencia(ana, 1);
