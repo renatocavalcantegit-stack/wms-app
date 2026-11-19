@@ -26,6 +26,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 004 último contato do aparelho e "visto" das ações não aplicadas
                             · 005 fila do separador, rota e aguardando no pedido; aparelho e fim da sessão (login único)
                             · 006 passo do item da vez (a bolinha do item na gaveta da Gestão)
+                            · 007 conferência: um registro por pedido (fila do conferente, volumes, observação) e o que foi contado
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app)
 
@@ -37,6 +38,8 @@ src/consultas/              TODO o SQL, separado por assunto
   pedidos.js                lista e detalhe dos pedidos da separação; a lista do coletor (com os itens)
   acoes.js                  grava as ações sincronizadas sem repetir e aplica cada uma
   aplicar-acoes.js          lê o pedido, pergunta à regra o que muda e grava
+  aplicar-conferencia.js    o mesmo para as ações da Conferência; o pedido separado entrando na conferência
+  conferencia.js            a lista do posto do conferente (pedido inteiro, com as partes e os itens separados)
   painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas (em standby)
   quadro.js                 o quadro da Separação: caixa de entrada, fila de cada separador, rota e lotes
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
@@ -110,6 +113,7 @@ npm test
 | `GET /api/pedidos?setor=exp` | sim | pedidos do setor (`exp` ou `mont`), opcional `&status=pendente` |
 | `GET /api/pedidos/:id` | sim | pedido com os itens na ordem de separação e os códigos de barras |
 | `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, **só a fila de quem pediu** (na ordem do quadro), o que ele está separando e o que concluiu hoje, cada um com os itens, `separador_nome`, `doca_id` e `ordem_fila` |
+| `GET /api/conferencia?setor=exp` | sim | a lista do posto: `{ agora, pedidos }`, **só a fila do conferente** (na ordem do quadro), o que ele está conferindo e o que conferiu hoje; cada pedido com cliente, rota, separador, doca (ou as partes, cada uma com a doca), os itens separados e as contagens |
 | `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }], pendentes? }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato. `pendentes`: quanto o aparelho tem na fila (a tela de Dispositivos mostra). `passo?` = `{ passo: 1 ou 2, itens: [{ pedido, sequencia }] }`: o item da vez com o endereço lido (1) ou o produto bipado (2); só para a Gestão acompanhar, não é ação |
 | `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor), `painel` (uma ação foi marcada como vista), `quadro` (o quadro mudou) e `dispositivos` (um aparelho entrou ou saiu) |
 | `GET /api/quadro/separacao?setor=exp` | coordenador do setor | `{ agora, pedidos, separadores }`: o que ainda não foi separado (caixa de entrada e filas, com o andamento) e todos os separadores, com o contato e quantos separaram hoje |
@@ -140,7 +144,12 @@ As ações são aplicadas na ordem em que foram **feitas** no aparelho (`feitaEm
 | `separacao.iniciar` | `{ pedido, lote?, posicao? }` | pedido fica `andamento`, com o login de quem começou e a hora |
 | `separacao.item` | `{ pedido, sequencia, qtdSeparada, status, motivo? }` | `status` = `ok` (completo) ou `falta` (com motivo); a quantidade pode ser quebrada |
 | `separacao.concluir` | `{ pedido, doca }` | pedido fica `concluido`, com a doca e a hora do fim |
-| `separacao.reabrir` | `{ pedido }` | separar novamente: volta para `andamento` com os itens zerados |
+| `separacao.reabrir` | `{ pedido }` | separar novamente: volta para `andamento` com os itens zerados. **Recusada** se a conferência já começou ("SENDO CONFERIDO"); se ninguém começou, o pedido sai da conferência |
+| `conferencia.iniciar` | `{ pedido }` | "Iniciar conferência" no posto: fica `andamento`, com o conferente e a hora. Só da fila de quem iniciou |
+| `conferencia.contagem` | `{ pedido, produto, qtd }` | quanto foi contado do produto (o valor atual, não a soma). Produto que não é do pedido fica marcado como "fora" |
+| `conferencia.finalizar` | `{ pedido, volumes, observacao, posto, contagens }` | `contagens` = tudo o que foi contado. O **servidor** decide: `conferido` ou `divergente` (falta, excesso ou produto fora). Expedição precisa de volumes (1 ou mais) e da observação; Montagem não |
+| `conferencia.volumes` | `{ pedido, volumes, observacao }` | corrigir os volumes de um pedido conferido |
+| `conferencia.reabrir` | `{ pedido }` | "Conferir novamente": volta para `andamento` com as contagens zeradas |
 
 Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
 - `aplicada`: mudou o pedido.
@@ -155,8 +164,7 @@ Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
 As três últimas voltam em `recusadas: [{ id, resultado, motivo }]`. Todas as ações, mesmo as recusadas,
 saem da fila do aparelho: elas já estão no servidor.
 
-Ainda não fazem parte: baixar o saldo do picking no servidor e conferir se a Conferência já começou
-antes de "separar novamente". Entram quando o Estoque e a Conferência passarem pelo servidor.
+Ainda não faz parte: baixar o saldo do picking no servidor (entra quando o Estoque passar pelo servidor).
 
 ## Aba Ao vivo da Gestão (Fase 1c) · em standby
 
@@ -197,7 +205,24 @@ Pedido por pedido, o que vale (`compartilhado/regras/juntar-pedidos.js`):
 
 Os lotes saem dos próprios pedidos (`lote` e `posicao_lote`). O código do lote montado no coletor é único entre
 aparelhos (ex.: `L-K3F9`), porque o servidor junta os pedidos pelo código.
-Continuam só no aparelho: baixa de estoque, Conferência e Ocorrências (corte e cancelamento).
+Continuam só no aparelho: baixa de estoque e Ocorrências (corte e cancelamento). A Conferência passa pelo servidor desde a v65.
+
+## Conferência (Fase 2)
+
+Quando a separação termina (`separacao.concluir`), o pedido entra sozinho na **caixa de entrada da conferência**
+(tabela `conferencias`, sem conferente). Pedido dividido entre separadores entra **uma vez só**, quando todas as partes
+terminaram: o pedido original (ex.: PV-10426), com os itens de todas as partes e a doca de cada uma.
+
+O posto (`conferencia.html`) mostra só a **fila do conferente** (o que o coordenador mandou para ele, na ordem do quadro).
+Clicar no pedido (ou bipar) abre o resumo "Iniciar conferência"; Enter começa. Cada leitura conta na hora no posto e vai
+pela mesma fila de envio da Separação, ~1 s depois (o valor contado de cada produto). Sem rede, o posto segue conferindo
+e manda tudo quando a rede volta. A lista é baixada ao voltar para a fila, a cada 30 s e quando a rede volta
+(`juntarConferencia` em `compartilhado/regras/juntar-pedidos.js`: pedido com ação na fila fica como está no posto).
+O que muda com cada ação é decidido por `compartilhado/regras/acoes-conferencia.js`.
+
+Ainda só no posto: devolução de corte/cancelamento (F9) e o envio da observação dos volumes ao Sankhya.
+O quadro da Conferência na Gestão entra na v67 (até lá, a aba continua "Simulação"; o seed já monta as filas).
+Para testar dois postos, a demonstração tem um segundo conferente (`conferente2`, PIN em `js/sessao.js`).
 
 ## Quadro da Separação e fila do separador (Fase 1e)
 

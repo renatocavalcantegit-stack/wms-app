@@ -101,8 +101,8 @@ test("lista de pedidos por setor: prioridade alta primeiro", async () => {
   const token = await entrar();
   const exp = (await chamar("/api/pedidos?setor=exp", token)).json();
   const mont = (await chamar("/api/pedidos?setor=mont", token)).json();
-  assert.equal(exp.length, 9);
-  assert.equal(mont.length, 4);
+  assert.equal(exp.length, 13); // 9 para separar + 4 já separados (na conferência, Fase 2)
+  assert.equal(mont.length, 7);
   assert.ok(mont.every((p) => p.id.startsWith("OP-")));
   const primeiraNormal = exp.findIndex((p) => p.prioridade === "normal");
   assert.ok(exp.slice(primeiraNormal).every((p) => p.prioridade === "normal"));

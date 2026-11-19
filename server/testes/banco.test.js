@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { prepararBancoDeTeste } from "./banco-de-teste.js";
 import { migrar } from "../db/migrar.js";
 import { semear } from "../db/semear.js";
-import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont } from "../../js/demo-dados.js";
+import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont, seedConferencia, seedConferenciaMont } from "../../js/demo-dados.js";
 import { USERS } from "../../js/sessao.js";
 
 let pool;
@@ -16,7 +16,7 @@ const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FR
 test("migrar de novo não aplica nada (cada arquivo roda uma vez só)", async () => {
   assert.deepEqual(await migrar(pool), []);
   const { rows } = await pool.query("SELECT nome FROM migracoes ORDER BY nome");
-  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql", "004_painel_ao_vivo.sql", "005_fila_do_separador_e_login_unico.sql", "006_passo_do_item.sql"]);
+  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql", "004_painel_ao_vivo.sql", "005_fila_do_separador_e_login_unico.sql", "006_passo_do_item.sql", "007_conferencia.sql"]);
 });
 
 test("a demonstração do banco é a mesma do app", async () => {
@@ -27,7 +27,8 @@ test("a demonstração do banco é a mesma do app", async () => {
   assert.equal(await contar("enderecos"), estoque.enderecos.length);
   assert.equal(await contar("saldos"), estoque.saldos.length);
   assert.equal(await contar("associacoes"), estoque.associacoes.length);
-  assert.equal(await contar("pedidos"), seedSeparacao().length + seedSeparacaoMont().length);
+  assert.equal(await contar("pedidos"), seedSeparacao().length + seedSeparacaoMont().length + seedConferencia().length + seedConferenciaMont().length);
+  assert.equal(await contar("conferencias"), seedConferencia().length + seedConferenciaMont().length);
 });
 
 test("o PIN não fica guardado no banco", async () => {

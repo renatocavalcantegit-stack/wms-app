@@ -78,3 +78,15 @@ test("com outro separador: só em andamento e com o login de outra pessoa", () =
   assert.equal(comOutroSeparador(ped("a", { status: "andamento" }), "ana"), false, "começado neste aparelho");
   assert.equal(comOutroSeparador(ped("a", { status: "concluido", separadorLogin: "bia" }), "ana"), false, "concluído pode separar novamente");
 });
+
+test("conferência: com ação na fila fica a do posto; senão a do servidor, com o histórico se as contagens batem", async () => {
+  const { juntarConferencia } = await import("../compartilhado/regras/juntar-pedidos.js");
+  const ped = (id, conf) => ({ id, conf: { status: "andamento", itens: { a: 1 }, fora: [], log: [], ...conf } });
+  const local = [ped("P1", { itens: { a: 2 }, log: [{ sku: "a", q: 1 }] }), ped("P2", { log: [{ sku: "a", q: 1 }] }), ped("P3", {}), ped("P9", {})];
+  const servidor = [ped("P1", {}), ped("P2", {}), ped("P3", { itens: { a: 5 } }), ped("P4", {})];
+  const r = juntarConferencia({ locais: local, doServidor: servidor, comFila: new Set(["P1", "P9"]) });
+  assert.deepEqual(r.map((o) => o.id), ["P1", "P2", "P3", "P4", "P9"]);
+  assert.equal(r[0].conf.itens.a, 2);             // P1: na fila, a do posto
+  assert.deepEqual(r[1].conf.log, [{ sku: "a", q: 1 }]); // P2: mesmas contagens, fica o histórico
+  assert.equal(r[2].conf.itens.a, 5);             // P3: mudou por fora, a do servidor
+});

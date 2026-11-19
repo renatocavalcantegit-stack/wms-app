@@ -15,9 +15,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=64">
-  <link rel="stylesheet" href="conferencia.css?v=64">
-  <link rel="stylesheet" href="etiqueta.css?v=64">
+  <link rel="stylesheet" href="styles.css?v=65">
+  <link rel="stylesheet" href="conferencia.css?v=65">
+  <link rel="stylesheet" href="etiqueta.css?v=65">
 </head>
 <body class="pos">
 
@@ -143,6 +143,23 @@
   <!-- ===== MODAIS ===== -->
   <div id="modalScrim" class="m-scrim" hidden></div>
 
+  <!-- abrir um pedido da fila: o resumo do que foi separado e onde pegar; Enter inicia (v65) -->
+  <div id="mStart" class="modal" hidden>
+    <div class="m-head">
+      <div>
+        <h2 id="sId"></h2>
+        <p id="sCli" class="muted"></p>
+      </div>
+      <span id="sTag" class="tag"></span>
+    </div>
+    <p id="sSub" class="muted"></p>
+    <div id="sItens" class="f-div"></div>
+    <div class="m-actions">
+      <button class="btn ghost" data-close>Voltar <kbd>Esc</kbd></button>
+      <button id="sGo" class="btn primary">Iniciar conferência <kbd>Enter</kbd></button>
+    </div>
+  </div>
+
   <div id="mFinish" class="modal" hidden>
     <h2 id="fTitle">Finalizar conferência</h2>
     <p id="fSub" class="muted"></p>
@@ -264,7 +281,7 @@
 
   <div id="printArea"></div>
 
-  <script src="vendor/qrcode.js?v=64"></script>
-  <script type="module" src="conferencia.js?v=64"></script>
+  <script src="vendor/qrcode.js?v=65"></script>
+  <script type="module" src="conferencia.js?v=65"></script>
 </body>
 </html>

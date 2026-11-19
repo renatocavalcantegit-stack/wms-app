@@ -12,6 +12,7 @@ export const USERS = [
   // segundo separador: para testar dois coletores com o servidor (fila de cada um, login único)
   { login: "separador2", nome: "Segundo Separador", perfil: "sep", pin: "8888" },
   { login: "conferente", nome: "Usuário Conferente", perfil: "conf", pin: "2222" },
+  { login: "conferente2", nome: "Segundo Conferente", perfil: "conf", pin: "2223" }, // para testar dois postos (Fase 2)
   { login: "embarque", nome: "Usuário de Embarque", perfil: "emb", pin: "3333" },
   { login: "coordenador", nome: "Usuário Coordenador", perfil: "coord", pin: "4444" },
   { login: "montagem", nome: "Coordenador de Montagem", perfil: "coordmont", pin: "5555" },

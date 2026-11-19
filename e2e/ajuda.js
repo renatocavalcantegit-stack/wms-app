@@ -90,8 +90,11 @@ export async function separarPedido(page, id, doca, setor = "exp") {
 }
 
 // ---------- Conferência ----------
+// pedido da fila abre o resumo "Iniciar conferência" (v65); pedido em conferência abre direto
 export async function abrirNaConferencia(page, id) {
   await page.locator(`#queueBody tr[data-id="${id}"]`).click();
+  await expect(page.locator("#order:visible, #mStart:visible")).toHaveCount(1);
+  if (await page.locator("#mStart").isVisible()) await page.locator("#sGo").click();
   await expect(page.locator("#order")).toBeVisible();
 }
 export async function bipar(page, codigo) {

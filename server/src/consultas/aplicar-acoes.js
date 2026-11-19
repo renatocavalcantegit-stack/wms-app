@@ -2,6 +2,7 @@
 // Quem decide O QUE muda é a regra pura compartilhado/regras/acoes-separacao.js.
 // Aqui só se lê o pedido, chama a regra e grava o resultado.
 import { avaliarAcaoDaSeparacao } from "../../../compartilhado/regras/acoes-separacao.js";
+import { aplicarAcaoDaConferencia, entrarNaConferencia, sairDaConferencia, conferenciaDoPedido } from "./aplicar-conferencia.js";
 
 // quais perfis podem mandar cada grupo de ações
 const PERFIS_DA_SEPARACAO = ["sep"];
@@ -22,13 +23,19 @@ function montarSet(mudancas, colunas, primeiroParametro) {
 // conexao: a da transação do lote · usuario: { login, perfil } · acao: { tipo, dados, feitaEm }
 // Devolve { resultado, motivo }.
 export async function aplicarAcao(conexao, usuario, acao) {
+  if (acao.tipo.startsWith("conferencia.")) return aplicarAcaoDaConferencia(conexao, usuario, acao); // Fase 2
   if (!acao.tipo.startsWith("separacao.")) return { resultado: "desconhecida", motivo: `TIPO DE AÇÃO DESCONHECIDO: ${acao.tipo}` };
   if (!PERFIS_DA_SEPARACAO.includes(usuario.perfil)) return { resultado: "recusada", motivo: "PERFIL SEM PERMISSÃO PARA SEPARAR." };
 
   const pedidoId = String(acao.dados.pedido ?? "");
   // FOR UPDATE: trava a linha do pedido até o fim da transação.
   // Se dois coletores sincronizarem o mesmo pedido ao mesmo tempo, o segundo espera o primeiro terminar.
-  const pedido = (await conexao.query(`SELECT id, status, separador, designado_para AS "designadoPara" FROM pedidos WHERE id = $1 FOR UPDATE`, [pedidoId])).rows[0] || null;
+  const pedido = (await conexao.query(
+    `SELECT id, setor, status, separador, designado_para AS "designadoPara", pedido_pai AS "pedidoPai" FROM pedidos WHERE id = $1 FOR UPDATE`,
+    [pedidoId],
+  )).rows[0] || null;
+  // separar novamente só enquanto ninguém começou a conferir (pedido dividido: a conferência é a do pedido original)
+  if (pedido && acao.tipo === "separacao.reabrir") pedido.statusConferencia = (await conferenciaDoPedido(conexao, pedido.pedidoPai || pedido.id))?.status ?? null;
   const itens = pedido
     ? (await conexao.query("SELECT sequencia, qtd, status FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [pedidoId])).rows
     : [];
@@ -45,5 +52,8 @@ export async function aplicarAcao(conexao, usuario, acao) {
     const { set, valores } = montarSet(mudancas, COLUNAS_DO_ITEM, 3);
     await conexao.query(`UPDATE itens_pedido SET ${set} WHERE pedido_id = $1 AND sequencia = $2`, [pedidoId, sequencia, ...valores]);
   }
+  // Fase 2: o pedido separado entra na caixa de entrada da conferência; separado de novo, sai de lá
+  if (acao.tipo === "separacao.concluir" && r.pedido.status === "concluido") await entrarNaConferencia(conexao, pedido);
+  if (acao.tipo === "separacao.reabrir") await sairDaConferencia(conexao, pedido.pedidoPai || pedido.id);
   return { resultado: "aplicada", motivo: null };
 }

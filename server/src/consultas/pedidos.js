@@ -21,7 +21,7 @@ export async function listarPedidos(pool, { setor, status = null }) {
 
 // Colunas de cada item: a descrição e os códigos de barras do produto vão junto
 // (o coletor confere o bipe no próprio aparelho, mesmo sem rede).
-const COLUNAS_DO_ITEM = `
+export const COLUNAS_DO_ITEM = `
   i.pedido_id, i.sequencia, i.produto, pr.descricao, pr.un, pr.checkout, i.endereco_codigo,
   i.qtd, i.qtd_separada, i.status, i.motivo,
   coalesce(

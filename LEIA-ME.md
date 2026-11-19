@@ -31,6 +31,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v62 | Gestão · Separação | com o servidor, o card abre a **mesma gaveta da demonstração** (o que o servidor ainda não tem aparece "—") |
 | v63 | Gestão · gaveta do pedido | a bolinha do item da vez enche pelos passos do coletor: endereço lido 1/3, produto bipado 2/3, quantidade digitada cheia (sem texto novo na tela) |
 | v64 | coletor · lista | etiqueta da **rota** (bolinha com a cor e o nome, a mesma da Gestão) no lugar da cidade · UF no card; o aguardando continua com a cidade; no lote, uma etiqueta por rota (quebra a linha quando não cabe) |
+| v65 | conferência · fila | clicar no pedido (ou bipar) abre o resumo **"Iniciar conferência"**: quem separou, a doca, itens e unidades, e os itens separados; **Iniciar conferência** (Enter) ou **Voltar** (Esc). O conferente não precisa bipar o pedido. Pedido em conferência abre direto; conferido continua perguntando "Conferir novamente?" |
 
 ## Estrutura
 

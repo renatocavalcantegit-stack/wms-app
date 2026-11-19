@@ -1,11 +1,15 @@
 // WMS Beach Bike — Conferência (desktop, leitor de código de barras tipo "caixa")
-import { SETORES, session, setSetor } from "./js/sessao.js";
+import { SETORES, session, setSetor, logout } from "./js/sessao.js";
 import { sairDoAparelho } from "./js/sair.js";
 import { find } from "./js/demo-dados.js";
 import { consultaDeCheckout } from "./js/dados/estoque.js";
 import { validarQuantidadeLida } from "./compartilhado/regras/produtos.js";
 import { VOL_TIPOS, obsTotal, obsErp, obsResumo } from "./compartilhado/regras/volumes.js";
-import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto, aoMudarConferencia } from "./js/dados/conferencia.js";
+import { carregarConferencia, salvarConferencia, prepararParaConferencia, lerPosto, salvarPosto, aoMudarConferencia, baixarConferencia } from "./js/dados/conferencia.js";
+import { enfileirar, acoesPendentes } from "./js/dados/fila.js";
+import { iniciarSincronizacao } from "./js/sincronizacao.js";
+import { juntarConferencia } from "./compartilhado/regras/juntar-pedidos.js";
+import { somDePedidoNovo } from "./js/som.js";
 import { registrarDevolucao } from "./js/dados/movimentacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { acharEndereco } from "./compartilhado/regras/enderecos.js";
@@ -22,6 +26,9 @@ import { $, $$, esc } from "./js/util.js";
   const sess = session();
   if (!sess || sess.perfil !== "conf") { location.replace("./"); return; }
   const user = sess.nome;
+  // com servidor (Fase 2): a lista vem do servidor e cada ação vai pela fila de envio (sem esperar a rede).
+  // Na demonstração (sessão sem token), tudo fica no aparelho, como antes.
+  const SERVIDOR = !!sess.token;
 
   // setor: Expedição (volumes, observação, etiquetas) ou Montagem (pedidos OP, sem volumes/etiquetas)
   const SEM_SETOR = !sess.setor;
@@ -40,12 +47,18 @@ import { $, $$, esc } from "./js/util.js";
 
   // onde os pedidos ficam guardados é assunto da camada de dados (js/dados/conferencia.js),
   // que também traz os pedidos concluídos na Separação
-  function load() { return carregarConferencia(SETOR); }
-  const save = () => salvarConferencia(SETOR, db);
+  function load() { return carregarConferencia(SETOR, { servidor: SERVIDOR }); }
+  const save = () => salvarConferencia(SETOR, db, { servidor: SERVIDOR });
 
   // ---------- utils ----------
   // $, $$ e esc vêm de js/util.js; aviso e bipe da conferência têm duração e tom próprios
   const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
+  // produto pelo código (SKU ou EAN): no catálogo e, com servidor, também nos itens do pedido aberto
+  const noPedido = (code) => {
+    const c = String(code).trim(), i = cur && cur.itens.find((x) => x.sku === c || x.ean === c || (x.eans || []).includes(c));
+    return i ? { sku: i.sku, ean: i.ean, desc: i.desc } : null;
+  };
+  const produto = (code) => find(code) || noPedido(code);
 
   let toastT;
   function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2400); }
@@ -96,8 +109,11 @@ import { $, $$, esc } from "./js/util.js";
     const cf = db.orders.filter((o) => o.conf.status === "conferido" || o.conf.status === "divergente");
     $("#qCountA").textContent = ag.length;
     $("#qCountC").textContent = cf.length;
+    // com servidor, a ordem é a da fila que o coordenador montou no quadro
+    const naFila = (o) => o.ordem ?? Infinity;
     const list = (queueFilter === "aguardando" ? ag : cf).sort((a, b) =>
-      (a.conf.status === "andamento" ? -1 : 0) - (b.conf.status === "andamento" ? -1 : 0) || (prioridade(a) ? -1 : 1) - (prioridade(b) ? -1 : 1));
+      (a.conf.status === "andamento" ? -1 : 0) - (b.conf.status === "andamento" ? -1 : 0)
+      || (SERVIDOR ? naFila(a) - naFila(b) : (prioridade(a) ? -1 : 1) - (prioridade(b) ? -1 : 1)));
 
     $("#queueBody").innerHTML = list.map((o) => {
       const faltaSep = o.itens.some((i) => i.status === "falta");
@@ -139,16 +155,49 @@ import { $, $$, esc } from "./js/util.js";
     setMsg("Leitor pronto");
     renderTotals();
     renderQueue(); focusScan();
+    enviarContagens(); atualizarDoServidor();
   }
 
   // ---------- pedido ----------
+  // pedido da fila: primeiro o resumo (#mStart), e "Iniciar conferência" (Enter) começa. Em conferência: abre direto.
   function openOrder(o) {
     if (!o) return;
     if (o.conf.status === "conferido" || o.conf.status === "divergente") {
       if (!confirm(`${o.id} já foi conferido. Conferir novamente?`)) return focusScan();
       Object.assign(o, prepararParaConferencia(o));
+      comecar(o);
+      registrar("conferencia.reabrir", { pedido: o.id });
+      return abrirPedido(o);
     }
-    if (o.conf.status === "aguardando") { o.conf.status = "andamento"; o.conf.inicio = Date.now(); o.conf.conferente = user; save(); }
+    if (o.conf.status === "aguardando") return pedirInicio(o);
+    abrirPedido(o);
+  }
+  function comecar(o) { o.conf.status = "andamento"; o.conf.inicio = Date.now(); o.conf.conferente = user; save(); }
+
+  let aIniciar = null; // pedido no resumo "Iniciar conferência"
+  function pedirInicio(o) {
+    aIniciar = o;
+    $("#sId").textContent = o.id;
+    $("#sCli").textContent = `${o.cliente} · ${o.cidade}`;
+    const t = $("#sTag");
+    t.className = "tag " + (prioridade(o) ? "alta" : "");
+    t.textContent = ehAguardando(o) ? "Aguardando" : prioridade(o) ? "Prioridade" : "Na fila";
+    const doca = o.partes && o.partes.length ? "pegar nas docas" : "pegar na doca";
+    $("#sSub").innerHTML = `Separado por ${esc(o.operador || "—")} · ${doca} ${docasDo(o)} · ${o.itens.length} itens · ${fq(arr(sum(o.itens, (i) => i.sep)))} un.`;
+    $("#sItens").innerHTML = o.itens.map((i) => `<div class="f-row"><span class="muted">${esc(i.sku)}</span><span>${esc(i.desc)}</span><b>${fq(i.sep)}</b></div>`).join("");
+    openModal("mStart");
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function iniciar() {
+    const o = aIniciar; aIniciar = null;
+    if (!o || o.conf.status !== "aguardando") return closeModal();
+    comecar(o);
+    registrar("conferencia.iniciar", { pedido: o.id });
+    closeModal(); abrirPedido(o);
+  }
+  $("#sGo").addEventListener("click", iniciar);
+
+  function abrirPedido(o) {
     cur = o; devolvendo = false; document.body.classList.remove("cf-devolvendo");
     $("#queue").hidden = true; $("#order").hidden = false;
     $("#oId").textContent = o.id;
@@ -227,15 +276,19 @@ import { $, $$, esc } from "./js/util.js";
     const num = (x) => x.trim().toUpperCase().replace(/^(PV|OP)-?/, "");
     const pid = num(code.split("|")[0]);
     const ord = db.orders.find((o) => num(o.id) === pid);
-    if (ord && (!cur || !find(code))) {
+    if (ord && (!cur || !produto(code))) {
       if (cur && cur !== ord) { setMsg(`Finalize ou volte à fila (F2) antes de abrir ${ord.id}.`, "err"); beep(false); return; }
       if (!cur) return openOrder(ord);
       if (cur === ord) { setMsg(`Pedido ${ord.id} já está aberto.`); return; }
     }
 
+    if (!cur && SERVIDOR && /^(PV|OP)-?\d/i.test(code)) {
+      const id = code.split("|")[0].trim().toUpperCase();
+      setMsg(`PEDIDO ${id} NÃO ESTÁ NA SUA FILA.`, "err"); beep(false); errLast("Pedido fora da sua fila", id); return;
+    }
     if (!cur) { setMsg("Bipe primeiro o código do pedido.", "err"); beep(false); errLast("Código não é um pedido", code); return; }
 
-    const p = find(code);
+    const p = produto(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
 
     // CHECKOUT (padrão): cada bipe é 1 unidade, quantidade informada é recusada.
@@ -285,7 +338,7 @@ import { $, $$, esc } from "./js/util.js";
       setMsg("Este produto não pertence ao pedido — separe para devolução.", "err");
       beep(false);
     }
-    save(); renderItems(p.sku); renderTotals();
+    save(); marcarContagem(cur, p.sku); renderItems(p.sku); renderTotals();
   }
 
   function errLast(label, code) { setLast({ label, desc: "Verifique a etiqueta e bipe novamente", code, conf: "—", exp: "—", kind: "err" }); }
@@ -313,8 +366,8 @@ import { $, $$, esc } from "./js/util.js";
       const f = cur.conf.fora.find((x) => x.sku === l.sku);
       f.q = arr(f.q - l.q); if (f.q <= 0) cur.conf.fora.splice(cur.conf.fora.indexOf(f), 1);
     } else cur.conf.itens[l.sku] = Math.max(0, arr(cur.conf.itens[l.sku] - l.q));
-    save(); renderItems(); renderTotals();
-    const p = find(l.sku);
+    save(); marcarContagem(cur, l.sku); renderItems(); renderTotals();
+    const p = produto(l.sku) || { sku: l.sku, desc: l.sku };
     setLast({ label: `Estornado −${fq(l.q)}`, desc: p.desc, code: p.sku, conf: l.fora ? "—" : cur.conf.itens[l.sku], exp: l.fora ? 0 : cur.itens.find((i) => i.sku === l.sku).sep });
     setMsg(`Última leitura estornada (${l.sku} −${fq(l.q)})`);
   }
@@ -356,7 +409,7 @@ import { $, $$, esc } from "./js/util.js";
     // QR da doca de devolução (ID ou código R…): o que já saiu da caixa entra no estoque
     const end = /^\d{5,}$/.test(code) || /^R\d+-P/i.test(code) ? acharEndereco(lerEstoque().enderecos, code) : null;
     if (end) return levarParaDoca(end);
-    const p = find(code);
+    const p = produto(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
     const it = cur.itens.find((i) => i.sku === p.sku);
     const r = lerDevolucao(it, tirado(cur, p.sku), q);
@@ -365,7 +418,7 @@ import { $, $$, esc } from "./js/util.js";
     // a unidade que sai já tinha sido contada como "na caixa"? então desconta da contagem
     const sobra = arr((cur.conf.itens[p.sku] || 0) - it.sep);
     if (sobra > 0) cur.conf.itens[p.sku] = arr(cur.conf.itens[p.sku] - Math.min(sobra, r.qtd));
-    save(); renderItems(p.sku); renderTotals();
+    save(); marcarContagem(cur, p.sku); renderItems(p.sku); renderTotals();
     const falta = faltaTirar(it, tirado(cur, p.sku));
     setLast({ label: `Saiu da caixa −${fq(r.qtd)}`, desc: p.desc, code: p.sku, conf: tirado(cur, p.sku), exp: it.devolver, kind: "ok" });
     const tudo = cur.itens.every((i) => faltaTirar(i, tirado(cur, i.sku)) === 0);
@@ -399,6 +452,7 @@ import { $, $$, esc } from "./js/util.js";
 
   // o gestor mudou o pedido em outra tela: recarrega a fila e o pedido aberto
   aoMudarConferencia(SETOR, () => {
+    if (SERVIDOR) return; // com servidor, quem muda a lista é o servidor (atualizarDoServidor)
     const id = cur?.id;
     db = load();
     if (!id) return renderQueue();
@@ -412,8 +466,9 @@ import { $, $$, esc } from "./js/util.js";
   function restart() {
     if (!cur || !confirm(`Zerar todas as leituras de ${cur.id}?`)) return focusScan();
     const keep = { ...cur.conf, itens: {}, fora: [], log: [] };
+    const lidos = [...cur.itens.map((i) => i.sku), ...cur.conf.fora.map((f) => f.sku)];
     cur.itens.forEach((i) => (keep.itens[i.sku] = 0));
-    cur.conf = keep; save(); renderItems(); renderTotals();
+    cur.conf = keep; save(); lidos.forEach((sku) => marcarContagem(cur, sku)); renderItems(); renderTotals();
     setMsg("Conferência reiniciada"); focusScan();
   }
 
@@ -555,6 +610,7 @@ import { $, $$, esc } from "./js/util.js";
     o.conf.erp = { observacao: obsErp(o.conf.obs), qtdVolumes: fin.vol, enviado: Date.now() };
     if (fin.fix) {
       save(); fin = null;
+      registrar("conferencia.volumes", { pedido: o.id, volumes: o.conf.volumes, observacao: o.conf.obs });
       openPrint(o, printThenQueue);
       toast(`Volumes de ${o.id} corrigidos · observação reenviada ao Sankhya`);
       return;
@@ -567,6 +623,12 @@ import { $, $$, esc } from "./js/util.js";
     Object.assign(cur.conf, { status: div ? "divergente" : "conferido", fim: Date.now(), posto: $("#station").value, conferente: user, volumes: fin.vol });
     fin = null;
     save();
+    // as contagens da finalização valem por tudo: o que ainda ia sair aos poucos não precisa mais ir
+    contagensAEnviar.delete(cur.id);
+    registrar("conferencia.finalizar", {
+      pedido: cur.id, volumes: MONT ? null : cur.conf.volumes, observacao: MONT ? null : cur.conf.obs || null, posto: cur.conf.posto,
+      contagens: [...cur.itens.map((i) => ({ produto: i.sku, qtd: cur.conf.itens[i.sku] || 0 })), ...cur.conf.fora.map((f) => ({ produto: f.sku, qtd: f.q }))],
+    });
     const mins = Math.max(1, Math.round((cur.conf.fim - cur.conf.inicio) / 60000));
     $("#mDone").classList.toggle("mont", MONT);
     if (MONT) {
@@ -682,7 +744,8 @@ import { $, $$, esc } from "./js/util.js";
         const back = modal === "mDone" || (modal === "mPrint" && printThenQueue);
         closeModal(); if (back) showQueue();
       }
-      if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); goObs(); }
+      if (e.key === "Enter" && modal === "mStart") { e.preventDefault(); iniciar(); }
+      else if (e.key === "Enter" && modal === "mFinish") { e.preventDefault(); goObs(); }
       else if (e.key === "Enter" && modal === "mObs") { e.preventDefault(); if (e.target.id === "oBack") openModal("mFinish"); else confirmObs(); }
       else if (modal === "mObs" && /^[1-9]$/.test(e.key) && !e.target.closest("input")) {
         e.preventDefault(); const t = VOL_TIPOS[+e.key - 1]; if (t) obsStep(t[0], e.altKey ? -1 : 1);
@@ -704,6 +767,78 @@ import { $, $$, esc } from "./js/util.js";
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select")) focusScan();
     }
   });
+
+  // ---------- servidor (Fase 2) ----------
+  // Cada ação entra na FILA do aparelho (js/dados/fila.js) e a tela segue sem esperar a rede;
+  // o js/sincronizacao.js manda a fila a cada 5 s e quando a rede volta. Na demonstração, nada é enfileirado.
+  const pedirEnvio = SERVIDOR ? iniciarSincronizacao({ sessao: () => session(), aoMudar: aposEnvio }) : () => {};
+  function registrar(tipo, dados) {
+    if (!SERVIDOR) return;
+    enfileirar(sess.login, tipo, dados);
+    pedirEnvio();
+  }
+  // o que foi contado de cada produto vai ~1 s depois da leitura (o VALOR atual, não a soma):
+  // bipar 20 unidades seguidas manda poucas ações, e reenviar não muda o resultado
+  const contagensAEnviar = new Map(); // pedido → produtos com contagem nova
+  let contagemT = null;
+  function marcarContagem(o, sku) {
+    if (!SERVIDOR || !o) return;
+    if (!contagensAEnviar.has(o.id)) contagensAEnviar.set(o.id, new Set());
+    contagensAEnviar.get(o.id).add(sku);
+    if (!contagemT) contagemT = setTimeout(enviarContagens, 1000);
+  }
+  const contado = (o, sku) => (o.itens.some((i) => i.sku === sku) ? o.conf.itens[sku] || 0 : o.conf.fora.find((f) => f.sku === sku)?.q || 0);
+  function enviarContagens() {
+    clearTimeout(contagemT); contagemT = null;
+    for (const [id, skus] of contagensAEnviar) {
+      const o = db.orders.find((x) => x.id === id);
+      if (o && o.conf.status === "andamento") skus.forEach((sku) => registrar("conferencia.contagem", { pedido: id, produto: sku, qtd: contado(o, sku) }));
+    }
+    contagensAEnviar.clear();
+  }
+  // o servidor recebeu mas não aplicou (ex.: o coordenador passou o pedido para outra pessoa): avisa na hora
+  let avisouSessao = false;
+  function aposEnvio(r) {
+    r.recusadas.forEach((x) => { toast(`${x.pedido || "Ação"}: ${x.motivo}`); beep(false); });
+    const tirados = new Set(r.recusadas.filter((x) => /^O COORDENADOR/.test(x.motivo || "")).map((x) => x.pedido));
+    if (cur && tirados.has(cur.id)) { closeModal(); showQueue(); }
+    // o coordenador desconectou este aparelho: volta para o login (a fila fica guardada para quando entrar de novo)
+    if (r.situacao === "sessao-vencida" && r.motivo === "coordenador") { logout(); location.replace("./"); return; }
+    if (r.situacao === "sessao-vencida" && !avisouSessao) { avisouSessao = true; toast("Sessão vencida · saia e entre de novo para enviar"); }
+    if (r.enviadas) atualizarDoServidor();
+  }
+
+  // A lista vem do servidor e fica guardada no aparelho: sem rede, segue com a cópia.
+  // Quem decide o que vale é compartilhado/regras/juntar-pedidos.js (juntarConferencia):
+  // pedido com ação ainda na fila de envio fica como está no posto.
+  // Só atualiza com a lista na tela e nenhuma janela aberta: nunca mexe no pedido que está sendo conferido.
+  const ATUALIZAR_LISTA_MS = 30_000;
+  let baixando = false, primeiraLista = true; // a primeira lista não toca o som
+  async function atualizarDoServidor() {
+    const pode = () => !cur && !modal;
+    if (!SERVIDOR || baixando || !pode()) return;
+    baixando = true;
+    try {
+      const r = await baixarConferencia(sess, SETOR);
+      if (!r.ok || !pode()) return;
+      const comFila = new Set([...acoesPendentes(sess.login).map((a) => a.dados.pedido), ...contagensAEnviar.keys()]);
+      const antes = new Set(db.orders.map((o) => o.id));
+      db.orders = juntarConferencia({ locais: db.orders, doServidor: r.pedidos, comFila });
+      save();
+      // o coordenador mandou pedido novo para a fila: toque e aviso
+      const novos = db.orders.filter((o) => o.conf.status === "aguardando" && !antes.has(o.id)).map((o) => o.id);
+      if (novos.length && !primeiraLista) {
+        somDePedidoNovo();
+        toast(novos.length === 1 ? `Pedido novo na sua fila: ${novos[0]}` : `${novos.length} pedidos novos na sua fila`);
+      }
+      primeiraLista = false;
+      renderQueue();
+    } finally { baixando = false; }
+  }
+  if (SERVIDOR) {
+    setInterval(atualizarDoServidor, ATUALIZAR_LISTA_MS);
+    window.addEventListener("online", atualizarDoServidor);
+  }
 
   // ---------- início ----------
   $("#opName").textContent = user;

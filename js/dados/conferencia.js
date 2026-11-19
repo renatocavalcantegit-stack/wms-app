@@ -8,7 +8,8 @@ import { partesCompletas, juntarPartes } from "../../compartilhado/regras/separa
 
 // v4: doca de expedição e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-conf-mont-v7" : "wms-bb-conf-v7");
+// com servidor (Fase 2), a cópia da lista do servidor fica numa chave à parte: não mistura com a demonstração
+const chave = (setor, servidor = false) => (setor === "mont" ? "wms-bb-conf-mont-v7" : "wms-bb-conf-v7") + (servidor ? "-srv" : "");
 // posto de conferência escolhido neste aparelho
 const CHAVE_POSTO = "wms-bb-posto";
 
@@ -24,9 +25,11 @@ export function prepararParaConferencia(o) {
 
 // fila da conferência ({ orders: [...] }); no primeiro acesso, começa com os pedidos de demonstração.
 // Sempre traz junto os pedidos que a Separação concluiu.
-export function carregarConferencia(setor) {
+// Com servidor: só a cópia guardada da última lista (vazia no primeiro acesso); a lista vem do servidor.
+export function carregarConferencia(setor, { servidor = false } = {}) {
   let d;
-  try { d = JSON.parse(localStorage.getItem(chave(setor))); } catch {}
+  try { d = JSON.parse(localStorage.getItem(chave(setor, servidor))); } catch {}
+  if (servidor) return d && Array.isArray(d.orders) ? d : { orders: [] };
   if (!d || !Array.isArray(d.orders)) {
     d = { orders: (setor === "mont" ? seedConferenciaMont() : seedConferencia()).map(prepararParaConferencia) };
   }
@@ -35,12 +38,12 @@ export function carregarConferencia(setor) {
 }
 
 // avisa a tela quando OUTRA aba/janela mudou a fila (ex.: o gestor cortou um item ou reabriu um pedido)
-export function aoMudarConferencia(setor, fn) {
-  window.addEventListener("storage", (e) => { if (e.key === chave(setor)) fn(); });
+export function aoMudarConferencia(setor, fn, { servidor = false } = {}) {
+  window.addEventListener("storage", (e) => { if (e.key === chave(setor, servidor)) fn(); });
 }
 
-export function salvarConferencia(setor, db) {
-  localStorage.setItem(chave(setor), JSON.stringify(db));
+export function salvarConferencia(setor, db, { servidor = false } = {}) {
+  localStorage.setItem(chave(setor, servidor), JSON.stringify(db));
 }
 
 // pedidos da conferência já gravados (sem demonstração); o Embarque usa para montar a carga avulsa
@@ -89,3 +92,55 @@ function importarConcluidosDaSeparacao(d, setor) {
 
 export const lerPosto = () => localStorage.getItem(CHAVE_POSTO) || "01";
 export const salvarPosto = (posto) => localStorage.setItem(CHAVE_POSTO, posto);
+
+// ---------- lista do servidor (Fase 2) ----------
+const ms = (iso) => (iso ? Date.parse(iso) : null);
+const horaCurta = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "");
+const num = (x) => Number(x ?? 0);
+
+// conferência como o servidor manda → pedido como o posto usa (o mesmo formato da demonstração).
+// O mesmo produto em duas partes vira uma linha só (a conferência conta por produto).
+export function conferenciaDoServidor(c) {
+  const porProduto = new Map();
+  for (const i of c.itens) {
+    const x = porProduto.get(i.produto);
+    if (x) { x.qtd += num(i.qtd); x.sep += num(i.qtd_separada); if (i.status === "falta") { x.status = "falta"; x.motivo ||= i.motivo; } continue; }
+    porProduto.set(i.produto, {
+      sku: i.produto, ean: i.codigos_de_barras?.[0] || "", eans: i.codigos_de_barras || [], desc: i.descricao, un: i.un,
+      end: i.endereco_codigo, qtd: num(i.qtd), sep: num(i.qtd_separada), status: i.status === "falta" ? "falta" : "ok", motivo: i.motivo || "",
+    });
+  }
+  const itens = [...porProduto.values()];
+  const contado = Object.fromEntries(itens.map((i) => [i.sku, 0]));
+  const fora = [];
+  for (const x of c.contagens || []) {
+    if (x.fora) { if (num(x.qtd) > 0) fora.push({ sku: x.produto, ean: "", desc: x.descricao || x.produto, q: num(x.qtd) }); }
+    else contado[x.produto] = num(x.qtd);
+  }
+  const doca = (codigo) => (codigo ? { codigo } : null);
+  return {
+    id: c.pedido, cliente: c.cliente, cidade: c.cidade, prio: c.prioridade, hora: horaCurta(c.chegada), aguardando: !!c.aguardando,
+    rota: c.rota || null, status: "concluido", operador: c.separador_nome || null, fim: ms(c.separado_em),
+    doca: doca(c.doca),
+    partes: (c.partes || []).map((p) => ({ n: p.numero, de: p.de, operador: p.separador_nome, doca: doca(p.doca), fim: ms(p.fim) })),
+    ordem: c.ordem_fila ?? null,
+    itens,
+    conf: {
+      status: c.status, itens: contado, fora, log: [], inicio: ms(c.inicio), fim: ms(c.fim), volumes: c.volumes || 0,
+      conferente: c.conferente_nome || null, conferenteLogin: c.conferente || null, posto: c.posto || null,
+      obs: c.observacao || undefined, devolvido: {}, postado: {}, reaberto: null,
+    },
+  };
+}
+
+// Baixa a lista do posto. Devolve { ok: true, pedidos } (no formato do posto) ou { ok: false, erro }.
+export async function baixarConferencia(sessao, setor, buscar = fetch) {
+  let r;
+  try {
+    r = await buscar(`api/conferencia?setor=${encodeURIComponent(setor)}`, { headers: { authorization: `Bearer ${sessao.token}` }, cache: "no-store" });
+  } catch { return { ok: false, erro: "sem-rede" }; }
+  if (r.status === 401) return { ok: false, erro: "sessao-vencida" };
+  if (!r.ok) return { ok: false, erro: "servidor" };
+  const { pedidos } = await r.json();
+  return { ok: true, pedidos: pedidos.map(conferenciaDoServidor) };
+}

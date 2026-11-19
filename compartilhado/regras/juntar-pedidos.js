@@ -78,3 +78,25 @@ export const pedidosNovosNaFila = (antes, depois) => {
   const tinha = new Set(antes);
   return depois.filter((o) => o.status === "pendente" && !tinha.has(o.id)).map((o) => o.id);
 };
+
+// ---------- Conferência (Fase 2) ----------
+// A mesma ideia para a lista do posto: tem ação na fila → fica a versão do POSTO; senão, a do SERVIDOR.
+// O que só o posto tem é o histórico das leituras (para o estorno, F6): fica quando o servidor tem as mesmas
+// contagens do posto (nada mudou por fora).
+const contagensIguais = (a, b) => {
+  const ks = new Set([...Object.keys(a.itens || {}), ...Object.keys(b.itens || {})]);
+  const fora = (x) => JSON.stringify([...(x.fora || [])].map((f) => [f.sku, Number(f.q)]).sort());
+  return a.status === b.status && [...ks].every((k) => Number(a.itens?.[k] || 0) === Number(b.itens?.[k] || 0)) && fora(a) === fora(b);
+};
+export function juntarConferencia({ locais, doServidor, comFila = new Set() }) {
+  const local = new Map(locais.map((o) => [o.id, o]));
+  const lista = doServidor.map((s) => {
+    const l = local.get(s.id);
+    if (!l) return s;
+    if (comFila.has(s.id)) return l;
+    return contagensIguais(l.conf, s.conf) ? { ...s, conf: { ...s.conf, log: l.conf.log || [], obs: s.conf.obs ?? l.conf.obs } } : s;
+  });
+  const noServidor = new Set(doServidor.map((s) => s.id));
+  for (const l of locais) if (!noServidor.has(l.id) && comFila.has(l.id)) lista.push(l);
+  return lista;
+}

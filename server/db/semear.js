@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { conectar, emTransacao } from "../src/banco.js";
 import { gerarHash } from "../src/senha.js";
 import { USERS } from "../../js/sessao.js";
-import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont } from "../../js/demo-dados.js";
+import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont, seedConferencia, seedConferenciaMont } from "../../js/demo-dados.js";
 import { cadastroDoCliente } from "../../js/dados/clientes.js";
 
 // Fila de cada separador no começo da demonstração (Fase 1e). O que não está aqui fica na caixa de entrada
@@ -14,6 +14,12 @@ export const FILAS_DE_DEMONSTRACAO = {
   "PV-10421": ["separador", 1], "PV-10422": ["separador", 2], "PV-10424": ["separador", 3], "PV-10425": ["separador", 3],
   "PV-10426/1": ["separador", 4], "PV-10426/2": ["separador2", 1],
   "OP-3212": ["separador", 1], "OP-3213": ["separador", 2],
+};
+// Conferência (Fase 2): os pedidos que já chegam separados, na fila de cada conferente.
+// O PV-10404 (aguardando) e a OP-3209 ficam na caixa de entrada da conferência.
+export const FILAS_DA_CONFERENCIA = {
+  "PV-10401": ["conferente", 1], "PV-10402": ["conferente", 2], "PV-10403": ["conferente2", 1],
+  "OP-3208": ["conferente", 1], "OP-3210": ["conferente2", 1],
 };
 // chega do Sankhya sem rota: o coordenador define antes de mandar para um separador
 export const SEM_ROTA_NA_DEMONSTRACAO = ["PV-10428"];
@@ -46,10 +52,16 @@ export async function semear(pool) {
     ...seedSeparacao().map((o) => ({ ...o, setor: "exp" })),
     ...seedSeparacaoMont().map((o) => ({ ...o, setor: "mont" })),
   ];
+  // já separados: entram direto na caixa de entrada (ou na fila) da conferência
+  const separados = [
+    ...seedConferencia().map((o) => ({ ...o, setor: "exp" })),
+    ...seedConferenciaMont().map((o) => ({ ...o, setor: "mont" })),
+  ];
+  pedidos.push(...separados);
 
   await emTransacao(pool, async (c) => {
     // começa do zero (a ordem não importa com CASCADE)
-    await c.query("TRUNCATE acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
+    await c.query("TRUNCATE conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
 
     await inserirLista(c, "usuarios", ["login text", "nome text", "perfil text", "pin_hash text"],
       USERS.map((u) => ({ login: u.login, nome: u.nome, perfil: u.perfil, pin_hash: gerarHash(u.pin) })));
@@ -90,7 +102,7 @@ export async function semear(pool) {
       pedidos.map((o) => ({
         id: o.id, setor: o.setor, cliente: o.cliente, cidade: o.cidade, prioridade: o.prio, chegada: horaDeHoje(o.hora),
         status: o.status, separador: o.operador, inicio: dataOuNada(o.inicio), fim: dataOuNada(o.fim),
-        doca: o.doca || null, lote: o.lote || null, posicao_lote: o.pos || null,
+        doca: (typeof o.doca === "object" ? o.doca?.codigo : o.doca) || null, lote: o.lote || null, posicao_lote: o.pos || null,
         pedido_pai: o.parte?.pai || null, parte_numero: o.parte?.n || null, partes_total: o.parte?.de || null,
         parte_ruas: o.parte?.ruas || null, dividido_por: o.parte?.por || null,
         rota: rotaDoPedido(o), aguardando: !!o.aguardando,
@@ -105,11 +117,20 @@ export async function semear(pool) {
         pedido_id: o.id, sequencia: n + 1, produto: i.sku, endereco_codigo: i.end, qtd: i.qtd,
         qtd_separada: i.sep || 0, status: i.status, motivo: i.motivo || "",
       }))));
+
+    await inserirLista(c, "conferencias",
+      ["pedido text", "setor text", "designado_para text", "ordem_fila integer", "designado_em timestamptz", "designado_por text", "chegou_em timestamptz"],
+      separados.map((o) => ({
+        pedido: o.id, setor: o.setor, chegou_em: dataOuNada(o.fim),
+        designado_para: FILAS_DA_CONFERENCIA[o.id]?.[0] || null, ordem_fila: FILAS_DA_CONFERENCIA[o.id]?.[1] || null,
+        designado_em: FILAS_DA_CONFERENCIA[o.id] ? dataOuNada(o.fim) : null, designado_por: FILAS_DA_CONFERENCIA[o.id] ? "coordenador" : null,
+      })));
   });
 
   return {
     usuarios: USERS.length, produtos: estoque.produtos.length, embalagens: estoque.embalagens.length,
     enderecos: estoque.enderecos.length, saldos: estoque.saldos.length, associacoes: estoque.associacoes.length, pedidos: pedidos.length,
+    conferencias: separados.length,
   };
 }
 

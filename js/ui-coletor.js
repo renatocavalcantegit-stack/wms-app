@@ -29,38 +29,8 @@ export function beep(ok = true) {
   } catch {}
 }
 
-// O Chrome só deixa tocar som depois de um toque ou tecla NA PÁGINA (depois de recarregar, conta de novo).
-// O som do pedido novo chega sozinho, sem toque: por isso o primeiro toque ou tecla em qualquer lugar já liga o áudio.
-function liberarSom() {
-  try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === "suspended") actx.resume();
-  } catch {}
-}
-if (typeof document !== "undefined") {
-  for (const ev of ["pointerdown", "keydown", "touchstart"]) document.addEventListener(ev, liberarSom, { capture: true, passive: true });
-}
-
-// toque de PEDIDO NOVO NA FILA (Fase 1e): o coordenador mandou pedido para este separador.
-// Só som (e vibração), sem notificação. Três notas subindo, uma vez; bem diferente do bipe da leitura.
-// O navegador só toca som depois de um toque na tela: no coletor isso já aconteceu no login.
-export function somDePedidoNovo() {
-  try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === "suspended") actx.resume();
-    const notas = [659, 831, 988]; // mi, sol sustenido, si
-    notas.forEach((f, i) => {
-      const t = actx.currentTime + i * 0.16;
-      const o = actx.createOscillator(), g = actx.createGain();
-      o.type = "triangle"; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
-      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.34);
-    });
-  } catch {}
-  vibrate([120, 80, 240]);
-}
+// toque de pedido novo na fila: em js/som.js (o posto da Conferência também usa)
+export { somDePedidoNovo } from "./som.js";
 
 // telas permitidas por perfil (o login decide a tela; nada fora do perfil é exibido)
 const ACCESS = {

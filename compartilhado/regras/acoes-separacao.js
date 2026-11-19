@@ -16,6 +16,7 @@
 //
 // Por que gravar o VALOR e não somar? Se o coletor reenviar a mesma ação, o resultado é o mesmo.
 import { lerQuantidade, quantidadeValida, formatarQtd } from "./quantidade.js";
+import { podeSepararNovamente } from "./separacao.js";
 
 export const TIPOS_DA_SEPARACAO = ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir"];
 
@@ -42,7 +43,7 @@ function conflitoDeDono(pedido, login) {
   return null;
 }
 
-// acao = { tipo, dados, login, feitaEm } · pedido = { id, status, separador, designadoPara? } ou null · itens = [{ sequencia, qtd, status }]
+// acao = { tipo, dados, login, feitaEm } · pedido = { id, status, separador, designadoPara?, statusConferencia? } ou null · itens = [{ sequencia, qtd, status }]
 // Devolve null quando o tipo não é da Separação (quem chamou decide o que fazer).
 export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
   const { tipo, dados = {}, login, feitaEm } = acao;
@@ -95,8 +96,10 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
   }
 
   // separacao.reabrir — quem reabre fica com o pedido; o item cortado continua cortado.
-  // (Conferir se a conferência ainda não começou entra quando a Conferência passar pelo servidor.)
+  // Só enquanto ninguém começou a conferir (Fase 2: pedido.statusConferencia vem do servidor; sem o campo, não confere).
   if (pedido.status !== "concluido") return recusada("SÓ PEDIDO CONCLUÍDO PODE SER SEPARADO NOVAMENTE.");
+  const naConferencia = podeSepararNovamente(pedido.statusConferencia);
+  if (naConferencia) return recusada(naConferencia);
   return aplicada(
     { status: "andamento", separador: login, inicio: feitaEm, fim: null, doca: null },
     itens.filter((i) => i.status !== "cortado").map((i) => ({ sequencia: i.sequencia, qtdSeparada: 0, status: "pendente", motivo: "" })),

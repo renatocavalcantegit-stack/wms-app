@@ -1,10 +1,10 @@
 // Service worker: mantém o app funcionando offline.
-const CACHE = "wms-bb-v64";
-const V = "?v=64";
+const CACHE = "wms-bb-v65";
+const V = "?v=65";
 const ASSETS = ["./", "index.html", "conferencia.html", "gestao.html", "montagem.html", "gestao.css" + V, "gestao.js" + V, "styles.css" + V, "app.js" + V, "conferencia.css" + V, "conferencia.js" + V, "etiqueta.css" + V, "vendor/qrcode.js" + V,
   "estoque.html", "gestao-estoque.html", "estoque.css" + V, "estoque.js" + V, "gestao-estoque.css" + V, "gestao-estoque.js" + V, "etiqueta-recebimento.css" + V,
   // módulos importados pelas telas (o import não leva ?v; o service worker busca sempre a versão nova na rede)
-  "etiqueta.js", "embarque.js", "js/util.js", "js/ui-coletor.js", "js/sessao.js", "js/demo-dados.js", "js/demo-catalogo.js", "js/demo-estoque-real.js", "js/demo-clientes.js", "js/dados/separacao.js", "js/dados/conferencia.js", "js/dados/clientes.js",
+  "etiqueta.js", "embarque.js", "js/util.js", "js/ui-coletor.js", "js/som.js", "js/sessao.js", "js/demo-dados.js", "js/demo-catalogo.js", "js/demo-estoque-real.js", "js/demo-clientes.js", "js/dados/separacao.js", "js/dados/conferencia.js", "js/dados/clientes.js",
   "compartilhado/regras/rotas.js", "compartilhado/regras/volumes.js", "compartilhado/regras/etiqueta-volume.js", "compartilhado/regras/produtos.js",
   "js/qr.js", "js/etiqueta-produto.js", "js/dados/estoque.js",
   "compartilhado/regras/enderecos.js", "compartilhado/regras/embalagens.js", "compartilhado/regras/etiqueta-produto.js",
