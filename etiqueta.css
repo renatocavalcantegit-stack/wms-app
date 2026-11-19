@@ -2,7 +2,7 @@
 .label {
   width: 80mm; height: 60mm; box-sizing: border-box; padding: 2.2mm;
   background: #fff; color: #000; overflow: hidden; position: relative;
-  display: flex; flex-direction: column; gap: 1.4mm;
+  display: flex; flex-direction: column; gap: 1.1mm;
   font-family: Inter, Arial, sans-serif; line-height: 1.1;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
@@ -13,29 +13,31 @@
 .lb-vol b { font-family: Montserrat, Arial, sans-serif; font-weight: 900; font-size: 6.4mm; }
 .lb-vol small { font-size: 3.6mm; font-weight: 800; }
 
-.lb-mid { flex: 1; display: flex; gap: 2.4mm; min-height: 0; }
-.lb-qr { width: 30mm; height: 30mm; flex-shrink: 0; align-self: center; fill: #000; }
+.lb-mid { flex: 1; display: flex; gap: 2mm; min-height: 0; }
+.lb-qr { width: 27mm; height: 27mm; flex-shrink: 0; align-self: center; fill: #000; }
 .lb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .lb-k { font-size: 2mm; font-weight: 700; letter-spacing: .25mm; color: #000; }
 .lb-id { font-family: Montserrat, Arial, sans-serif; font-weight: 900; font-size: 6.4mm; letter-spacing: -.1mm; margin-bottom: 1mm; }
 .lb-cli { font-weight: 800; font-size: 3.3mm; text-transform: uppercase; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* endereço de entrega em destaque, com a barra preta à esquerda */
 .lb-end { margin-top: 1.2mm; padding-left: 1.8mm; border-left: 1mm solid #000; display: flex; flex-direction: column; gap: .4mm; }
-.lb-end > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* v69: o endereço quebra a linha em vez de cortar com "…" (até 2 linhas no bairro e na rua) */
+.lb-end > * { overflow: hidden; overflow-wrap: anywhere; }
+.lb-end-cid { white-space: nowrap; text-overflow: ellipsis; }
 .lb-end-cid { font-size: 3.4mm; font-weight: 900; text-transform: uppercase; }
-.lb-end-bai { font-size: 3mm; font-weight: 700; }
-/* rua comprida encolhe com "…", mas o número nunca é cortado */
-.lb-end-rua { display: flex; align-items: baseline; gap: .8mm; font-size: 3mm; font-weight: 600; }
-.lb-end-rua span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lb-end-bai { font-size: 3mm; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* rua comprida continua na linha de baixo (até 2 linhas); o número fica à direita e nunca é cortado */
+.lb-end-rua { display: flex; align-items: flex-end; gap: .8mm; font-size: 3mm; font-weight: 600; }
+.lb-end-rua span { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lb-end-rua b { flex-shrink: 0; font-weight: 900; font-size: 3.3mm; }
 
-/* faixa de baixo mais fina: nome da rota + data, hora e conferente */
-.lb-bot { display: flex; align-items: stretch; gap: 2mm; height: 7.6mm; border-top: .7mm solid #000; padding-top: 1mm; }
+/* faixa de baixo fina (v69: mais estreita, o espaço vai para o endereço): nome da rota + data, hora e conferente */
+.lb-bot { display: flex; align-items: stretch; gap: 2mm; height: 5.8mm; border-top: .6mm solid #000; padding-top: .8mm; }
 .lb-route { display: flex; align-items: center; gap: 1.2mm; max-width: 50mm; flex-shrink: 0; background: #000; color: #fff; border-radius: 1.2mm; padding: 0 2.2mm; font-family: Montserrat, Arial, sans-serif; }
 .lb-route small { font-size: 1.8mm; font-weight: 700; letter-spacing: .2mm; }
-.lb-route b { font-weight: 900; font-size: 3.8mm; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lb-route-longa b { font-size: 2.9mm; } /* nome comprido (ex.: Ceará Transporte) cabe inteiro com letra menor */
-.lb-foot { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; font-size: 2.2mm; font-weight: 600; gap: .3mm; }
+.lb-route b { font-weight: 900; font-size: 3.3mm; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-route-longa b { font-size: 2.6mm; } /* nome comprido (ex.: Ceará Transporte) cabe inteiro com letra menor */
+.lb-foot { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; font-size: 1.9mm; font-weight: 600; gap: .2mm; }
 .lb-foot span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- pré-visualização ---------- */

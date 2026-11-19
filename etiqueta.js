@@ -44,7 +44,7 @@ export const Etiqueta = (() => {
           <div class="lb-end">
             <b class="lb-end-cid">${esc(e.cidade)}</b>
             ${e.bairro ? `<span class="lb-end-bai">${esc(e.bairro)}</span>` : ""}
-            ${e.rua ? `<span class="lb-end-rua"><span>${esc(e.rua)},</span><b>${esc(e.numero)}</b></span>` : ""}
+            ${e.rua ? `<span class="lb-end-rua"><span>${esc(e.rua)},</span> <b>${esc(e.numero)}</b></span>` : ""}
           </div>
         </div>
       </div>
