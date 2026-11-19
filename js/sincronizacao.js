@@ -79,6 +79,10 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
   return { situacao: enviadas ? "ok" : falou ? "contato" : "vazia", enviadas, recusadas: recusadasAgora };
 }
 
+// v71: cada envio tem prazo. Com o Wi-Fi desligado, o aparelho pode deixar o pedido parado até a rede voltar:
+// sem prazo, a linha "Sem rede há X min" não aparecia e nenhum outro envio saía enquanto isso.
+export const PRAZO_DO_ENVIO = 15000; // ms
+
 // Liga o envio automático. sessao() devolve a sessão atual; aoMudar(resultado) é chamado depois de cada tentativa.
 // passo() (v63) devolve o passo do item da vez ({ passo, itens }) ou null: só vai quando muda (uma vez cada).
 // Devolve pedirEnvio(): a tela chama logo depois de gravar uma ação, para não esperar os 5 segundos.
@@ -92,7 +96,7 @@ export function iniciarSincronizacao({ sessao, aoMudar = () => {}, passo = () =>
       let p = null;
       try { p = passo(); } catch { p = null; }
       const chave = p ? JSON.stringify(p) : "", novo = !!p && chave !== passoEnviado;
-      const r = await sincronizarAgora({ sessao: sessao(), batimento, passo: novo ? p : null });
+      const r = await sincronizarAgora({ sessao: sessao(), batimento, passo: novo ? p : null, buscar: comPrazo(fetch, PRAZO_DO_ENVIO) });
       if (r.situacao === "ok" || r.situacao === "contato") { ultimoContato = Date.now(); if (novo) passoEnviado = chave; }
       aoMudar(r);
     } finally {
@@ -104,4 +108,16 @@ export function iniciarSincronizacao({ sessao, aoMudar = () => {}, passo = () =>
   window.addEventListener("online", tentar);
   tentar();
   return () => setTimeout(tentar, 0);
+}
+
+// o mesmo fetch, mas desiste depois de "prazo" ms (o erro conta como sem rede)
+export function comPrazo(buscar, prazo) {
+  return (url, opcoes = {}) => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), prazo);
+    const pedido = buscar(url, { ...opcoes, signal: ctl.signal });
+    // o fetch de mentira dos testes não ouve o signal: o prazo também vale para ele
+    const desiste = new Promise((_, recusa) => ctl.signal.addEventListener("abort", () => recusa(new TypeError("prazo esgotado"))));
+    return Promise.race([pedido, desiste]).finally(() => clearTimeout(t));
+  };
 }

@@ -61,6 +61,22 @@ test("sem rede: não sai (o servidor ainda acha que a pessoa está aqui)", async
   assert.ok(session());
 });
 
+test("sem rede o aviso vem na hora (v71): o aparelho já sabe, ou o servidor não responde no prazo", async () => {
+  const nuncaResponde = () => new Promise(() => {});
+  // o aparelho sabe que está sem rede: nem tenta falar com o servidor
+  assert.deepEqual(await sairDoAparelho({ sessao, confirmar: naoPergunte, buscar: () => assert.fail("não devia tentar"), semRede: () => true }),
+    { ok: false, mensagem: MSG_SAIR_SEM_REDE });
+  // o pedido fica parado (Wi-Fi desligado): desiste no prazo, com e sem ações na fila
+  const inicio = Date.now();
+  assert.deepEqual(await sairDoAparelho({ sessao, confirmar: naoPergunte, buscar: nuncaResponde, semRede: () => false, prazo: 50 }),
+    { ok: false, mensagem: MSG_SAIR_SEM_REDE });
+  enfileirar("separador", "separacao.iniciar", { pedido: "PV-1" });
+  assert.deepEqual(await sairDoAparelho({ sessao, confirmar: naoPergunte, buscar: nuncaResponde, semRede: () => false, prazo: 50 }),
+    { ok: false, mensagem: MSG_SAIR_SEM_REDE });
+  assert.ok(Date.now() - inicio < 2000);
+  assert.ok(session());
+});
+
 test("demonstração (sem token): só apaga a sessão do aparelho", async () => {
   assert.deepEqual(await sairDoAparelho({ sessao: { login: "separador" }, buscar: semRede }), { ok: true });
   assert.equal(session(), null);

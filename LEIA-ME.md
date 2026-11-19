@@ -36,6 +36,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v68 | Conferência · posto | **excesso trava o pedido**: contou a mais que o separado, ou bipou produto que não é do pedido → o F10 não finaliza ("Retire o excesso do volume antes de finalizar (F9)"). O F9 liga "retirar": cada bipe tira 1 unidade do que sobra; quando não sobra nada, destrava. Falta continua finalizando com divergência. O servidor também recusa finalizar com excesso |
 | v69 | Etiqueta de volume | o **endereço quebra a linha** em vez de cortar com "…" (bairro e rua até 2 linhas; o número sempre aparece à direita). A faixa de baixo (rota, data, conferente) ficou mais estreita e o QR passou para 27 mm, para dar espaço ao endereço |
 | v70 | Todas as telas | puxar a tela para baixo no celular/coletor **não recarrega mais o app** (o "arrastar para atualizar" do Chrome ficou desligado). Nada muda na aparência |
+| v71 | Coletor e posto · Sair | sem rede, o aviso "Sem rede: o servidor ainda não sabe que você saiu…" aparece **na hora** (antes só aparecia quando a rede voltava). O envio automático da fila também desiste em 15 s e mostra "Sem rede" |
 
 ## Estrutura
 
