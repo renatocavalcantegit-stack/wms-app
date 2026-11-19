@@ -39,6 +39,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v71 | Coletor e posto · Sair | sem rede, o aviso "Sem rede: o servidor ainda não sabe que você saiu…" aparece **na hora** (antes só aparecia quando a rede voltava). O envio automático da fila também desiste em 15 s e mostra "Sem rede" |
 | v72 | Conferência · pedido dividido | o pedido entra na conferência com a **primeira parte que terminar** (qualquer uma). No posto, os itens da parte em separação ficam apagados no fim da lista ("Parte 1/2 · em separação") e não podem ser bipados; o Finalizar fica travado ("⏳ Parte 1/2 em separação · finaliza quando todas as partes chegarem"). O conferente pode voltar à fila e conferir outro pedido; quando a parte termina, os itens entram na mesma tela. Na Gestão, o card mostra só a doca da parte pronta e a faixa amarela "⏳ Parte 1/2 em separação · separador". Uma conferência só, um jogo de volumes e etiquetas |
 | v73 | Coletor · separação | o coletor só retoma "do item onde parou" se isso bate com o servidor. Pedido refeito ou banco re-semeado começa do primeiro item, sem endereço e produto já confirmados de uma separação antiga |
+| v74 | Conferência · posto | a tela não passa mais da largura do monitor (em 1366 px ela ficava com ~1500 px e aparecia deslocada). As docas de pedido dividido quebram linha na coluna "Doca", uma embaixo da outra |
 
 ## Estrutura
 
