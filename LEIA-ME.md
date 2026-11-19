@@ -35,6 +35,7 @@ Cada mudança de tela aprovada daqui para frente entra nesta lista.
 | v67 | Gestão · Conferência | com o servidor, a aba Conferência é o **quadro de verdade**, igual ao da demonstração: "Separados" + uma coluna por conferente, arrastar para a fila (o posto mostra na mesma ordem), card e gaveta ao vivo com o conferido de cada item. Na Montagem, "Pular conferência" e "Entregues à montagem". O que o servidor ainda não tem (vendedor, embarque, setor de cada conferente) não aparece ou fica "—" |
 | v68 | Conferência · posto | **excesso trava o pedido**: contou a mais que o separado, ou bipou produto que não é do pedido → o F10 não finaliza ("Retire o excesso do volume antes de finalizar (F9)"). O F9 liga "retirar": cada bipe tira 1 unidade do que sobra; quando não sobra nada, destrava. Falta continua finalizando com divergência. O servidor também recusa finalizar com excesso |
 | v69 | Etiqueta de volume | o **endereço quebra a linha** em vez de cortar com "…" (bairro e rua até 2 linhas; o número sempre aparece à direita). A faixa de baixo (rota, data, conferente) ficou mais estreita e o QR passou para 27 mm, para dar espaço ao endereço |
+| v70 | Todas as telas | puxar a tela para baixo no celular/coletor **não recarrega mais o app** (o "arrastar para atualizar" do Chrome ficou desligado). Nada muda na aparência |
 
 ## Estrutura
 

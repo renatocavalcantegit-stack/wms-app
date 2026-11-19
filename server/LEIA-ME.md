@@ -95,6 +95,22 @@ Abra http://localhost:3000 no navegador para usar o app **com o servidor**: o lo
 no servidor e cada ação da separação vai para o banco. A linha embaixo do nome mostra o envio
 ("Tudo enviado", "Enviando…", "Sem rede há X min · N a enviar").
 
+### Obrigatório antes da virada para a produção: HTTPS
+
+Em `http://192.168.1.50:3000` o Chrome **não** trata o WMS como app seguro:
+- não oferece "Instalar app" nem abre em tela cheia (o `standalone` do manifest é ignorado);
+- o **service worker não funciona**: se a página recarregar sem Wi-Fi, o coletor mostra o "sem internet" do Chrome
+  (a fila de envio fica guardada no aparelho e não se perde, mas o operador espera a rede voltar).
+
+Plano combinado: um endereço `https://wms.renatoflow.com.br` (nome a confirmar) apontando para o IP fixo do servidor,
+DNS na **Cloudflare** com o registro "DNS only" (nuvem cinza), certificado gratuito do Let's Encrypt validado por DNS
+(o servidor não fica aberto para a internet) e renovação automática com um token da Cloudflare que só edita o DNS
+dessa zona (o token fica só no servidor, nunca no chat nem no GitHub). Conferir na instalação se o roteador bloqueia
+nome público apontando para IP interno ("DNS rebinding").
+
+Enquanto isso, nos testes: não recarregar a página sem rede. Para testar "abrir o app sem rede" em um coletor,
+dá para ligar em `chrome://flags` a opção "Insecure origins treated as secure" com `http://192.168.1.50:3000`.
+
 Como o app sabe que tem servidor? Ele lê o `modo.json`. No GitHub Pages é o arquivo do repositório
 (`{ "servidor": false }`, modo demonstração); este servidor responde `{ "servidor": true }`.
 

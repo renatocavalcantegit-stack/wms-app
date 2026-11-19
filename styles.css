@@ -20,7 +20,9 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* v70: no Android, o Chrome só respeita o "não arrastar para atualizar" no html (quem rola é a página inteira).
+   Sem isso, puxar a tela para baixo no coletor recarrega o app sem querer. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior-y: none; }
 body {
   font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);
