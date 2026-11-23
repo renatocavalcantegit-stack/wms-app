@@ -43,7 +43,18 @@ export function telaOcorrencias(setor, { usuario, toast, sess }) {
 
 async function carregarHistorico() {
   const r = await lerOcorrenciasDoServidor(ctx.sess, ctx.setor);
-  estado.historico = r.ok ? r.ocorrencias : [];
+  if (!r.ok && estado.historico) return; // sem rede: fica o que já está na tela
+  const novo = r.ok ? r.ocorrencias : [];
+  // só redesenha se mudou (ex.: a devolução deixou de estar "aguardando entrega")
+  if (estado.historico && JSON.stringify(novo) === JSON.stringify(estado.historico)) return;
+  estado.historico = novo;
+  redesenharGuardando();
+}
+// demonstração: o histórico vem do aparelho; outra aba marcou a entrega? redesenha
+let historicoNaTela = "";
+function conferirHistoricoLocal() {
+  const agora = JSON.stringify(lerOcorrencias(ctx.setor));
+  if (agora === historicoNaTela || !document.querySelector(".oc-wrap")) return;
   redesenharGuardando();
 }
 
@@ -54,14 +65,19 @@ let ouvindo = false, espera = null;
 function ligarAtualizacao() {
   if (ouvindo) return;
   ouvindo = true;
-  const pedir = (historicoTambem = false) => {
+  // o histórico também: a entrega ao estoque (coletor/posto) chega como ação, não como mudança do quadro
+  const pedir = () => {
     clearTimeout(espera);
-    espera = setTimeout(() => { atualizarAberto(); if (historicoTambem && noServidor()) carregarHistorico(); }, 400);
+    espera = setTimeout(async () => {
+      await atualizarAberto();
+      if (!document.querySelector(".oc-wrap")) return;
+      if (noServidor()) carregarHistorico(); else conferirHistoricoLocal();
+    }, 400);
   };
   if (noServidor()) {
-    ouvirQuadro(ctx.sess, (evento) => { if (evento === "quadro" || evento === "acoes") pedir(evento === "quadro"); });
-    setInterval(() => pedir(), 15_000);
-  } else window.addEventListener("storage", () => pedir());
+    ouvirQuadro(ctx.sess, (evento) => { if (evento === "quadro" || evento === "acoes") pedir(); });
+    setInterval(pedir, 15_000);
+  } else window.addEventListener("storage", pedir);
 }
 async function atualizarAberto() {
   const p = estado.pedido;
@@ -127,6 +143,7 @@ function cartaoDoPedido(p) {
 
 function historico() {
   const lista = noServidor() ? estado.historico || [] : lerOcorrencias(ctx.setor);
+  if (!noServidor()) historicoNaTela = JSON.stringify(lista);
   return `<h2 class="oc-h2">Ocorrências registradas</h2>
   <table class="oc-tab oc-hist">
     <thead><tr><th>Quando</th><th>Pedido</th><th>Tipo</th><th>Etapa</th><th>Itens</th><th>Motivo</th><th>Sankhya</th><th>Entrada no estoque</th><th>Quem</th></tr></thead>

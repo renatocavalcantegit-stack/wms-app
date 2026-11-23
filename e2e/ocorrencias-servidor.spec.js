@@ -128,13 +128,24 @@ test("cancelado com o separador no meio: o coletor pede a entrega e ela fica reg
   await separarItem(ana, i);
   await expect.poll(async () => (await item("PV-10423", i.sku)).sep).toBe(i.qtd);
 
+  const g = await aparelho(browser, "coordenador", { width: 1366, height: 768 });
+  await expect(g).toHaveURL(/gestao\.html/);
+  await expect(async () => { // a Gestão ainda pode estar montando o quadro: clica até a aba abrir
+    await g.locator('.gx-tab[data-board="ocorr"]').click();
+    await expect(g.locator(".oc-hist")).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await gestorCancela("PV-10423");
   expect(await situacao("PV-10423")).toEqual([{ origem: "separador", status: "a_entregar", responsavel: "separador", entregue_por: null }]);
+  // o histórico da Gestão mostra "aguardando entrega" e se atualiza sozinho quando ele entrega
+  const linha = g.locator(".oc-hist tr", { hasText: "PV-10423" });
+  await expect(linha).toContainText("aguardando entrega", { timeout: 20_000 });
   // o coletor confere o pedido aberto a cada 15 s
   await expect(ana.locator("#sgOk")).toHaveText("Entregue ao estoque", { timeout: 25_000 });
   await ana.locator("#sgOk").click();
   await expect(ana.locator("#toast")).toContainText("Entrega registrada");
   await expect.poll(() => situacao("PV-10423")).toEqual([{ origem: "separador", status: "pendente", responsavel: "separador", entregue_por: "separador" }]);
+  await expect(linha).toContainText("DEV PV-10423", { timeout: 20_000 });
+  await expect(linha).not.toContainText("aguardando entrega", { timeout: 20_000 });
 });
 
 test("cancelado na fila do conferente: o posto mostra \"Cancelado · entregar ao estoque\" e registra a entrega", async ({ browser }) => {
