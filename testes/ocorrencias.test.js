@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, aplicarCorte, faltaTirar, faltaPostar,
-  devolucaoPendente, lerDevolucao, validarDocaDevolucao, quemEstaComAParte, planejarOcorrencia, confirmarDevolucaoDaLinha, itensCortados,
+  devolucaoPendente, lerDevolucao, validarDocaDevolucao, quemEstaComAParte, entregaAguardaResponsavel, planejarOcorrencia, confirmarDevolucaoDaLinha, itensCortados,
   MSG_PEDIDO_CANCELADO, MSG_EM_CARREGAMENTO, MSG_SEM_MOTIVO, MSG_SEM_REFERENCIA, MSG_NADA_A_DEVOLVER, MSG_NAO_E_DOCA_DEVOLUCAO,
 } from "../compartilhado/regras/ocorrencias.js";
 
@@ -78,13 +78,21 @@ test("doca de devolução: só endereço ativo do tipo devolução", () => {
 });
 
 // ---------- quem devolve (v75) ----------
-test("quem está com a mercadoria: separador, conferente ou o próprio gestor", () => {
-  assert.equal(quemEstaComAParte({ statusSeparacao: "pendente" }), "gestor");
+test("quem está com a mercadoria: separador; depois da separação, sempre o conferente", () => {
+  assert.equal(quemEstaComAParte({ statusSeparacao: "pendente" }), "gestor"); // nada separado: nada a devolver
   assert.equal(quemEstaComAParte({ statusSeparacao: "andamento" }), "separador");
-  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: null }), "gestor");
-  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "aguardando" }), "gestor");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: null }), "conferente");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "aguardando" }), "conferente");
   assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "andamento" }), "conferente");
-  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "conferido" }), "gestor");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "conferido" }), "conferente");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "dispensada" }), "gestor"); // Montagem
+});
+
+test("cancelamento: a devolução espera o responsável marcar a entrega (o gestor não tem nada na mão)", () => {
+  assert.equal(entregaAguardaResponsavel("cancelamento", "separador"), true);
+  assert.equal(entregaAguardaResponsavel("cancelamento", "conferente"), true);
+  assert.equal(entregaAguardaResponsavel("cancelamento", "gestor"), false);
+  assert.equal(entregaAguardaResponsavel("corte", "conferente"), false);
 });
 
 const linha = (x) => ({ chave: x.sku, devolver: 0, status: "ok", motivo: "", ...x });

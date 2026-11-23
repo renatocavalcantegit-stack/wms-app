@@ -106,3 +106,10 @@ test("pedido cancelado pelo gestor: o posto não mexe mais", () => {
     assert.equal(avaliarAcaoDaConferencia(acao(t, { produto: "176", qtd: 1 }), conf({ status: "cancelado", conferente: "conferente" })).motivo, "O GESTOR CANCELOU O PV-1.");
   }
 });
+
+test("conferencia.entregar: pedido cancelado, o conferente marca a entrega ao estoque", () => {
+  const r = avaliarAcaoDaConferencia({ tipo: "conferencia.entregar", dados: { pedido: "PV-1" }, login: "bia" }, { pedido: "PV-1", setor: "exp", status: "cancelado" });
+  assert.deepEqual(r, { resultado: "aplicada", conferencia: {}, contagens: [], entregar: true });
+  assert.equal(avaliarAcaoDaConferencia({ tipo: "conferencia.entregar", dados: { pedido: "PV-1" }, login: "bia" },
+    { pedido: "PV-1", setor: "exp", status: "aguardando" }).resultado, "recusada");
+});

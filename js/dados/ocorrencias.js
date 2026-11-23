@@ -4,20 +4,21 @@
 // a cópia na Conferência (se já chegou lá), a carga do Embarque (cancelado sai da carga) e o Estoque
 // (o que sai da caixa vira entrada pendente de devolução).
 //
-// Quem devolve (decisão de 23/11/2026): quem está com a mercadoria na mão.
-//   parte em separação → o separador confirma no coletor · em conferência → o conferente tira bipando (F9)
-//   fila, separado aguardando conferência ou conferido → o próprio gestor (a entrada nasce na hora)
-// Cancelamento: sempre o gestor; o que já saiu da prateleira vira entrada na hora.
+// Quem devolve (decisão de 23/11/2026, ajustada no mesmo dia): quem está com a mercadoria na mão.
+//   corte: parte em separação → o separador confirma no coletor; depois da separação (aguardando conferência,
+//          em conferência ou conferido) → o conferente tira bipando (F9). Conferido: o pedido é reaberto.
+//   cancelamento: cancelado na hora; o que está na caixa vira devolução "aguardando entrega" e quem está com
+//          ela (separador ou conferente) só marca "Entregue ao estoque" (marcarEntregue).
 // As regras (quanto devolver, quem devolve, o que bloqueia) estão em compartilhado/regras/ocorrencias.js.
 // Com servidor, a Gestão usa as funções "…NoServidor" do fim do arquivo (a regra é a mesma, aplicada lá).
 import { carregarPedidos, salvarPedidos } from "./separacao.js";
 import { carregarConferencia, salvarConferencia } from "./conferencia.js";
 import { pedidoEmCarregamento, retirarDasCargas } from "./embarque.js";
-import { criarDevolucao } from "./recebimento.js";
+import { criarDevolucao, entregarDevolucao, devolucaoAEntregar } from "./recebimento.js";
 import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, planejarOcorrencia, quemEstaComAParte,
-  confirmarDevolucaoDaLinha, MSG_SEM_CORTE,
+  confirmarDevolucaoDaLinha, entregaAguardaResponsavel, MSG_SEM_CORTE,
 } from "../../compartilhado/regras/ocorrencias.js";
 
 const chave = (setor) => (setor === "mont" ? "wms-bb-ocorr-mont-v1" : "wms-bb-ocorr-v1");
@@ -25,9 +26,14 @@ const agora = () => new Date().toISOString();
 const mesmoPedido = (o, id) => o.id === id || o.parte?.pai === id;
 const PRONTA = (p) => p.status === "concluido";
 
-// histórico das ocorrências do setor (mais novas primeiro)
+// histórico das ocorrências do setor (mais novas primeiro), com a situação de cada devolução:
+// entregas = [{ numero, aguardando, quem }] (aguardando = o responsável ainda não marcou "Entregue ao estoque")
+const lerHistorico = (setor) => { try { return JSON.parse(localStorage.getItem(chave(setor))) || []; } catch { return []; } };
 export function lerOcorrencias(setor) {
-  try { return JSON.parse(localStorage.getItem(chave(setor))) || []; } catch { return []; }
+  return lerHistorico(setor).map((o) => ({ ...o, entregas: (o.entradas || []).map((numero) => {
+    const d = devolucaoAEntregar(numero);
+    return { numero, aguardando: !!d, quem: d?.quem || null };
+  }) }));
 }
 
 // o pedido como está agora: as partes da Separação, a cópia da Conferência e quem está com cada parte
@@ -85,12 +91,28 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   const plano = planejarOcorrencia({ tipo, novas: Object.fromEntries(Object.entries(novas).map(([k, v]) => [k, lerQuantidade(v)])), linhas });
   const quando = agora(), registro = { quando, motivo, referencia: String(referencia).trim(), usuario };
 
-  // quem entrega ao estoque o que sair da caixa (lido ANTES de mudar o status: o cancelamento tira a parte do separador)
+  // quem está com a caixa (lido ANTES de mudar o status: o cancelamento tira a parte do separador)
   const nomeDe = {
     gestor: usuario,
-    separador: [...new Set(partes.filter((p) => quem(p) === "separador").map((p) => p.operador).filter(Boolean))].join(" + ") || usuario,
-    conferente: conf?.conf?.conferente || usuario,
+    separador: [...new Set(partes.filter((p) => quem(p) === "separador").map((p) => p.operador).filter(Boolean))].join(" + ") || null,
+    conferente: conf?.conf?.conferente || null,
   };
+  const quemDaParte = new Map(partes.map((p) => [p.id, quem(p)]));
+
+  // 0. Estoque: no corte, só o que ninguém tem na mão vira entrada na hora (Montagem dispensada); no cancelamento,
+  //    a devolução de quem está com a caixa espera ele marcar "Entregue ao estoque"
+  const devolucoes = {};
+  const descDe = (sku) => ped.itens.find((i) => i.sku === sku)?.desc || "";
+  for (const [q, itens] of Object.entries(plano.devolucoes)) {
+    const lista = itens.map((d) => ({ produto: d.sku, qtd: d.qtd }));
+    const n = entregaAguardaResponsavel(tipo, q)
+      ? criarDevolucao({ pedido: ped.id, itens: lista, aguardando: { responsavel: q, nome: nomeDe[q] } })
+      : criarDevolucao({ pedido: ped.id, itens: lista, entreguePor: nomeDe[q] || usuario });
+    if (n) devolucoes[q] = n;
+  }
+  // o que o responsável vê para entregar: { numero, itens: [{ sku, desc, qtd }] }
+  const aEntregar = (q) => (devolucoes[q]?.aguardando
+    ? { numero: devolucoes[q].numero, itens: devolucoes[q].itens.map((i) => ({ sku: i.produto, desc: descDe(i.produto), qtd: i.qtd })) } : null);
 
   // 1. Separação: todas as partes do pedido
   const mudadas = new Set();
@@ -101,13 +123,15 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
     Object.assign(i, { qtd: m.qtd, sep: m.sep, devolver: m.devolver, status: m.status, motivo: m.motivo });
     mudadas.add(p);
   }
-  if (tipo === "cancelamento") partes.forEach((p) => Object.assign(p, { status: "cancelado", cancelado: registro, ocorrenciaPendente: false }));
+  if (tipo === "cancelamento") {
+    partes.forEach((p) => Object.assign(p, { status: "cancelado", cancelado: registro, ocorrenciaPendente: false },
+      quemDaParte.get(p.id) === "separador" && aEntregar("separador") ? { entregar: aEntregar("separador") } : {}));
+  }
   // o separador confirma no coletor (corte simples ou "devolver item")
   else [...mudadas].filter((p) => quem(p) === "separador").forEach((p) => (p.ocorrenciaPendente = true));
   salvarPedidos(setor, pedidos);
 
   // 2. Conferência (se o pedido já chegou lá): a cópia dela é refeita a partir das partes
-  const doGestor = (plano.devolucoes.gestor || []).reduce((t, d) => t + d.qtd, 0);
   if (conf) {
     for (const ci of conf.itens) {
       const ls = partes.flatMap((p) => p.itens.filter((i) => i.sku === ci.sku).map((i) => ({ i, pronta: PRONTA(p) || !p.parte })));
@@ -120,11 +144,13 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
     }
     if (tipo === "cancelamento") {
       conf.cancelado = registro;
-      Object.assign(conf.conf, { status: "cancelado", fim: Date.now() });
-    } else if (doGestor > 0 && (conf.conf.status === "conferido" || conf.conf.status === "divergente")) {
-      // já conferido: o gestor tirou da caixa; o pedido volta para refazer os volumes e reimprimir as etiquetas
-      // como no servidor: volumes e observação são refeitos do zero
+      // o conferente (de quem está na fila, ou que conferiu) marca "Entregue ao estoque" no posto
+      Object.assign(conf.conf, { status: "cancelado", fim: Date.now() }, aEntregar("conferente") ? { entregar: aEntregar("conferente") } : {});
+    } else if (plano.avisar.includes("conferente") && (conf.conf.status === "conferido" || conf.conf.status === "divergente")) {
+      // já conferido: volta para a fila de quem conferiu tirar da caixa (F9), refazer os volumes e reimprimir as
+      // etiquetas. Como no servidor: volumes e observação são refeitos do zero, e o pedido sai da carga.
       Object.assign(conf.conf, { status: "aguardando", fim: null, reaberto: registro, volumes: null, obs: null, erp: null });
+      retirarDasCargas(ped.id);
     }
     // o que foi contado nunca passa do que ficou na caixa
     conf.itens.forEach((ci) => { if ((conf.conf.itens[ci.sku] || 0) > ci.sep) conf.conf.itens[ci.sku] = ci.sep; });
@@ -133,16 +159,23 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   // 3. Embarque: cancelado sai da carga
   if (tipo === "cancelamento") retirarDasCargas(ped.id);
 
-  // 4. Estoque: o que saiu da caixa agora vira entrada pendente, entregue por quem estava com ela
-  const entradas = Object.entries(plano.devolucoes).map(([q, itens]) =>
-    criarDevolucao({ pedido: ped.id, itens: itens.map((d) => ({ produto: d.sku, qtd: d.qtd })), entreguePor: nomeDe[q] })).filter(Boolean);
-
-  const lista = lerOcorrencias(setor);
+  const entradas = Object.values(devolucoes);
+  const lista = lerHistorico(setor);
   const resumo = plano.resumo.map((r) => ({ ...r, desc: ped.itens.find((i) => i.sku === r.sku)?.desc || "" }));
   const ocorrencia = { id: (lista[0]?.id || 0) + 1, pedido: ped.id, cliente: ped.cliente, tipo, etapa: ped.etapa, itens: resumo, ...registro,
     avisar: plano.avisar, entradas: entradas.map((n) => n.numero) };
   localStorage.setItem(chave(setor), JSON.stringify([ocorrencia, ...lista]));
-  return { ok: true, ocorrencia, pedido: abrirPedido(setor, ped.id) };
+  return { ok: true, ocorrencia: lerOcorrencias(setor)[0], pedido: abrirPedido(setor, ped.id) };
+}
+
+// Pedido cancelado: quem estava com a caixa marcou "Entregue ao estoque". entregar = o "entregar" da parte (coletor)
+// ou da cópia da conferência (posto); quem chamou grava o pedido. Registra quem e quando; a entrada aparece para o
+// estoque. Devolve a nota (null se já estava entregue). Com servidor (entrada: false), quem registra é a ação
+// "separacao.entregar" / "conferencia.entregar".
+export function marcarEntregue(entregar, usuario, { entrada = true } = {}) {
+  if (!entregar || entregar.entregue) return null;
+  entregar.entregue = { por: usuario, quando: new Date().toISOString() };
+  return entrada ? entregarDevolucao(entregar.numero, usuario) : null;
 }
 
 // O separador confirmou o pedido do gestor no coletor: o que tinha que sair da caixa vira entrada pendente.

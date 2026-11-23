@@ -111,3 +111,45 @@ test("o pedido aberto na aba Ocorrências se atualiza sozinho, sem perder o que 
   await expect(g.locator(".oc-etapa")).toHaveText("Em separação", { timeout: 20_000 });
   await expect(g.locator('input[name="referencia"]')).toHaveValue("ALT-55");
 });
+
+// cancelamento (ajuste de 23/11/2026 à tarde): ninguém bipa; quem está com a caixa só marca "Entregue ao estoque"
+const gestorCancela = (pedido) => registrarOcorrencia(pool,
+  { setor: "exp", pedido, tipo: "cancelamento", motivo: "desistencia", referencia: "CAN-1" }, { login: "coordenador", nome: "Gestor" });
+const situacao = async (pedido) => (await pool.query(
+  "SELECT origem, status, responsavel, entregue_por FROM devolucoes WHERE pedido = $1 ORDER BY id", [pedido])).rows;
+
+test("cancelado com o separador no meio: o coletor pede a entrega e ela fica registrada no servidor", async ({ browser }) => {
+  const i = (await pool.query(
+    `SELECT endereco_codigo AS "end", produto AS sku, qtd::float FROM itens_pedido WHERE pedido_id = 'PV-10423' ORDER BY sequencia LIMIT 1`)).rows[0];
+  await pool.query("UPDATE pedidos SET designado_para = 'separador', ordem_fila = 9 WHERE id = 'PV-10423'");
+  const ana = await aparelho(browser, "separador", { width: 412, height: 860 });
+  await ana.locator('[data-setor="exp"]').click();
+  await abrirPedidoNoColetor(ana, "PV-10423");
+  await separarItem(ana, i);
+  await expect.poll(async () => (await item("PV-10423", i.sku)).sep).toBe(i.qtd);
+
+  await gestorCancela("PV-10423");
+  expect(await situacao("PV-10423")).toEqual([{ origem: "separador", status: "a_entregar", responsavel: "separador", entregue_por: null }]);
+  // o coletor confere o pedido aberto a cada 15 s
+  await expect(ana.locator("#sgOk")).toHaveText("Entregue ao estoque", { timeout: 25_000 });
+  await ana.locator("#sgOk").click();
+  await expect(ana.locator("#toast")).toContainText("Entrega registrada");
+  await expect.poll(() => situacao("PV-10423")).toEqual([{ origem: "separador", status: "pendente", responsavel: "separador", entregue_por: "separador" }]);
+});
+
+test("cancelado na fila do conferente: o posto mostra \"Cancelado · entregar ao estoque\" e registra a entrega", async ({ browser }) => {
+  await pool.query("UPDATE conferencias SET designado_para = 'conferente' WHERE pedido = 'PV-10402'");
+  await gestorCancela("PV-10402");
+  expect(await situacao("PV-10402")).toEqual([{ origem: "conferente", status: "a_entregar", responsavel: "conferente", entregue_por: null }]);
+  const bia = await aparelho(browser, "conferente", { width: 1366, height: 768 });
+  await expect(bia).toHaveURL(/conferencia\.html/);
+  await bia.locator('#mSetor [data-setor="exp"]').click();
+  const linha = bia.locator('#queueBody tr[data-id="PV-10402"]');
+  await expect(linha).toContainText("Cancelado · entregar ao estoque");
+  await linha.click();
+  await expect(bia.locator("#sGo")).toContainText("Entregue ao estoque");
+  await bia.keyboard.press("Enter");
+  await expect(bia.locator("#toast")).toContainText("Entrega registrada");
+  await expect(linha).toHaveCount(0);
+  await expect.poll(() => situacao("PV-10402")).toEqual([{ origem: "conferente", status: "pendente", responsavel: "conferente", entregue_por: "conferente" }]);
+});

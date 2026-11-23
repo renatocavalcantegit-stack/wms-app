@@ -12,7 +12,7 @@ import { juntarConferencia } from "./compartilhado/regras/juntar-pedidos.js";
 import { sobrasDaConferencia } from "./compartilhado/regras/acoes-conferencia.js";
 import { partesEmSeparacao, itemEmEspera, msgAguardandoPartes, msgItemEmEspera, rotuloDasPartes } from "./compartilhado/regras/partes-da-conferencia.js";
 import { somDePedidoNovo } from "./js/som.js";
-import { devolverNaConferencia } from "./js/dados/ocorrencias.js";
+import { devolverNaConferencia, marcarEntregue } from "./js/dados/ocorrencias.js";
 import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
 import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
@@ -110,8 +110,10 @@ import { $, $$, esc } from "./js/util.js";
       : `<span class="doca-chip" title="Parte ${p.n}/${p.de} · ${esc(p.operador || "")}">${p.n}/${p.de} ${p.doca ? p.doca.codigo : "—"}</span>`)).join("");
     return o.doca ? `<span class="doca-chip">${o.doca.codigo}</span>` : `<span class="muted">—</span>`;
   }
+  // pedido cancelado pelo gestor que ainda espera o conferente entregar ao estoque o que estava na caixa (v75)
+  const aEntregar = (o) => o?.conf.status === "cancelado" && !!o.conf.entregar && !o.conf.entregar.entregue;
   function renderQueue() {
-    const ag = db.orders.filter((o) => o.conf.status === "aguardando" || o.conf.status === "andamento");
+    const ag = db.orders.filter((o) => o.conf.status === "aguardando" || o.conf.status === "andamento" || aEntregar(o));
     const cf = db.orders.filter((o) => o.conf.status === "conferido" || o.conf.status === "divergente");
     $("#qCountA").textContent = ag.length;
     $("#qCountC").textContent = cf.length;
@@ -125,8 +127,11 @@ import { $, $$, esc } from "./js/util.js";
       const faltaSep = o.itens.some((i) => i.status === "falta");
       const espera = partesEmSeparacao(o.partes);
       const emSep = espera.length ? `Parte${espera.length > 1 ? "s" : ""} ${rotuloDasPartes(espera)} em separação` : "";
-      const tag = o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">Reaberto pelo gestor · refazer volumes</span>`
-        : o.conf.status === "andamento" && devolucaoPendente(o.itens, o.conf.postado) ? `<span class="tag div">Em conferência · devolver ao estoque</span>`
+      const devolver = devolucaoPendente(o.itens, o.conf.postado);
+      const tag = aEntregar(o) ? `<span class="tag alta">Cancelado · entregar ao estoque</span>`
+        : o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">${devolver ? "Reaberto · item a devolver" : "Reaberto pelo gestor · refazer volumes"}</span>`
+        : o.conf.status === "aguardando" && devolver ? `<span class="tag div">Item a devolver</span>`
+        : o.conf.status === "andamento" && devolver ? `<span class="tag div">Em conferência · devolver ao estoque</span>`
         : o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência${emSep ? ` · ${emSep.toLowerCase()}` : ""}</span>`
         : emSep ? `<span class="tag parcial">${emSep}</span>`
         : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
@@ -137,7 +142,7 @@ import { $, $$, esc } from "./js/util.js";
       return `<tr data-id="${o.id}">
         <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
-        <td>${esc(o.operador || "—")}</td><td class="doca-cel">${docasDo(o)}</td><td>${tag}${o.conf.volumes && o.conf.fim ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
+        <td>${esc(o.operador || "—")}</td><td class="doca-cel">${docasDo(o)}</td><td>${tag}${o.conf.volumes && o.conf.fim && o.conf.status !== "cancelado" ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
     }).join("");
     $("#queueEmpty").hidden = list.length > 0;
     $("#queueEmpty").textContent = queueFilter === "aguardando" ? "Nenhum pedido aguardando conferência." : "Nenhum pedido conferido ainda.";
@@ -171,6 +176,8 @@ import { $, $$, esc } from "./js/util.js";
   // pedido da fila: primeiro o resumo (#mStart), e "Iniciar conferência" (Enter) começa. Em conferência: abre direto.
   function openOrder(o) {
     if (!o) return;
+    if (aEntregar(o)) return pedirEntrega(o);
+    if (o.conf.status === "cancelado") { setMsg(`${o.id} foi cancelado pelo gestor.`, "err"); beep(false); return; }
     if (o.conf.status === "conferido" || o.conf.status === "divergente") {
       if (!confirm(`${o.id} já foi conferido. Conferir novamente?`)) return focusScan();
       Object.assign(o, prepararParaConferencia(o));
@@ -184,8 +191,10 @@ import { $, $$, esc } from "./js/util.js";
   function comecar(o) { o.conf.status = "andamento"; o.conf.inicio = Date.now(); o.conf.conferente = user; save(); }
 
   let aIniciar = null; // pedido no resumo "Iniciar conferência"
+  let aEntregarAgora = null; // pedido cancelado no mesmo resumo, com "Entregue ao estoque"
   function pedirInicio(o) {
-    aIniciar = o;
+    aIniciar = o; aEntregarAgora = null;
+    $("#sGo").innerHTML = "Iniciar conferência <kbd>Enter</kbd>";
     $("#sId").textContent = o.id;
     $("#sCli").textContent = `${o.cliente} · ${o.cidade}`;
     const t = $("#sTag");
@@ -197,7 +206,32 @@ import { $, $$, esc } from "./js/util.js";
     openModal("mStart");
     if (document.activeElement) document.activeElement.blur();
   }
+  // Pedido cancelado (v75): ninguém bipa. O WMS já gerou a devolução com o que estava na caixa; o conferente leva
+  // ao estoque e marca "Entregue ao estoque" (fica registrado quem e quando; só então o estoque vê a entrada).
+  function pedirEntrega(o) {
+    aIniciar = null; aEntregarAgora = o;
+    $("#sId").textContent = o.id;
+    $("#sCli").textContent = `${o.cliente} · ${o.cidade}`;
+    const t = $("#sTag");
+    t.className = "tag alta";
+    t.textContent = "Cancelado pelo gestor";
+    $("#sSub").textContent = "Leve ao estoque o que está na caixa e marque a entrega. Não precisa bipar.";
+    $("#sItens").innerHTML = o.conf.entregar.itens.map((i) => `<div class="f-row"><span class="muted">${esc(i.sku)}</span><span>${esc(i.desc)}</span><b>${fq(i.qtd)}</b></div>`).join("");
+    $("#sGo").innerHTML = "Entregue ao estoque <kbd>Enter</kbd>";
+    openModal("mStart");
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function entregarCancelado() {
+    const o = aEntregarAgora; aEntregarAgora = null;
+    if (!o || !aEntregar(o)) return closeModal();
+    const nota = marcarEntregue(o.conf.entregar, user, { entrada: !SERVIDOR });
+    registrar("conferencia.entregar", { pedido: o.id });
+    save(); closeModal(); renderQueue();
+    setMsg(`${o.id}: entrega registrada · o estoque já vê a devolução`, "ok"); beep(true);
+    toast(`Entrega registrada · DEV ${nota?.numero || o.conf.entregar.numero}`);
+  }
   function iniciar() {
+    if (aEntregarAgora) return entregarCancelado();
     const o = aIniciar; aIniciar = null;
     if (!o || o.conf.status !== "aguardando") return closeModal();
     comecar(o);
@@ -220,10 +254,17 @@ import { $, $$, esc } from "./js/util.js";
     const dev = devolucaoPendente(o.itens, o.conf.postado);
     const sobra = !dev && sobras(o).length > 0;
     const espera = !dev && !sobra && partesEmSeparacao(o.partes).length > 0;
-    setMsg(dev ? `Pedido ${o.id}: tem mercadoria para devolver (F9)` : sobra ? `Pedido ${o.id}: tem excesso, retire do volume (F9)`
+    setMsg(dev ? `Tem item a devolver · bipe o que sai da caixa` : sobra ? `Pedido ${o.id}: tem excesso, retire do volume (F9)`
       : espera ? `Pedido ${o.id} · confira o que já chegou · ${msgAguardandoPartes(o.partes)}` : `Pedido ${o.id} carregado · bipe os produtos`, dev || sobra ? "err" : "ok");
     beep(true);
     renderItems(); renderTotals(); focusScan();
+    // corte do gestor depois da separação (v75): o conferente tira da caixa primeiro; abre direto no F9
+    if (dev) {
+      devolvendo = true; document.body.classList.add("cf-devolvendo");
+      $("#scan").placeholder = "Bipe o que SAI da caixa…";
+      renderDevolucao();
+      toast(`${o.id}: tem item a devolver ao estoque`);
+    }
   }
 
   function renderItems(flashSku) {
@@ -419,7 +460,8 @@ import { $, $$, esc } from "./js/util.js";
   // ---------- devolução (item cortado pelo gestor, v75) ----------
   // F9 liga o modo devolução: cada bipe é uma unidade que SAI da caixa. Quando tudo saiu, o conferente entrega
   // ao estoque e nasce a ENTRADA PENDENTE de devolução (o estoquista confere e armazena, como uma nota).
-  // Pedido cancelado não passa por aqui: o gestor cancela e a entrada nasce na hora (o pedido sai do posto).
+  // Vale para todo corte depois da separação (aguardando, em conferência ou conferido: o pedido abre direto no F9).
+  // Pedido cancelado não passa por aqui: ninguém bipa, o conferente só marca "Entregue ao estoque" (pedirEntrega).
   let devolvendo = false;
   const temDevolucao = (o) => o.itens.some((i) => (i.devolver || 0) > 0);
   const tirado = (o, sku) => (o.conf.devolvido || {})[sku] || 0;
@@ -433,7 +475,7 @@ import { $, $$, esc } from "./js/util.js";
     const pend = devolucaoPendente(cur.itens, cur.conf.postado);
     box.hidden = false;
     box.className = "cf-dev" + (pend ? "" : " feito");
-    box.innerHTML = `<div class="cf-dev-top"><b>Sai da caixa (corte do gestor) · entregue ao estoque</b>
+    box.innerHTML = `<div class="cf-dev-top"><b>Item a devolver (corte do gestor) · tire da caixa e entregue ao estoque</b>
       <span>${motivo}</span>
       ${pend ? `<button id="btnDevolver" class="lb-btn">${devolvendo ? "Sair da devolução" : "Devolver"} <kbd>F9</kbd></button>` : `<span class="cf-dev-ok">Entregue ao estoque</span>`}</div>
       ${cur.itens.filter((i) => i.devolver > 0).map((i) => `<div class="cf-dev-row"><b>${i.sku}</b><span>${esc(i.desc)}</span>
@@ -531,7 +573,12 @@ import { $, $$, esc } from "./js/util.js";
     db = load();
     if (!id) return renderQueue();
     const o = db.orders.find((x) => x.id === id);
-    if (!o || o.conf.status === "cancelado") { closeModal(); showQueue(); toast(`${id} CANCELADO PELO GESTOR · entregue o que está na caixa ao estoque`); beep(false); return; }
+    if (!o || o.conf.status === "cancelado") {
+      closeModal(); showQueue(); beep(false);
+      toast(`${id} CANCELADO PELO GESTOR · entregue o que está na caixa ao estoque`);
+      if (aEntregar(o)) pedirEntrega(o);
+      return;
+    }
     cur = o;
     renderItems(); renderTotals();
     setMsg("O gestor alterou este pedido", "err"); beep(false);
@@ -913,7 +960,7 @@ import { $, $$, esc } from "./js/util.js";
   }
   // O pedido aberto na tela (o que o conferente já contou fica como está):
   //   pedido dividido (v72): a parte que faltava terminou? os itens dela entram nesta mesma tela
-  //   corte do gestor (v75): o que tem que sair da caixa aparece (F9); cancelado: o pedido sai do posto
+  //   corte do gestor (v75): o que tem que sair da caixa aparece (F9); cancelado: volta à fila para marcar a entrega
   // "pendente" = o que ainda falta sair da caixa (no servidor é o "devolver"; aqui, devolver − entregue)
   const pendentesDo = (o) => o.itens.map((i) => `${i.sku}:${i.qtd}:${i.sep}:${arr((i.devolver || 0) - ((o.conf.postado || {})[i.sku] || 0))}`).join("|");
   async function atualizarAberto() {
@@ -924,9 +971,12 @@ import { $, $$, esc } from "./js/util.js";
       if (!s) return;
       if (s.conf.status === "cancelado") {
         const id = cur.id;
-        db.orders = db.orders.filter((o) => o.id !== id); save();
+        db.orders = db.orders.filter((o) => o.id !== id);
+        if (aEntregar(s)) db.orders.push(s); // fica na fila até o conferente marcar "Entregue ao estoque"
+        save();
         closeModal(); showQueue(); beep(false);
         toast(`${id} CANCELADO PELO GESTOR · entregue o que está na caixa ao estoque`);
+        if (aEntregar(s)) pedirEntrega(s);
         return;
       }
       // a devolução deste pedido ainda está na fila de envio: o servidor ainda não sabe que saiu da caixa

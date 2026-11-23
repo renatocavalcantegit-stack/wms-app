@@ -4,11 +4,12 @@
 // O que muda roda numa transação com as linhas travadas (FOR UPDATE), como no quadro da Separação.
 import { emTransacao } from "../banco.js";
 import { travaParaMoverConferencia, travaParaPular, novaOrdem, andamentoDaConferencia } from "../../../compartilhado/regras/fila-do-conferente.js";
-import { montarConferencias, COLUNAS_DA_CONFERENCIA } from "./conferencia.js";
+import { montarConferencias, COLUNAS_DA_CONFERENCIA, CONFERENCIA_A_ENTREGAR } from "./conferencia.js";
 import { ErroDoQuadro } from "./quadro.js";
 
 // Tudo o que o quadro mostra, numa chamada só. Devolve { agora, pedidos, conferentes }.
-//   pedidos: o que ainda não foi conferido (caixa de entrada e filas), com o andamento de quem está conferindo;
+//   pedidos: o que ainda não foi conferido (caixa de entrada e filas), com o andamento de quem está conferindo,
+//            e o cancelado que ainda espera o conferente entregar ao estoque (v75: sem ninguém, o gestor arrasta);
 //            na Montagem, também o que foi entregue à montagem hoje (conferido ou com a conferência dispensada)
 //   conferentes: todos os ativos, com o último contato do posto e quantos conferiram hoje
 export async function quadroDaConferencia(pool, setor) {
@@ -19,7 +20,7 @@ export async function quadroDaConferencia(pool, setor) {
        LEFT JOIN usuarios u ON u.login = c.conferente
        LEFT JOIN usuarios d ON d.login = c.designado_por
       WHERE c.setor = $1
-        AND (c.status IN ('aguardando', 'andamento')
+        AND (c.status IN ('aguardando', 'andamento') OR (${CONFERENCIA_A_ENTREGAR})
           OR ($1 = 'mont' AND c.status IN ('conferido', 'divergente', 'dispensada') AND c.fim >= current_date))
       ORDER BY c.designado_para NULLS FIRST, c.ordem_fila NULLS LAST, c.chegou_em, c.pedido`,
     [setor],

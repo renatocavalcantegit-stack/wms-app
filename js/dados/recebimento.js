@@ -95,20 +95,49 @@ export function cancelarPendente(notaId, produto) {
 // ---------- devolução de pedido (v75) ----------
 // O que saiu de um pedido (corte ou cancelamento) vira uma entrada pendente, igual a uma nota:
 // o estoquista confere bipando, lê a doca e depois armazena. itens = [{ produto, qtd }]
-export function criarDevolucao({ pedido, itens, entreguePor }) {
+// aguardando = { responsavel, nome } (cancelamento): a devolução espera quem está com a caixa marcar
+// "Entregue ao estoque" (entregarDevolucao). Até lá fica em db.aEntregar e o estoque não vê.
+export function criarDevolucao({ pedido, itens, entreguePor, aguardando = null }) {
   const soma = new Map();
   itens.filter((i) => i.qtd > 0).forEach((i) => soma.set(i.produto, arredondarQtd((soma.get(i.produto) || 0) + i.qtd)));
   if (!soma.size) return null;
   const db = lerEstoque();
+  db.aEntregar ||= [];
+  const numero = numeroDaDevolucao([...db.notas, ...db.aEntregar], pedido);
+  const lista = [...soma].map(([produto, qtd]) => ({ produto, qtd }));
+  if (aguardando) {
+    const d = { numero, pedido, tipo: TIPO_DEVOLUCAO, itens: lista, responsavel: aguardando.responsavel, quem: aguardando.nome || null, criada: new Date().toISOString() };
+    db.aEntregar.push(d);
+    gravarEstoque(db);
+    return { ...d, aguardando: true };
+  }
   const nota = {
-    id: db.proximoId.nota++, numero: numeroDaDevolucao(db.notas, pedido), pedido, tipo: TIPO_DEVOLUCAO, finalizada: false,
-    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(),
-    itens: [...soma].map(([produto, qtd]) => ({ produto, qtd })),
+    id: db.proximoId.nota++, numero, pedido, tipo: TIPO_DEVOLUCAO, finalizada: false,
+    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(), itens: lista,
   };
   db.notas.push(nota);
   gravarEstoque(db);
   return nota;
 }
+
+// O responsável marcou "Entregue ao estoque": a devolução vira a entrada que o estoquista confere (registra quem e quando).
+// Devolve a nota criada, ou null se já tinha sido entregue (o mesmo toque duas vezes não duplica).
+export function entregarDevolucao(numero, entreguePor) {
+  const db = lerEstoque();
+  const i = (db.aEntregar || []).findIndex((d) => d.numero === numero);
+  if (i < 0) return null;
+  const [d] = db.aEntregar.splice(i, 1);
+  const nota = {
+    id: db.proximoId.nota++, numero, pedido: d.pedido, tipo: TIPO_DEVOLUCAO, finalizada: false,
+    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(), itens: d.itens,
+    entregue: { por: entreguePor, quando: new Date().toISOString() },
+  };
+  db.notas.push(nota);
+  gravarEstoque(db);
+  return nota;
+}
+// a devolução ainda esperando a entrega (ou null)
+export const devolucaoAEntregar = (numero) => (lerEstoque().aEntregar || []).find((d) => d.numero === numero) || null;
 
 // ---------- notas do ERP (simulado) ----------
 export function importarNotasDoErp() {

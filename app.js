@@ -18,7 +18,7 @@ import { rota as rotaPeloId } from "./compartilhado/regras/rotas.js";
 import { cadastroDoCliente } from "./js/dados/clientes.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
-import { confirmarNaSeparacao } from "./js/dados/ocorrencias.js";
+import { confirmarNaSeparacao, marcarEntregue } from "./js/dados/ocorrencias.js";
 import { itensCortados } from "./compartilhado/regras/ocorrencias.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
@@ -182,8 +182,9 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
 
   // ---------- o gestor mudou o pedido (corte de item ou cancelamento) ----------
   // Recarrega os pedidos e redesenha o que está aberto. O item cortado é pulado; pedido cancelado sai da tela
-  // (o que já foi separado vira entrada no estoque: o separador entrega). Corte: o aviso "O gestor alterou o
-  // pedido" aparece e o separador confirma (v75). Demonstração: outra aba avisa; servidor: verificarAbertos.
+  // e, se ele já tinha separado algo, fica na lista como "Cancelado · entregar ao estoque" até ele marcar a entrega.
+  // Corte: o aviso "O gestor alterou o pedido" aparece e o separador confirma (v75).
+  // Demonstração: outra aba avisa; servidor: verificarAbertos.
   const visivel = (v) => !$("#" + v).hidden;
   function recarregarPorOutraTela() {
     if (!sess || sess.perfil !== "sep" || !sess.setor) return;
@@ -192,8 +193,11 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (id) {
       current = pedido(id);
       if (!current || current.status === "cancelado") {
+        const o = current;
         current = null; renderHome(); show("viewHome"); beep(false); vibrate([80, 50, 80]);
-        toast("PEDIDO CANCELADO PELO GESTOR · entregue o que já separou ao estoque"); return;
+        toast("PEDIDO CANCELADO PELO GESTOR · entregue o que já separou ao estoque");
+        if (o && aEntregar(o)) mostrarEntrega(o);
+        return;
       }
       if (!visivel("viewPick") && !visivel("viewDoca")) return;
       if (visivel("viewPick")) { if (item().status === "pendente") renderPick(); else next(); }
@@ -233,10 +237,35 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     beep(false); vibrate([80, 50, 80]);
     return true;
   }
+  // ---------- pedido cancelado: entregar ao estoque (v75) ----------
+  // Ninguém bipa: o WMS já gerou a devolução com o que estava na caixa. O separador leva ao estoque e marca
+  // "Entregue ao estoque": fica registrado quem entregou e quando, e só então o estoque vê a entrada.
+  const aEntregar = (o) => o?.status === "cancelado" && !!o.entregar && !o.entregar.entregue;
+  function mostrarEntrega(o) {
+    $("#sgTitulo").textContent = `${nomeDo(o)} · cancelado pelo gestor`;
+    $("#sgSub").textContent = "Leve ao estoque o que você já separou e marque a entrega.";
+    $("#sgItens").innerHTML = o.entregar.itens.map((i) => `<div class="line"><span class="line-addr">${esc(i.sku)}</span>
+      <span class="line-desc">${esc(i.desc)}</span><span class="line-q sp-devolver">${fq(i.qtd)}</span></div>`).join("");
+    $("#sgOk").textContent = "Entregue ao estoque";
+    $("#sgOk").dataset.id = o.id;
+    $("#sgOk").dataset.entregar = "1";
+    openSheet("sheetGestor");
+    return true;
+  }
+  function entregarAoEstoque(o) {
+    const nota = marcarEntregue(o.entregar, user, { entrada: !sess?.token });
+    registrar("separacao.entregar", { pedido: o.id });
+    save(); renderHome();
+    toast(`Entrega registrada · DEV ${nota?.numero || o.entregar.numero}`);
+  }
+
   $("#sgOk").addEventListener("click", () => {
     const o = pedido($("#sgOk").dataset.id);
+    const entrega = $("#sgOk").dataset.entregar === "1";
+    delete $("#sgOk").dataset.entregar;
     closeSheets();
     if (!o) return;
+    if (entrega) return aEntregar(o) ? entregarAoEstoque(o) : undefined;
     const r = confirmarNaSeparacao(o, user, { entrada: !sess?.token });
     registrar("separacao.ocorrencia", { pedido: o.id });
     save();
@@ -262,7 +291,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       for (const id of ids) {
         const s = r.pedidos.find((x) => x.id === id), l = pedido(id);
         if (!s || !l) continue;
-        if (s.status === "cancelado" && l.status !== "cancelado") { Object.assign(l, { status: "cancelado", cancelado: s.cancelado }); mudou = true; continue; }
+        if (s.status === "cancelado" && l.status !== "cancelado") { Object.assign(l, { status: "cancelado", cancelado: s.cancelado, entregar: s.entregar || null }); mudou = true; continue; }
         if (s.ocorrenciaPendente && !l.ocorrenciaPendente) {
           // o corte do gestor: as quantidades e o que sai da caixa vêm do servidor
           s.itens.forEach((si, n) => {
@@ -350,7 +379,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
 
     // pedido de um lote em aberto aparece dentro do cartão do lote (não sozinho)
     const noLoteAtivo = new Set(lotes.filter(loteAtivo).flatMap((l) => l.pedidos));
-    const avulsos = orders.filter((o) => !noLoteAtivo.has(o.id) && o.status !== "cancelado") // cancelado pelo gestor sai da lista
+    // cancelado pelo gestor sai da lista, a não ser que ainda tenha o que entregar ao estoque
+    const avulsos = orders.filter((o) => (!noLoteAtivo.has(o.id) && o.status !== "cancelado") || aEntregar(o))
       .filter((o) => filter === "todos" || (filter === "concluido" ? o.status === "concluido" : o.status !== "concluido"))
       .map((o) => ({ r: rank(o), html: orderCard(o) }));
     const deLote = selecionando || filter === "concluido" ? [] : lotes.filter(loteAtivo).map((l) => ({ r: rankLote(l), html: loteCard(l) }));
@@ -388,7 +418,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const pct = Math.round((doneCount(o) / o.itens.length) * 100);
     const sel = selecionando && podeSelecionar(o), marcado = selecionados.has(o.id);
     const outro = comOutro(o);
-    const tag = o.cancelado ? `<span class="tag alta">Cancelado</span>`
+    const tag = aEntregar(o) ? `<span class="tag alta">Cancelado · entregar ao estoque</span>`
+      : o.cancelado ? `<span class="tag alta">Cancelado</span>`
       : outro ? `<span class="tag andamento">Com ${esc(String(o.operador).split(" ")[0])}</span>`
       : o.status === "concluido" ? `<span class="tag concluido">Concluído</span>`
       : o.status === "andamento" ? `<span class="tag andamento">Em separação</span>`
@@ -465,6 +496,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     }
     const card = e.target.closest(".order"); if (!card) return;
     const o = pedido(card.dataset.id);
+    if (aEntregar(o)) return mostrarEntrega(o);
     if (comOutro(o)) return avisarComOutro(o);
     if (selecionando) {
       if (!podeSelecionar(o)) return toast(o.parte ? "Parte de pedido dividido não entra em lote." : "Só pedidos pendentes entram no lote.");

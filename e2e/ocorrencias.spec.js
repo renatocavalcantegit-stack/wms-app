@@ -1,6 +1,7 @@
 // Ocorrências do pedido de ponta a ponta (v75): o gestor corta ou cancela na aba Ocorrências e quem está com a
-// mercadoria na mão devolve (separador, conferente ou o próprio gestor). Toda devolução vira uma entrada
-// pendente no estoque ("DEV PV-…"), que o estoquista confere como uma nota.
+// mercadoria na mão devolve: no corte, o separador (em separação) ou o conferente (depois da separação, bipando
+// no F9); no cancelamento ninguém bipa: quem está com a caixa marca "Entregue ao estoque". Toda devolução vira
+// uma entrada pendente no estoque ("DEV PV-…"), que o estoquista confere como uma nota.
 import { test, expect } from "@playwright/test";
 import {
   entrar, estoque, separacao, conferencia, saldo, separarPedido, abrirPedidoNoColetor, separarItem, lerDoca,
@@ -54,11 +55,13 @@ test("em conferência: o conferente tira da caixa (F9), entrega ao estoque e o e
   await expect(page.locator(".oc-msg.ok")).toContainText("o conferente tira da caixa no posto (F9)");
   await expect(page.locator(".oc-hist")).toContainText("176: 20→12 (devolver 8)");
 
-  // conferência: o aviso aparece e finalizar fica bloqueado até devolver
+  // conferência: o pedido abre direto na devolução (F9) e finalizar fica bloqueado até devolver
   await entrar(page, "conferente", "conferencia.html");
   await abrirNaConferencia(page, "PV-10421");
   await expect(page.locator("#cfDev")).toContainText("tirar 8");
-  await conferirTudo(page, "PV-10421"); // confere os 12 que ficam (e o resto do pedido)
+  await expect(page.locator("#scanMsg")).toContainText("Tem item a devolver");
+  await expect(page.locator("body")).toHaveClass(/cf-devolvendo/);
+  await page.keyboard.press("F9"); // sai da devolução para tentar finalizar antes
   await page.keyboard.press("F10");
   await expect(page.locator("#scanMsg")).toContainText("Faça a devolução");
   await page.keyboard.press("F9");
@@ -66,6 +69,7 @@ test("em conferência: o conferente tira da caixa (F9), entrega ao estoque e o e
   for (let k = 0; k < 8; k++) await bipar(page, ean);
   await expect(page.locator("#scanMsg")).toContainText("entregue ao estoque");
   await expect(page.locator("#cfDev")).toContainText("Entregue ao estoque");
+  await conferirTudo(page, "PV-10421"); // confere os 12 que ficam (e o resto do pedido)
   await finalizarConferencia(page, 1);
   expect((await conferencia(page)).find((o) => o.id === "PV-10421").conf.status).toBe("conferido");
   const [dev] = await devolucoes(page);
@@ -86,7 +90,7 @@ test("em conferência: o conferente tira da caixa (F9), entrega ao estoque e o e
   expect(saldo(await estoque(page), doca.codigo, "176")).toBe(8);
 });
 
-test("corte em pedido conferido: o gestor devolve na hora e o pedido volta para refazer volumes e etiquetas", async ({ page }) => {
+test("corte em pedido conferido: volta para quem conferiu tirar da caixa (F9) e refazer volumes e etiquetas", async ({ page }) => {
   await entrar(page, "separador");
   await separarPedido(page, "PV-10428", "R9002-P1-A100-AP105");
   await entrar(page, "conferente", "conferencia.html");
@@ -96,20 +100,23 @@ test("corte em pedido conferido: o gestor devolve na hora e o pedido volta para 
   const item = (await conferencia(page)).find((o) => o.id === "PV-10428").itens.find((i) => i.sep > 1);
 
   await ocorrencia(page, "PV-10428", { cortes: { [item.sku]: item.sep - 1 } });
-  await expect(page.locator(".oc-msg.ok")).toContainText("entrada DEV PV-10428 criada");
+  await expect(page.locator(".oc-msg.ok")).toContainText("o conferente tira da caixa no posto (F9)");
   await expect(page.locator(".oc-msg.ok")).toContainText("refazer volumes e etiquetas");
-  expect((await devolucoes(page))[0].fornecedor.nome).toBe("Entregue por Usuário Coordenador");
+  expect(await devolucoes(page)).toEqual([]); // só quando o conferente tirar
 
   await entrar(page, "conferente", "conferencia.html");
-  await expect(page.locator('#queueBody tr[data-id="PV-10428"]')).toContainText("Reaberto pelo gestor");
+  await expect(page.locator('#queueBody tr[data-id="PV-10428"]')).toContainText("Reaberto · item a devolver");
   await abrirNaConferencia(page, "PV-10428");
-  await expect(page.locator("#cfDev")).toBeHidden(); // nada a tirar: o gestor já tirou
+  await expect(page.locator("#scanMsg")).toContainText("Tem item a devolver");
+  await bipar(page, item.ean || item.sku);
+  await expect(page.locator("#cfDev")).toContainText("Entregue ao estoque");
+  expect((await devolucoes(page))[0].fornecedor.nome).toBe("Entregue por Usuário Conferente");
   await finalizarConferencia(page, 2);
   const c = (await conferencia(page)).find((o) => o.id === "PV-10428");
   expect([c.conf.status, c.conf.volumes, c.conf.itens[item.sku]]).toEqual(["conferido", 2, item.sep - 1]);
 });
 
-test("cancelar pedido já conferido: sai da conferência, a entrada nasce na hora e ele não embarca", async ({ page }) => {
+test("cancelar pedido já conferido: ninguém bipa, o conferente marca a entrega e ele não embarca", async ({ page }) => {
   await entrar(page, "separador");
   await separarPedido(page, "PV-10428", "R9002-P1-A100-AP105");
   await entrar(page, "conferente", "conferencia.html");
@@ -120,13 +127,20 @@ test("cancelar pedido já conferido: sai da conferência, a entrada nasce na hor
 
   await ocorrencia(page, "PV-10428", { cancelar: true });
   await expect(page.locator(".oc-etapa")).toContainText("Cancelado");
-  await expect(page.locator(".oc-msg.ok")).toContainText("entrada DEV PV-10428 criada");
+  await expect(page.locator(".oc-msg.ok")).toContainText("aguardando a entrega ao estoque");
+  await expect(page.locator(".oc-hist")).toContainText("aguardando entrega");
+  expect(await devolucoes(page)).toEqual([]); // o estoque só vê depois da entrega
 
   await entrar(page, "conferente", "conferencia.html");
-  await expect(page.locator('#queueBody tr[data-id="PV-10428"]')).toHaveCount(0);
+  await expect(page.locator('#queueBody tr[data-id="PV-10428"]')).toContainText("Cancelado · entregar ao estoque");
   expect((await conferencia(page)).find((x) => x.id === "PV-10428").conf.status).toBe("cancelado");
+  await page.locator('#queueBody tr[data-id="PV-10428"]').click();
+  await expect(page.locator("#sGo")).toContainText("Entregue ao estoque");
+  await page.locator("#sGo").click();
+  await expect(page.locator("#toast")).toContainText("Entrega registrada");
+  await expect(page.locator('#queueBody tr[data-id="PV-10428"]')).toHaveCount(0);
   const [dev] = await devolucoes(page);
-  expect(dev.itens).toEqual(o.itens.filter((i) => i.sep > 0).map((i) => ({ produto: i.sku, qtd: i.sep })));
+  expect([dev.fornecedor.nome, dev.itens]).toEqual(["Entregue por Usuário Conferente", o.itens.filter((i) => i.sep > 0).map((i) => ({ produto: i.sku, qtd: i.sep }))]);
 
   await entrar(page, "embarque");
   await expect(page.locator(".carga").first()).toBeVisible();
@@ -176,7 +190,7 @@ test("corte com o separador no meio: o aviso aparece e ele devolve o que já sep
   await expect(page.locator("#prodSku")).not.toHaveText(b.sku); // o item cortado é pulado
 });
 
-test("cancelado com o separador no meio: ele é avisado na hora e o que já separou vira entrada", async ({ page, context }) => {
+test("cancelado com o separador no meio: ele é avisado na hora e marca a entrega do que já separou", async ({ page, context }) => {
   await entrar(page, "separador");
   await abrirPedidoNoColetor(page, "PV-10423");
   const p = (await separacao(page)).find((o) => o.id === "PV-10423");
@@ -185,6 +199,15 @@ test("cancelado com o separador no meio: ele é avisado na hora e o que já sepa
   await ocorrenciaEmOutraAba(context, "PV-10423", { tipo: "cancelamento" });
   await expect(page.locator("#toast")).toContainText("CANCELADO PELO GESTOR");
   await expect(page.locator("#viewHome")).toBeVisible();
+  await expect(page.locator("#sheetGestor")).toBeVisible();
+  await expect(page.locator("#sgOk")).toHaveText("Entregue ao estoque");
+  expect(await devolucoes(page)).toEqual([]);
+  // fechou sem marcar: o pedido fica na lista esperando a entrega
+  await page.locator("#scrim").click();
+  await expect(page.locator('button.order[data-id="PV-10423"]')).toContainText("Cancelado · entregar ao estoque");
+  await page.locator('button.order[data-id="PV-10423"]').click();
+  await page.locator("#sgOk").click();
+  await expect(page.locator("#toast")).toContainText("Entrega registrada");
   await expect(page.locator('button.order[data-id="PV-10423"]')).toHaveCount(0);
   const [dev] = await devolucoes(page);
   expect([dev.fornecedor.nome, dev.itens]).toEqual(["Entregue por Usuário Separador", [{ produto: p.itens[0].sku, qtd: p.itens[0].qtd }]]);

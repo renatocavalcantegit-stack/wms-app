@@ -149,6 +149,8 @@ export function conferenciaDoServidor(c) {
       status: c.status, itens: contado, fora, log: [], inicio: ms(c.inicio), fim: ms(c.fim), volumes: c.volumes || 0,
       conferente: c.conferente_nome || null, conferenteLogin: c.conferente || null, posto: c.posto || null,
       obs: c.observacao || undefined, devolvido: {}, postado: {}, reaberto: c.reaberto || null,
+      // cancelado (v75): o que o conferente tem que entregar ao estoque { numero, itens: [{ sku, desc, qtd }] }
+      entregar: c.entregar || null,
     },
   };
 }

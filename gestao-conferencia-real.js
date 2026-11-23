@@ -124,6 +124,10 @@ const docasHtml = (c) => (c.partes?.length
   : c.doca ? `<span class="dchip">${esc(c.doca)}</span>` : "");
 const faixaDasPartes = (c) => emSeparacao(c).map((x) =>
   `<p class="gc-parte-espera">⏳ Parte ${x.numero}/${x.de} em separação${x.separador_nome ? ` · ${esc(x.separador_nome)}` : ""}</p>`).join("");
+// v75: o que o gestor pediu e ainda espera o conferente (cancelado: entregar ao estoque; corte: tirar da caixa)
+const faixaDaOcorrencia = (c) => (c.status === "cancelado" && c.entregar
+  ? `<p class="gc-parte-espera">Cancelado · entregar ao estoque (DEV ${esc(c.entregar.numero)})</p>`
+  : (c.itens || []).some((i) => !i.em_separacao && Number(i.qtd_devolver) > 0) ? `<p class="gc-parte-espera">Item a devolver ao estoque</p>` : "");
 
 function card(c, { col, pos = "", primeiro = false }) {
   const vivo = c.status === "andamento", a = c.andamento;
@@ -152,7 +156,7 @@ function card(c, { col, pos = "", primeiro = false }) {
     <div class="c-nums"><span><b>${a.itens}</b> SKUs</span><span><b>${numero(a.unidades)}</b> un.</span>${idade}</div>
     ${!vivo && c.separador_nome ? `<p class="c-from">Separado por ${esc(c.separador_nome)}</p>` : ""}
     ${docas ? `<p class="c-doca">${c.partes?.length ? "Docas" : "Doca"} ${docas}</p>` : ""}
-    ${faixaDasPartes(c)}
+    ${faixaDasPartes(c)}${faixaDaOcorrencia(c)}
     ${marcavel ? `<button class="c-skip" data-gcpular="${esc(c.pedido)}">Pular conferência</button>` : ""}
     ${vivoHtml}
   </article>`;

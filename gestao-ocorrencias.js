@@ -21,15 +21,18 @@ const noServidor = () => !!ctx?.sess?.token;
 const hora = (iso) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 // o que vai acontecer com a mercadoria, conforme a etapa (o gestor lê antes de confirmar)
-// quem devolve: quem está com a mercadoria na mão (decisão de 23/11/2026)
+// quem devolve: quem está com a mercadoria na mão (decisão de 23/11/2026, ajustada no mesmo dia)
 const EFEITO = {
   "aguardando-separacao": "Ninguém separou ainda: a quantidade só diminui. Cancelado, o pedido sai da lista do separador.",
   separacao: "Avise o separador. Ele confirma no coletor: o que ainda não separou, pula; o que já está na caixa, tira e entrega ao estoque (vira entrada pendente).",
-  "aguardando-conferencia": "O pedido está na doca esperando a conferência: você tira da caixa o que sobrou e entrega ao estoque. A entrada pendente nasce ao aplicar.",
+  "aguardando-conferencia": "O pedido está na doca esperando a conferência: ele fica na fila com a marca \"Item a devolver\" e o conferente, ao abrir, tira da caixa bipando (F9) e entrega ao estoque.",
   conferencia: "Avise o conferente. Ele vê o aviso no posto, tira da caixa bipando (F9) e entrega ao estoque.",
-  conferido: "Você tira da caixa o que sobrou e entrega ao estoque. O pedido volta para o conferente refazer os volumes e reimprimir as etiquetas.",
+  conferido: "O pedido volta para a fila de quem conferiu: ele tira da caixa bipando (F9), entrega ao estoque, refaz os volumes e reimprime as etiquetas. Se estiver numa carga, sai dela.",
 };
-const EFEITO_CANCELAR = "Cancelar: o que já saiu da prateleira vira entrada pendente no estoque, entregue por quem está com a caixa.";
+const EFEITO_CANCELAR = "Cancelar: o pedido é cancelado na hora e ninguém bipa. O que está na caixa vira devolução aguardando entrega: quem está com ela (separador ou conferente) leva ao estoque e marca \"Entregue ao estoque\".";
+
+// coluna "Entrada no estoque": DEV x, ou DEV x · aguardando entrega (de quem)
+const textoDaEntrega = (e) => `DEV ${esc(e.numero)}${e.aguardando ? ` <small>· aguardando entrega${e.quem ? ` (${esc(e.quem)})` : ""}</small>` : ""}`;
 
 export function telaOcorrencias(setor, { usuario, toast, sess }) {
   ctx = { setor, usuario, toast, sess };
@@ -132,7 +135,7 @@ function historico() {
       <td>${ETAPAS_PEDIDO[o.etapa] || ""}</td>
       <td>${o.itens.map((i) => `${esc(i.sku)}: ${fq(i.de)}→${fq(i.para)}${i.devolver ? ` (devolver ${fq(i.devolver)})` : ""}`).join("<br>")}</td>
       <td>${MOTIVOS_OCORRENCIA[o.motivo] || ""}</td><td>${esc(o.referencia)}</td>
-      <td class="mono">${(o.entradas || []).map((n) => `DEV ${esc(n)}`).join("<br>") || (o.avisar?.length ? `<small>${o.avisar.map((q) => QUEM_DEVOLVE[q]).join(" e ")} confirma</small>` : "—")}</td>
+      <td class="mono">${(o.entregas || (o.entradas || []).map((numero) => ({ numero }))).map(textoDaEntrega).join("<br>") || (o.avisar?.length ? `<small>${o.avisar.map((q) => QUEM_DEVOLVE[q]).join(" e ")} confirma</small>` : "—")}</td>
       <td>${esc(o.usuario || "")}</td></tr>`).join("")
       || `<tr><td colspan="9" class="oc-vazio">${noServidor() && !estado.historico ? "Carregando…" : "Nenhuma ocorrência registrada."}</td></tr>`}</tbody>
   </table>`;
@@ -162,10 +165,13 @@ async function abrir(id) {
 // o que acontece depois de registrar, em uma frase
 function resultado(tipo, o, pedido) {
   const partes = [tipo === "cancelamento" ? "Pedido cancelado" : "Corte registrado"];
-  if (o.entradas?.length) partes.push(`entrada ${o.entradas.map((n) => `DEV ${n}`).join(", ")} criada para o estoque`);
+  const entregas = o.entregas || (o.entradas || []).map((numero) => ({ numero }));
+  const prontas = entregas.filter((e) => !e.aguardando), esperando = entregas.filter((e) => e.aguardando);
+  if (prontas.length) partes.push(`entrada ${prontas.map((e) => `DEV ${e.numero}`).join(", ")} criada para o estoque`);
+  if (esperando.length) partes.push(`devolução ${esperando.map((e) => `DEV ${e.numero}${e.quem ? ` (${e.quem})` : ""}`).join(", ")} aguardando a entrega ao estoque`);
   if (o.avisar?.includes("separador")) partes.push("o separador confirma no coletor");
   if (o.avisar?.includes("conferente")) partes.push("o conferente tira da caixa no posto (F9)");
-  if (pedido?.reaberto && pedido.etapa === "aguardando-conferencia" && tipo !== "cancelamento") partes.push("o pedido voltou para o conferente refazer volumes e etiquetas");
+  if (pedido?.reaberto && pedido.etapa === "aguardando-conferencia" && tipo !== "cancelamento") partes.push("o pedido voltou para a fila de quem conferiu refazer volumes e etiquetas");
   return partes.join(" · ") + ".";
 }
 

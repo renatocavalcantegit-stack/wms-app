@@ -2,16 +2,19 @@
 // Quem decide O QUE muda é a regra pura compartilhado/regras/ocorrencias.js (planejarOcorrencia), a mesma da
 // demonstração; aqui só se lê o pedido, chama a regra e grava, tudo numa transação.
 //
-// Quem devolve é quem está com a mercadoria na mão:
-//   parte em separação → o separador confirma no coletor (pedidos.ocorrencia_pendente; ação separacao.ocorrencia)
-//   em conferência     → o conferente tira bipando (itens_pedido.qtd_devolver; ação conferencia.devolver)
-//   fila, separado aguardando conferência ou conferido → o próprio gestor: a entrada de devolução nasce agora
-// Cancelamento: sempre o gestor; o que já saiu da prateleira vira entrada na hora, entregue por quem está com a caixa.
+// Quem devolve é quem está com a mercadoria na mão (decisão de 23/11/2026, ajustada no mesmo dia):
+//   corte, parte em separação → o separador confirma no coletor (pedidos.ocorrencia_pendente; ação separacao.ocorrencia)
+//   corte depois da separação (aguardando conferência, em conferência ou conferido) → o conferente tira bipando
+//          (itens_pedido.qtd_devolver; ação conferencia.devolver). Conferido: volta para a fila de quem conferiu.
+//   cancelamento → cancelado na hora; o que está na caixa vira devolução "a_entregar" e quem está com ela
+//          marca "Entregue ao estoque" (ações separacao.entregar / conferencia.entregar)
+//   fila, ou Montagem com a conferência dispensada → ninguém tem na mão: vale na hora
 import { emTransacao } from "../banco.js";
 import { criarDevolucao } from "./devolucoes.js";
 import { separadoDoPedido } from "./aplicar-conferencia.js";
 import {
-  etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, planejarOcorrencia, quemEstaComAParte, MSG_SEM_CORTE,
+  etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, planejarOcorrencia, quemEstaComAParte,
+  entregaAguardaResponsavel, MSG_SEM_CORTE,
 } from "../../../compartilhado/regras/ocorrencias.js";
 import { lerQuantidade } from "../../../compartilhado/regras/quantidade.js";
 
@@ -66,14 +69,19 @@ export async function abrirPedidoDoGestor(pool, setor, id) {
   return vista(d);
 }
 
+// a situação de cada devolução da ocorrência: [{ numero, aguardando, quem }] (aguardando = ainda não entregue)
+const ENTREGAS = `coalesce((SELECT json_agg(json_build_object('numero', d.numero, 'aguardando', d.status = 'a_entregar',
+            'quem', CASE WHEN d.status = 'a_entregar' THEN coalesce(r.nome, d.responsavel) END) ORDER BY d.id)
+       FROM devolucoes d LEFT JOIN usuarios r ON r.login = d.responsavel WHERE d.numero = ANY(o.entradas)), '[]') AS entregas`;
+
 // histórico do setor, mais novas primeiro (o mesmo formato da demonstração)
-export async function listarOcorrencias(pool, setor) {
+export async function listarOcorrencias(pool, setor, id = null) {
   const { rows } = await pool.query(
     `SELECT o.id, o.pedido, o.tipo, o.etapa, o.motivo, o.referencia, o.itens, o.avisar, o.entradas, o.feita_em,
-            coalesce(u.nome, o.usuario) AS usuario
+            coalesce(u.nome, o.usuario) AS usuario, ${ENTREGAS}
        FROM ocorrencias o LEFT JOIN usuarios u ON u.login = o.usuario
-      WHERE o.setor = $1 ORDER BY o.feita_em DESC, o.id DESC LIMIT 200`,
-    [setor],
+      WHERE o.setor = $1 AND ($2::int IS NULL OR o.id = $2) ORDER BY o.feita_em DESC, o.id DESC LIMIT 200`,
+    [setor, id],
   );
   return rows.map(({ feita_em, ...o }) => ({ ...o, quando: feita_em }));
 }
@@ -127,14 +135,13 @@ export async function registrarOcorrencia(pool, dados, usuario) {
       if (doSeparador.length) await c.query("UPDATE pedidos SET ocorrencia_pendente = true WHERE id = ANY($1)", [doSeparador]);
     }
     // 3. a conferência
-    const doGestor = (plano.devolucoes.gestor || []).reduce((t, x) => t + x.qtd, 0);
     if (d.conf && tipo === "cancelamento") {
       await c.query("UPDATE conferencias SET status = 'cancelado', cancelado = $2, fim = now() WHERE pedido = $1", [d.alvo, registro]);
-    } else if (d.conf && doGestor > 0 && ["conferido", "divergente"].includes(d.conf.status)) {
-      // já conferido: o gestor tirou da caixa; volta para a fila do mesmo conferente refazer volumes e etiquetas
+    } else if (d.conf && plano.avisar.includes("conferente") && ["conferido", "divergente"].includes(d.conf.status)) {
+      // já conferido: volta para a fila de quem conferiu tirar da caixa (F9), refazer volumes e reimprimir etiquetas
       await c.query(
-        `UPDATE conferencias SET status = 'aguardando', reaberto = $2, conferente = NULL, inicio = NULL, fim = NULL,
-                volumes = NULL, observacao = NULL, posto = NULL WHERE pedido = $1`,
+        `UPDATE conferencias SET status = 'aguardando', reaberto = $2, designado_para = coalesce(conferente, designado_para),
+                conferente = NULL, inicio = NULL, fim = NULL, volumes = NULL, observacao = NULL, posto = NULL WHERE pedido = $1`,
         [d.alvo, registro],
       );
     }
@@ -145,16 +152,19 @@ export async function registrarOcorrencia(pool, dados, usuario) {
         await c.query("UPDATE conferencia_itens SET qtd_conferida = $3 WHERE pedido = $1 AND produto = $2 AND qtd_conferida > $3", [d.alvo, produto, qtd]);
       }
     }
-    // 4. o que saiu da caixa agora vira entrada pendente, entregue por quem estava com ela
-    const quemEntrega = {
+    // 4. o que sai da caixa agora: no corte, só o que ninguém tem na mão (entrada na hora); no cancelamento, a
+    //    devolução de quem está com a caixa espera ele marcar "Entregue ao estoque" (a_entregar)
+    const quemEsta = {
       gestor: usuario.login,
-      separador: d.partes.find((p) => d.quem(p) === "separador")?.separador || usuario.login,
-      conferente: d.conf?.conferente || usuario.login,
+      separador: d.partes.find((p) => d.quem(p) === "separador")?.separador || null,
+      conferente: d.conf?.conferente || d.conf?.designado_para || null, // na caixa de entrada: quem o gestor designar
     };
     const entradas = [];
     for (const [q, itens] of Object.entries(plano.devolucoes)) {
+      const aEntregar = entregaAguardaResponsavel(tipo, q);
       const numero = await criarDevolucao(c, {
-        pedido: d.alvo, setor, origem: tipo === "cancelamento" ? "cancelamento" : q, entreguePor: quemEntrega[q],
+        pedido: d.alvo, setor, origem: aEntregar ? q : tipo === "cancelamento" ? "cancelamento" : q,
+        entreguePor: usuario.login, aEntregar, responsavel: aEntregar ? quemEsta[q] : null,
         itens: itens.map((x) => ({ produto: x.sku, qtd: x.qtd })),
       });
       if (numero) entradas.push(numero);
@@ -166,10 +176,7 @@ export async function registrarOcorrencia(pool, dados, usuario) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, feita_em`,
       [d.alvo, setor, tipo, ped.etapa, motivo, referencia, usuario.login, JSON.stringify(resumo), plano.avisar, entradas],
     )).rows[0];
-    const ocorrencia = {
-      id: o.id, pedido: d.alvo, tipo, etapa: ped.etapa, motivo, referencia, itens: resumo, avisar: plano.avisar, entradas,
-      quando: o.feita_em, usuario: usuario.nome || usuario.login,
-    };
+    const [ocorrencia] = await listarOcorrencias(c, setor, o.id);
     return { ocorrencia, pedido: vista(await lerPedido(c, setor, d.alvo)) };
   });
 }

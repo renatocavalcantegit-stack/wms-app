@@ -28,6 +28,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 006 passo do item da vez (a bolinha do item na gaveta da Gestão)
                             · 007 conferência: um registro por pedido (fila do conferente, volumes, observação) e o que foi contado
                             · 008 ocorrências do pedido (corte e cancelamento) e devoluções ao estoque (entradas pendentes)
+                            · 009 entrega da devolução do pedido cancelado (a_entregar → pendente; quem e quando entregou)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -271,14 +272,18 @@ referência do Sankhya (`POST /api/ocorrencias`). Quem decide o que muda é `com
 |---|---|---|
 | Na fila (não começou) | ninguém | o corte vale na hora; nada saiu da prateleira |
 | Em separação | separador | `pedidos.ocorrencia_pendente` e `itens_pedido.qtd_devolver`; o coletor percebe (a cada 15 s), mostra o aviso e manda `separacao.ocorrencia` |
-| Separado aguardando conferência | gestor | a devolução nasce no registro |
-| Em conferência | conferente | o posto mostra "Sai da caixa"; o F9 tira bipando e manda `conferencia.devolver`. Finalizar com algo a devolver é recusado |
-| Conferido | gestor | a devolução nasce no registro e a conferência volta para `aguardando` (`reaberto`): refazer volumes e etiquetas |
-| Cancelamento (qualquer etapa) | gestor | tudo zera; o que estava na caixa vira devolução, entregue por quem está com ela |
+| Separado aguardando conferência | conferente | `itens_pedido.qtd_devolver`; a fila do posto mostra "Item a devolver" e o pedido abre direto no F9 |
+| Em conferência | conferente | o posto mostra o item a devolver; o F9 tira bipando e manda `conferencia.devolver`. Finalizar com algo a devolver é recusado |
+| Conferido | conferente | a conferência volta para `aguardando` (`reaberto`) na fila de quem conferiu ("Reaberto · item a devolver"): tira no F9, refaz volumes e etiquetas |
+| Cancelamento em separação | separador | **ninguém bipa**: a devolução nasce `a_entregar` com o que está na caixa; o coletor mostra "Cancelado · entregar ao estoque" e manda `separacao.entregar` |
+| Cancelamento separado, em conferência ou conferido | conferente | **ninguém bipa**: a devolução nasce `a_entregar`; o posto mostra "Cancelado · entregar ao estoque" e manda `conferencia.entregar`. Na caixa de entrada sem conferente, o gestor arrasta o pedido para um conferente no quadro |
+| Montagem com a conferência dispensada | gestor | a devolução nasce no registro |
 
 Cada devolução é uma linha em `devolucoes` (+ `devolucao_itens`) com número "PV-10421" (a segunda do mesmo pedido,
 "PV-10421-2"), origem, quem entregou e status `pendente`: é a **entrada pendente** que o Estoque vai conferir quando
-o Estoque vier para o servidor. `itens_pedido.qtd_separada` é o que está fisicamente na caixa; `qtd_devolver` é o que
+o Estoque vier para o servidor. A do cancelamento nasce `a_entregar`, com o `responsavel` (quem está com a caixa), e
+só vira `pendente` quando ele marca "Entregue ao estoque" (`entregue_por`, `entregue_em`): até lá o estoque não vê.
+O histórico da aba Ocorrências mostra "DEV PV-… · aguardando entrega (nome)" enquanto isso. `itens_pedido.qtd_separada` é o que está fisicamente na caixa; `qtd_devolver` é o que
 ainda tem que sair; a conferência espera `qtd_separada − qtd_devolver`. `qtd_pedida` guarda a quantidade antes do
 primeiro corte. **Físico vence**: o separador sem rede que separou a quantidade antiga tem a separação aceita (até a
 quantidade original) e o que passou vira "a devolver". Devolução de pedido já embarcado (o cliente devolveu) fica para

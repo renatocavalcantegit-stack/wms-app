@@ -84,6 +84,8 @@ export function pedidoDoServidor(p) {
     lote: p.lote || null, pos: p.posicao_lote || null,
     // pedido do gestor (v75): corte/devolução que o separador ainda não confirmou
     ocorrenciaPendente: !!p.ocorrencia_pendente, cancelado: p.cancelado || null,
+    // cancelado (v75): o que ele tem que entregar ao estoque { numero, itens: [{ sku, desc, qtd }] } (null: nada ou já entregou)
+    entregar: p.entregar || null,
     parte: p.pedido_pai ? { pai: p.pedido_pai, n: p.parte_numero, de: p.partes_total, ruas: p.parte_ruas, por: p.dividido_por } : null,
     itens: p.itens.map((i) => ({
       sku: i.produto, ean: i.codigos_de_barras[0] || "", eans: i.codigos_de_barras, desc: i.descricao, un: i.un,

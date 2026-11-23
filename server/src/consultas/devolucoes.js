@@ -2,10 +2,15 @@
 // Cada uma é uma ENTRADA PENDENTE: o estoquista confere e armazena como uma nota (etapa do Estoque no servidor).
 // Quem cria: a ocorrência do gestor (consultas/ocorrencias.js) e as ações do separador e do conferente
 // (consultas/aplicar-acoes.js e aplicar-conferencia.js), sempre dentro da transação de quem chamou.
+//
+// Pedido cancelado (migração 009): ninguém bipa. A devolução nasce "a_entregar", com o responsável (quem está
+// com a caixa); quando ele marca "Entregue ao estoque" (ações separacao.entregar / conferencia.entregar) ela
+// vira "pendente" e só então aparece para o estoque. Fica registrado quem entregou (entregue_por) e quando.
 
 // conexao: a da transação · itens = [{ produto, qtd }] (o mesmo produto pode vir mais de uma vez: soma)
 // Devolve o número da entrada ("PV-10421", a segunda do mesmo pedido "PV-10421-2") ou null se não havia nada.
-export async function criarDevolucao(conexao, { pedido, setor, origem, entreguePor, itens }) {
+// aEntregar = true: espera o responsável marcar a entrega (entreguePor fica vazio até lá)
+export async function criarDevolucao(conexao, { pedido, setor, origem, entreguePor = null, itens, aEntregar = false, responsavel = null }) {
   const soma = new Map();
   for (const { produto, qtd } of itens) if (Number(qtd) > 0) soma.set(produto, Math.round(((soma.get(produto) || 0) + Number(qtd)) * 1000) / 1000);
   if (!soma.size) return null;
@@ -14,8 +19,9 @@ export async function criarDevolucao(conexao, { pedido, setor, origem, entregueP
   const ja = (await conexao.query("SELECT count(*)::int AS n FROM devolucoes WHERE pedido = $1", [pedido])).rows[0].n;
   const numero = ja ? `${pedido}-${ja + 1}` : pedido;
   const { id } = (await conexao.query(
-    "INSERT INTO devolucoes (numero, pedido, setor, origem, entregue_por) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    [numero, pedido, setor, origem, entreguePor],
+    `INSERT INTO devolucoes (numero, pedido, setor, origem, entregue_por, responsavel, status, entregue_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $8::boolean THEN NULL ELSE now() END) RETURNING id`,
+    [numero, pedido, setor, origem, aEntregar ? null : entreguePor, responsavel, aEntregar ? "a_entregar" : "pendente", aEntregar],
   )).rows[0];
   for (const [produto, qtd] of soma) {
     await conexao.query("INSERT INTO devolucao_itens (devolucao_id, produto, qtd) VALUES ($1, $2, $3)", [id, produto, qtd]);
@@ -23,10 +29,54 @@ export async function criarDevolucao(conexao, { pedido, setor, origem, entregueP
   return numero;
 }
 
+// Pedido cancelado que o separador pegou mais sem rede: soma na devolução que ainda espera a entrega dele.
+// Devolve o número, ou null se não havia nenhuma esperando (quem chamou cria uma).
+export async function somarNaEntrega(conexao, { pedido, origem, itens }) {
+  const d = (await conexao.query(
+    "SELECT id, numero FROM devolucoes WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' ORDER BY id LIMIT 1 FOR UPDATE",
+    [pedido, origem],
+  )).rows[0];
+  if (!d) return null;
+  for (const { produto, qtd } of itens) {
+    if (!(Number(qtd) > 0)) continue;
+    await conexao.query(
+      `INSERT INTO devolucao_itens (devolucao_id, produto, qtd) VALUES ($1, $2, $3)
+       ON CONFLICT (devolucao_id, produto) DO UPDATE SET qtd = devolucao_itens.qtd + excluded.qtd`,
+      [d.id, produto, qtd],
+    );
+  }
+  return d.numero;
+}
+
+// O responsável marcou "Entregue ao estoque": a devolução vira entrada pendente para o estoque.
+// origem = separador ou conferente. Devolve os números entregues ([] se já estava entregue: não duplica).
+export async function marcarEntregue(conexao, { pedido, origem, login }) {
+  const { rows } = await conexao.query(
+    `UPDATE devolucoes SET status = 'pendente', entregue_por = $3, entregue_em = now()
+      WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' RETURNING numero`,
+    [pedido, origem, login],
+  );
+  return rows.map((r) => r.numero);
+}
+
+// O que ainda espera a entrega, por pedido, como o aparelho mostra: Map(pedido → { numero, itens: [{ sku, desc, qtd }] })
+export async function aEntregarDosPedidos(conexao, pedidos, origem) {
+  if (!pedidos.length) return new Map();
+  const { rows } = await conexao.query(
+    `SELECT d.pedido, d.numero,
+            json_agg(json_build_object('sku', i.produto, 'desc', p.descricao, 'qtd', i.qtd::float8) ORDER BY i.produto) AS itens
+       FROM devolucoes d JOIN devolucao_itens i ON i.devolucao_id = d.id JOIN produtos p ON p.codigo = i.produto
+      WHERE d.pedido = ANY($1) AND d.origem = $2 AND d.status = 'a_entregar'
+      GROUP BY d.id ORDER BY d.id`,
+    [pedidos, origem],
+  );
+  return new Map(rows.map((r) => [r.pedido, { numero: r.numero, itens: r.itens }]));
+}
+
 // as devoluções de um pedido, com os itens (para os testes e, depois, para o Estoque)
 export async function devolucoesDoPedido(pool, pedido) {
   const { rows } = await pool.query(
-    `SELECT d.numero, d.origem, d.entregue_por, d.status,
+    `SELECT d.numero, d.origem, d.entregue_por, d.responsavel, d.status,
             json_agg(json_build_object('produto', i.produto, 'qtd', i.qtd) ORDER BY i.produto) AS itens
        FROM devolucoes d JOIN devolucao_itens i ON i.devolucao_id = d.id
       WHERE d.pedido = $1 GROUP BY d.id ORDER BY d.id`,

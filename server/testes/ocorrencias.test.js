@@ -39,6 +39,7 @@ const itens = async (pedido) =>
 const pedidoNoBanco = async (id) => (await pool.query("SELECT * FROM pedidos WHERE id = $1", [id])).rows[0];
 const conferencia = async (id) => (await pool.query("SELECT * FROM conferencias WHERE pedido = $1", [id])).rows[0];
 const OBS = { tipos: { caixa: 1 }, outro: "", atencao: "" };
+const nome = async (login) => (await pool.query("SELECT nome FROM usuarios WHERE login = $1", [login])).rows[0].nome;
 
 // põe o pedido com o separador, com o primeiro item já separado
 async function emSeparacao(id, login = "separador") {
@@ -89,7 +90,7 @@ test("em separação: o separador confirma no coletor e a entrada nasce entregue
   assert.deepEqual([x.qtd_separada, x.qtd_devolver], [a.qtd - 1, 0]);
   assert.equal((await pedidoNoBanco("PV-10427")).ocorrencia_pendente, false);
   assert.deepEqual(await devolucoesDoPedido(pool, "PV-10427"),
-    [{ numero: "PV-10427", origem: "separador", entregue_por: "separador", status: "pendente", itens: [{ produto: a.produto, qtd: 1 }] }]);
+    [{ numero: "PV-10427", origem: "separador", entregue_por: "separador", responsavel: null, status: "pendente", itens: [{ produto: a.produto, qtd: 1 }] }]);
 });
 
 test("físico vence: o separador (sem rede) separou a quantidade antiga depois do corte", async () => {
@@ -102,14 +103,13 @@ test("físico vence: o separador (sem rede) separou a quantidade antiga depois d
   assert.equal((await pedidoNoBanco("PV-10425")).ocorrencia_pendente, true);
 });
 
-test("separado aguardando conferência: o gestor tira da caixa e a entrada nasce na hora", async () => {
+test("separado aguardando conferência: o conferente tira da caixa (F9); nada nasce antes disso", async () => {
   const a = (await itens("PV-10404")).find((i) => i.qtd_separada === i.qtd && i.qtd > 1); // separado por completo
   const r = await ocorrencia({ pedido: "PV-10404", tipo: "corte", cortes: { [a.produto]: a.qtd - 1 } });
-  assert.deepEqual(r.json().ocorrencia.entradas, ["PV-10404"]);
+  assert.deepEqual([r.json().ocorrencia.avisar, r.json().ocorrencia.entradas], [["conferente"], []]);
   const x = (await itens("PV-10404")).find((i) => i.sequencia === a.sequencia);
-  assert.deepEqual([x.qtd, x.qtd_separada, x.qtd_devolver], [a.qtd - 1, a.qtd_separada - 1, 0]);
-  const [d] = await devolucoesDoPedido(pool, "PV-10404");
-  assert.deepEqual([d.origem, d.entregue_por, d.itens], ["gestor", "coordenador", [{ produto: a.produto, qtd: 1 }]]);
+  assert.deepEqual([x.qtd, x.qtd_separada, x.qtd_devolver], [a.qtd - 1, a.qtd_separada, 1]);
+  assert.deepEqual(await devolucoesDoPedido(pool, "PV-10404"), []);
 });
 
 test("em conferência: o conferente tira (F9), entrega ao estoque e só então finaliza", async () => {
@@ -137,24 +137,28 @@ test("em conferência: o conferente tira (F9), entrega ao estoque e só então f
   assert.deepEqual([d.origem, d.entregue_por, d.itens], ["conferente", "conferente", [{ produto: a.produto, qtd: 1 }]]);
 });
 
-test("conferido: o gestor tira da caixa e o pedido volta para o conferente refazer volumes e etiquetas", async () => {
+test("conferido: volta para a fila de quem conferiu tirar da caixa (F9) e refazer volumes e etiquetas", async () => {
   const [a] = await itens("PV-10401");
   const antes = (await pool.query("SELECT qtd_conferida FROM conferencia_itens WHERE pedido = 'PV-10401' AND produto = $1", [a.produto])).rows[0].qtd_conferida;
-  await ocorrencia({ pedido: "PV-10401", tipo: "corte", cortes: { [a.produto]: a.qtd - 1 } });
+  const o = await ocorrencia({ pedido: "PV-10401", tipo: "corte", cortes: { [a.produto]: a.qtd - 1 } });
+  assert.deepEqual(o.json().ocorrencia.avisar, ["conferente"]);
   const c = await conferencia("PV-10401");
   assert.deepEqual([c.status, c.conferente, c.volumes, c.designado_para], ["aguardando", null, null, "conferente"]);
   assert.equal(c.reaberto.referencia, "ALT-77");
   // a contagem não passa do que ficou na caixa
   const depois = (await pool.query("SELECT qtd_conferida FROM conferencia_itens WHERE pedido = 'PV-10401' AND produto = $1", [a.produto])).rows[0].qtd_conferida;
   assert.equal(depois, antes - 1);
-  assert.equal((await devolucoesDoPedido(pool, "PV-10401")).at(-1).numero, "PV-10401-2");
-  // o conferente refaz: inicia de novo e finaliza
+  assert.equal((await devolucoesDoPedido(pool, "PV-10401")).length, 1); // só a de antes: o conferente ainda não tirou
+  // o conferente tira (F9), entrega e refaz
+  const contagens = (await itens("PV-10401")).map((i) => ({ produto: i.produto, qtd: i.qtd_separada - i.qtd_devolver }));
   const r = await sincronizar("conferente", [
     acao("conferencia.iniciar", { pedido: "PV-10401" }),
-    acao("conferencia.finalizar", { pedido: "PV-10401", volumes: 1, observacao: OBS,
-      contagens: (await itens("PV-10401")).map((i) => ({ produto: i.produto, qtd: i.qtd_separada })) }),
+    acao("conferencia.devolver", { pedido: "PV-10401", itens: [{ produto: a.produto, qtd: 1 }] }),
+    acao("conferencia.finalizar", { pedido: "PV-10401", volumes: 1, observacao: OBS, contagens }),
   ]);
   assert.deepEqual(r.recusadas, []);
+  const d = (await devolucoesDoPedido(pool, "PV-10401")).at(-1);
+  assert.deepEqual([d.numero, d.origem, d.entregue_por], ["PV-10401-2", "conferente", "conferente"]);
 });
 
 test("cancelamento: sai de tudo; o que estava na caixa vira entrada, entregue por quem estava com ela", async () => {
@@ -164,10 +168,21 @@ test("cancelamento: sai de tudo; o que estava na caixa vira entrada, entregue po
   assert.equal(r.json().pedido.etapa, "cancelado");
   assert.equal((await conferencia("PV-10402")).status, "cancelado");
   assert.equal((await pedidoNoBanco("PV-10402")).status, "cancelado");
-  const [d] = await devolucoesDoPedido(pool, "PV-10402");
-  assert.deepEqual([d.origem, d.entregue_por], ["cancelamento", "conferente"]);
+  // ninguém bipa: a devolução espera o conferente marcar a entrega (o estoque ainda não vê)
+  let [d] = await devolucoesDoPedido(pool, "PV-10402");
+  assert.deepEqual([d.origem, d.status, d.responsavel, d.entregue_por], ["conferente", "a_entregar", "conferente", null]);
+  assert.deepEqual(r.json().ocorrencia.entregas, [{ numero: "PV-10402", aguardando: true, quem: (await nome("conferente")) }]);
+  const listaDoPosto = async () => (await app.inject({ method: "GET", url: "/api/conferencia?setor=exp", headers: await auth("conferente") })).json().pedidos;
+  const noPosto = (await listaDoPosto()).find((c) => c.pedido === "PV-10402");
+  assert.deepEqual([noPosto.status, noPosto.entregar.numero, noPosto.entregar.itens.length], ["cancelado", "PV-10402", d.itens.length]);
   const posto = await sincronizar("conferente", [acao("conferencia.contagem", { pedido: "PV-10402", produto: d.itens[0].produto, qtd: 1 })]);
   assert.deepEqual(posto.recusadas.map((x) => x.motivo), ["O GESTOR CANCELOU O PV-10402."]);
+  // "Entregue ao estoque": registra quem e quando; a segunda vez não duplica
+  const ent = await sincronizar("conferente", [acao("conferencia.entregar", { pedido: "PV-10402" }), acao("conferencia.entregar", { pedido: "PV-10402" })]);
+  assert.deepEqual(ent.recusadas, []);
+  const ds2 = await devolucoesDoPedido(pool, "PV-10402");
+  assert.deepEqual(ds2.map((x) => [x.status, x.entregue_por]), [["pendente", "conferente"]]);
+  assert.equal((await listaDoPosto()).find((c) => c.pedido === "PV-10402").entregar, null);
   // de novo: bloqueado
   assert.equal((await ocorrencia({ pedido: "PV-10402", tipo: "cancelamento" })).statusCode, 409);
 
@@ -175,17 +190,24 @@ test("cancelamento: sai de tudo; o que estava na caixa vira entrada, entregue po
   const [a, b] = await emSeparacao("PV-10424");
   await ocorrencia({ pedido: "PV-10424", tipo: "cancelamento" });
   const lista = (await app.inject({ method: "GET", url: "/api/separacao?setor=exp", headers: await auth("separador") })).json().pedidos;
-  assert.equal(lista.find((o) => o.id === "PV-10424").status, "cancelado");
+  const cancelado = lista.find((o) => o.id === "PV-10424");
+  assert.equal(cancelado.status, "cancelado");
+  assert.deepEqual(cancelado.entregar.itens.map((i) => [i.sku, i.qtd]), [[a.produto, Number(a.qtd)]]);
+  // o que ele pegou sem rede soma na mesma devolução; depois ele marca a entrega
   const s = await sincronizar("separador", [
     acao("separacao.item", { pedido: "PV-10424", sequencia: 2, qtdSeparada: b.qtd, status: "ok" }),
     acao("separacao.concluir", { pedido: "PV-10424", doca: "R9002-P1-A100-AP101" }),
+    acao("separacao.entregar", { pedido: "PV-10424" }),
   ]);
   assert.deepEqual(s.recusadas.map((x) => x.motivo), ["O GESTOR CANCELOU O PV-10424. ENTREGUE O QUE JÁ SEPAROU AO ESTOQUE."]);
   const ds = await devolucoesDoPedido(pool, "PV-10424");
-  assert.deepEqual(ds.map((x) => [x.numero, x.origem, x.entregue_por, x.itens]), [
-    ["PV-10424", "cancelamento", "separador", [{ produto: a.produto, qtd: a.qtd }]],
-    ["PV-10424-2", "separador", "separador", [{ produto: b.produto, qtd: b.qtd }]],
+  assert.deepEqual(ds.map((x) => [x.numero, x.origem, x.status, x.entregue_por, x.itens]), [
+    ["PV-10424", "separador", "pendente", "separador",
+      [{ produto: a.produto, qtd: a.qtd }, { produto: b.produto, qtd: b.qtd }].sort((x, y) => x.produto.localeCompare(y.produto))],
   ]);
+  // entregue: some da lista do coletor no dia seguinte, e hoje vem sem nada a entregar
+  const depois = (await app.inject({ method: "GET", url: "/api/separacao?setor=exp", headers: await auth("separador") })).json().pedidos;
+  assert.equal(depois.find((o) => o.id === "PV-10424").entregar, null);
   // e o quadro da Separação não mostra mais o pedido cancelado
   const quadro = (await app.inject({ method: "GET", url: "/api/quadro/separacao?setor=exp", headers: await auth("coordenador") })).json();
   assert.ok(!JSON.stringify(quadro).includes("PV-10424"));

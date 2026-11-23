@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
 import { carregarPedidos, salvarPedidos } from "../js/dados/separacao.js";
 import { carregarConferencia, salvarConferencia } from "../js/dados/conferencia.js";
-import { abrirPedido, registrarOcorrencia, lerOcorrencias, confirmarNaSeparacao, devolverNaConferencia } from "../js/dados/ocorrencias.js";
+import { abrirPedido, registrarOcorrencia, lerOcorrencias, confirmarNaSeparacao, devolverNaConferencia, marcarEntregue } from "../js/dados/ocorrencias.js";
 import { registrarDevolucao, baixarPorSeparacao } from "../js/dados/movimentacao.js";
 import { inventariarDivergencia, encerrarDivergencia } from "../js/dados/inventario.js";
 import { lerEstoque, saldoNoEndereco } from "../js/dados/estoque.js";
@@ -44,19 +44,21 @@ test("corte antes de separar só diminui; cancelar sem nada separado tira o pedi
 // as entradas de devolução que o estoque recebe (como notas)
 const devolucoes = () => lerEstoque().notas.filter((n) => n.tipo === "Devolução");
 
-test("separado aguardando conferência: o gestor tira da caixa e a entrada nasce na hora", () => {
+test("separado aguardando conferência: o conferente tira da caixa (F9); nada nasce antes disso", () => {
   separarTudo("PV-10421");
   assert.equal(abrirPedido("exp", "PV-10421").etapa, "aguardando-conferencia");
-  assert.equal(registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "corte", cortes: { 176: 12 } }).ok, true);
-  const c = carregarConferencia("exp").orders.find((o) => o.id === "PV-10421").itens.find((x) => x.sku === "176");
-  assert.deepEqual([c.qtd, c.sep, c.devolver], [12, 12, 0]);
+  const r = registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "corte", cortes: { 176: 12 } });
+  assert.deepEqual(r.ocorrencia.avisar, ["conferente"]);
+  const c = carregarConferencia("exp").orders.find((o) => o.id === "PV-10421");
+  const i = c.itens.find((x) => x.sku === "176");
+  assert.deepEqual([c.conf.status, i.qtd, i.sep, i.devolver], ["aguardando", 12, 12, 8]);
   const s = carregarPedidos("exp").find((o) => o.id === "PV-10421").itens.find((x) => x.sku === "176");
-  assert.deepEqual([s.qtd, s.sep, s.devolver, s.qtdPedida], [12, 12, 0, 20]);
-  // o histórico guarda o antes e o depois (e a conferência não corta duas vezes)
+  assert.deepEqual([s.qtd, s.sep, s.devolver, s.qtdPedida], [12, 20, 8, 20]);
+  // o histórico guarda o antes e o depois
   assert.deepEqual(lerOcorrencias("exp")[0].itens.map((i) => [i.de, i.para, i.devolver]), [[20, 12, 8]]);
-  const [d] = devolucoes();
-  assert.deepEqual([d.numero, d.fornecedor.nome, d.itens], ["PV-10421", "Entregue por Gestor", [{ produto: "176", qtd: 8 }]]);
-  assert.deepEqual(lerOcorrencias("exp")[0].entradas, ["PV-10421"]);
+  assert.deepEqual([devolucoes(), lerOcorrencias("exp")[0].entradas], [[], []]);
+  devolverNaConferencia("exp", "PV-10421", [{ produto: "176", qtd: 8 }], "Diego");
+  assert.deepEqual(devolucoes().map((d) => [d.numero, d.fornecedor.nome]), [["PV-10421", "Entregue por Diego"]]);
 });
 
 test("em separação: fica a devolver até o separador confirmar no coletor", () => {
@@ -92,27 +94,50 @@ test("em conferência: o conferente tira bipando e entrega; a cópia da conferê
   assert.equal(devolucoes()[0].fornecedor.nome, "Entregue por Diego");
 });
 
-test("pedido conferido volta para refazer volumes e etiquetas; cancelado encerra e devolve tudo na hora", () => {
+test("pedido conferido: reaberto para o conferente tirar (F9) e refazer volumes; cancelado espera o conferente entregar", () => {
   separarTudo("PV-10421");
   const db = carregarConferencia("exp");
-  db.orders.find((o) => o.id === "PV-10421").conf.status = "conferido";
+  Object.assign(db.orders.find((o) => o.id === "PV-10421").conf, { status: "conferido", conferente: "Diego", volumes: 2 });
   salvarConferencia("exp", db);
   assert.equal(abrirPedido("exp", "PV-10421").etapa, "conferido");
   registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "corte", cortes: { 122: 25 } });
   let c = carregarConferencia("exp").orders.find((o) => o.id === "PV-10421");
-  assert.equal(c.conf.status, "aguardando");
-  assert.equal(c.conf.reaberto.referencia, "ALT-1");
-
+  assert.deepEqual([c.conf.status, c.conf.reaberto.referencia, c.conf.volumes], ["aguardando", "ALT-1", null]);
+  assert.equal(c.itens.find((i) => i.sku === "122").devolver, 5);
   assert.ok(c.itens.every((i) => (c.conf.itens[i.sku] || 0) <= i.sep)); // a contagem não passa do que ficou na caixa
-  assert.equal(devolucoes().length, 1);
+  assert.equal(devolucoes().length, 0); // só quando o conferente tirar
 
-  registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "cancelamento" });
+  const r = registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "cancelamento" });
   c = carregarConferencia("exp").orders.find((o) => o.id === "PV-10421");
   assert.equal(c.conf.status, "cancelado");
   assert.ok(c.cancelado);
   assert.ok(c.itens.every((i) => i.qtd === 0 && i.sep === 0 && i.devolver === 0));
   assert.equal(carregarPedidos("exp").find((o) => o.id === "PV-10421").status, "cancelado");
-  assert.equal(devolucoes()[1].numero, "PV-10421-2"); // a segunda devolução do mesmo pedido
+  // tudo o que estava na caixa (inclusive os 5 do corte, que ainda não tinham saído) espera o conferente
+  assert.equal(c.conf.entregar.numero, "PV-10421");
+  assert.equal(c.conf.entregar.itens.find((i) => i.sku === "122").qtd, 30);
+  assert.deepEqual(r.ocorrencia.entregas, [{ numero: "PV-10421", aguardando: true, quem: "Diego" }]);
+  assert.equal(devolucoes().length, 0); // o estoque ainda não vê
+  const nota = marcarEntregue(c.conf.entregar, "Diego");
+  assert.deepEqual([nota.numero, nota.fornecedor.nome], ["PV-10421", "Entregue por Diego"]);
+  assert.equal(marcarEntregue(c.conf.entregar, "Diego"), null); // o mesmo toque duas vezes não duplica
+  assert.deepEqual(lerOcorrencias("exp")[0].entregas, [{ numero: "PV-10421", aguardando: false, quem: null }]);
+});
+
+test("cancelado com o separador no meio: a devolução espera ele marcar a entrega", () => {
+  const ps = carregarPedidos("exp");
+  const o = ps.find((x) => x.id === "PV-10421");
+  Object.assign(o, { status: "andamento", operador: "Davi" });
+  Object.assign(o.itens[0], { sep: o.itens[0].qtd, status: "ok" });
+  salvarPedidos("exp", ps);
+  registrarOcorrencia("exp", "PV-10421", { ...ok, tipo: "cancelamento" });
+  const x = carregarPedidos("exp").find((y) => y.id === "PV-10421");
+  assert.equal(x.status, "cancelado");
+  assert.deepEqual(x.entregar.itens.map((i) => [i.sku, i.qtd]), [[o.itens[0].sku, o.itens[0].qtd]]);
+  assert.equal(devolucoes().length, 0);
+  marcarEntregue(x.entregar, "Davi");
+  assert.equal(x.entregar.entregue.por, "Davi");
+  assert.equal(devolucoes()[0].fornecedor.nome, "Entregue por Davi");
 });
 
 test("pedido com volume bipado no caminhão não aceita ocorrência; cancelado sai da carga", () => {

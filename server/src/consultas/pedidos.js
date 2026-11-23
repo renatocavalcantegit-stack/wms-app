@@ -1,4 +1,5 @@
 // SQL dos pedidos da separação.
+import { aEntregarDosPedidos } from "./devolucoes.js";
 
 // Lista dos pedidos de um setor (exp ou mont), com o total de itens e de unidades.
 // `status` é opcional: sem ele, vêm todos.
@@ -62,6 +63,7 @@ export async function registrarPasso(pool, login, { passo, itens }) {
 // o que ele está separando e o que ele concluiu hoje. O que está na caixa de entrada ou com outra pessoa não aparece.
 //   separador_nome  nome de quem está com o pedido
 //   doca_id         ID do endereço da doca (o coletor conta quantos pedidos esperam em cada doca)
+//   entregar       pedido cancelado: o que ele ainda tem que levar ao estoque { numero, itens } (v75)
 export async function pedidosDoColetor(pool, setor, login) {
   const pedidos = (await pool.query(
     `SELECT p.*, u.nome AS separador_nome,
@@ -71,7 +73,9 @@ export async function pedidosDoColetor(pool, setor, login) {
       WHERE p.setor = $1
         AND ((p.designado_para = $2 AND p.status <> 'concluido')
           OR (p.separador = $2 AND (p.status <> 'concluido' OR p.fim >= current_date)))
-        AND (p.status <> 'cancelado' OR (p.cancelado->>'quando')::timestamptz >= current_date)
+        AND (p.status <> 'cancelado' OR (p.cancelado->>'quando')::timestamptz >= current_date
+          OR EXISTS (SELECT 1 FROM devolucoes d WHERE d.pedido = coalesce(p.pedido_pai, p.id) AND d.origem = 'separador'
+                      AND d.status = 'a_entregar' AND d.responsavel = $2))
       ORDER BY p.ordem_fila NULLS LAST, p.chegada, p.id`,
     [setor, login],
   )).rows;
@@ -86,5 +90,10 @@ export async function pedidosDoColetor(pool, setor, login) {
     [pedidos.map((p) => p.id)],
   )).rows;
   const porPedido = Map.groupBy(itens, (i) => i.pedido_id);
-  return pedidos.map((p) => ({ ...p, itens: porPedido.get(p.id) || [] }));
+  const cancelados = pedidos.filter((p) => p.status === "cancelado" && p.separador === login);
+  const entregar = await aEntregarDosPedidos(pool, [...new Set(cancelados.map((p) => p.pedido_pai || p.id))], "separador");
+  return pedidos.map((p) => ({
+    ...p, itens: porPedido.get(p.id) || [],
+    entregar: p.status === "cancelado" && p.separador === login ? entregar.get(p.pedido_pai || p.id) || null : null,
+  }));
 }

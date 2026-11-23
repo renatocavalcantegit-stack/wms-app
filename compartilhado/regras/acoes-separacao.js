@@ -9,6 +9,8 @@
 //   separacao.concluir { pedido, doca }                                   leu o QR da doca de expedição
 //   separacao.reabrir  { pedido }                                         "separar novamente" um pedido concluído
 //   separacao.ocorrencia { pedido }                                       confirmou o pedido do gestor (corte/devolução, v75)
+//   separacao.entregar   { pedido }                                       pedido cancelado: entregou ao estoque o que
+//                                                                         tinha separado (registra quem e quando)
 //
 // Pedido do gestor (v75): o corte já está no servidor; o separador confirma e o que tinha que sair da caixa vira
 // entrada pendente no estoque (devolverAgora). Se ele separou sem rede a quantidade antiga, o FÍSICO VENCE:
@@ -25,7 +27,7 @@ import { lerQuantidade, quantidadeValida, formatarQtd, arredondarQtd } from "./q
 import { podeSepararNovamente } from "./separacao.js";
 import { confirmarDevolucaoDaLinha } from "./ocorrencias.js";
 
-export const TIPOS_DA_SEPARACAO = ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia"];
+export const TIPOS_DA_SEPARACAO = ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia", "separacao.entregar"];
 
 const aplicada = (pedido = {}, itens = [], devolverAgora = []) => ({ resultado: "aplicada", pedido, itens, ...(devolverAgora.length ? { devolverAgora } : {}) });
 export const msgCanceladoPeloGestor = (id) => `O GESTOR CANCELOU O ${id}. ENTREGUE O QUE JÁ SEPAROU AO ESTOQUE.`;
@@ -63,6 +65,8 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
   // volta ao estoque: vira entrada pendente, entregue por ele.
   if (pedido.status === "cancelado") {
     if (tipo === "separacao.ocorrencia") return aplicada();
+    // marcou "Entregue ao estoque": a devolução que esperava por ele vira entrada para o estoque
+    if (tipo === "separacao.entregar") return pedido.separador === login ? { ...aplicada(), entregar: true } : recusada(`O ${pedido.id ?? ""} NÃO ESTAVA COM VOCÊ.`);
     if (tipo !== "separacao.item" || pedido.separador !== login) return recusada(msgCanceladoPeloGestor(pedido.id ?? ""));
     const item = itens.find((i) => i.sequencia === Number(dados.sequencia));
     const qtd = lerQuantidade(dados.qtdSeparada);
@@ -70,6 +74,8 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
     const extra = arredondarQtd(qtd - (Number(item.qtdSeparada) || 0));
     return extra > 0 ? aplicada({}, [], [{ sequencia: item.sequencia, qtd: extra }]) : aplicada();
   }
+
+  if (tipo === "separacao.entregar") return recusada(`O ${pedido.id ?? ""} NÃO FOI CANCELADO.`);
 
   if (tipo === "separacao.iniciar") {
     if (pedido.status === "concluido") return recusada("PEDIDO JÁ CONCLUÍDO. USE SEPARAR NOVAMENTE.");

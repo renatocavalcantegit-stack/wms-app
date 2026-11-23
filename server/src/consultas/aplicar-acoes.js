@@ -3,7 +3,7 @@
 // Aqui só se lê o pedido, chama a regra e grava o resultado.
 import { avaliarAcaoDaSeparacao } from "../../../compartilhado/regras/acoes-separacao.js";
 import { aplicarAcaoDaConferencia, entrarNaConferencia, sairDaConferencia, conferenciaDoPedido } from "./aplicar-conferencia.js";
-import { criarDevolucao } from "./devolucoes.js";
+import { criarDevolucao, somarNaEntrega, marcarEntregue } from "./devolucoes.js";
 
 // quais perfis podem mandar cada grupo de ações
 const PERFIS_DA_SEPARACAO = ["sep"];
@@ -58,13 +58,15 @@ export async function aplicarAcao(conexao, usuario, acao) {
     await conexao.query(`UPDATE itens_pedido SET ${set} WHERE pedido_id = $1 AND sequencia = $2`, [pedidoId, sequencia, ...valores]);
   }
   // v75: o que saiu da caixa (o separador confirmou o pedido do gestor, ou pegou sem rede um item de pedido cancelado)
-  // vira entrada pendente no estoque, entregue por ele
+  // vira entrada pendente no estoque, entregue por ele. Pedido cancelado: soma na devolução que ainda espera a entrega.
+  const pedidoOriginal = pedido?.pedidoPai || pedido?.id;
   if (r.devolverAgora?.length) {
-    await criarDevolucao(conexao, {
-      pedido: pedido.pedidoPai || pedido.id, setor: pedido.setor, origem: "separador", entreguePor: usuario.login,
-      itens: r.devolverAgora.map((x) => ({ produto: itens.find((i) => i.sequencia === x.sequencia).produto, qtd: x.qtd })),
-    });
+    const lista = r.devolverAgora.map((x) => ({ produto: itens.find((i) => i.sequencia === x.sequencia).produto, qtd: x.qtd }));
+    const somou = pedido.status === "cancelado" && await somarNaEntrega(conexao, { pedido: pedidoOriginal, origem: "separador", itens: lista });
+    if (!somou) await criarDevolucao(conexao, { pedido: pedidoOriginal, setor: pedido.setor, origem: "separador", entreguePor: usuario.login, itens: lista });
   }
+  // pedido cancelado: ele marcou "Entregue ao estoque" (registra quem e quando; o estoque passa a ver a entrada)
+  if (r.entregar) await marcarEntregue(conexao, { pedido: pedidoOriginal, origem: "separador", login: usuario.login });
   // Fase 2: o pedido separado entra na caixa de entrada da conferência; separado de novo, sai de lá
   if (acao.tipo === "separacao.concluir" && r.pedido.status === "concluido") await entrarNaConferencia(conexao, pedido);
   if (acao.tipo === "separacao.reabrir") await sairDaConferencia(conexao, pedido.pedidoPai || pedido.id);

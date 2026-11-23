@@ -10,6 +10,8 @@
 //   conferencia.reabrir   { pedido }                                        "conferir novamente" um pedido conferido
 //   conferencia.devolver  { pedido, itens: [{ produto, qtd }] }              tirou da caixa o que o gestor cortou (v75):
 //                                                                           vira entrada pendente no estoque
+//   conferencia.entregar  { pedido }                                        pedido cancelado: entregou ao estoque o que
+//                                                                           estava na caixa (registra quem e quando)
 //
 // Resultado: { resultado: "aplicada", conferencia: {campos que mudam}, contagens: [{ produto, qtd, fora }], zerar? }
 //            { resultado: "conflito", motivo }   outro conferente já está com o pedido
@@ -18,7 +20,7 @@
 import { lerQuantidade, quantidadeValida, arredondarQtd } from "./quantidade.js";
 import { msgFinalizarComPartes } from "./partes-da-conferencia.js";
 
-export const TIPOS_DA_CONFERENCIA = ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar", "conferencia.volumes", "conferencia.reabrir", "conferencia.devolver"];
+export const TIPOS_DA_CONFERENCIA = ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar", "conferencia.volumes", "conferencia.reabrir", "conferencia.devolver", "conferencia.entregar"];
 export const MSG_DEVOLUCAO_PENDENTE = "FAÇA A DEVOLUÇÃO DO QUE O GESTOR CORTOU ANTES DE FINALIZAR (F9).";
 export const FINALIZADA = ["conferido", "divergente"];
 
@@ -89,6 +91,8 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
   if (!c) return recusada(`PEDIDO ${dados.pedido ?? ""} NÃO ESTÁ NA CONFERÊNCIA (A SEPARAÇÃO AINDA NÃO TERMINOU).`);
   // Montagem: o coordenador pulou a conferência pelo quadro (v67); o posto volta para a fila
   if (c.status === "dispensada") return recusada(`O COORDENADOR DISPENSOU A CONFERÊNCIA DO ${c.pedido}.`);
+  // cancelado: só o "Entregue ao estoque" (a devolução que esperava pelo conferente vira entrada para o estoque)
+  if (tipo === "conferencia.entregar") return c.status === "cancelado" ? aplicada({}, [], { entregar: true }) : recusada(`O ${c.pedido} NÃO FOI CANCELADO.`);
   if (c.status === "cancelado") return recusada(`O GESTOR CANCELOU O ${c.pedido}.`);
   const aDevolver = (c.devolver || []).filter((x) => Number(x.qtd) > 0);
 

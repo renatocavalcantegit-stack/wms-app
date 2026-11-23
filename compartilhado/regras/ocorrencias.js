@@ -76,20 +76,28 @@ export function aplicarCorte({ qtd, mantido, devolver = 0 }, novaQtd) {
   return { qtd: novaQtd, mantido: novoMantido, devolver: arredondarQtd(devolver + (mantido - novoMantido)) };
 }
 
-// ---------- quem devolve (decisão de 23/11/2026) ----------
+// ---------- quem devolve (decisão de 23/11/2026, ajustada no mesmo dia) ----------
 // Quem está com a mercadoria na mão é quem devolve, e toda devolução vira uma ENTRADA PENDENTE no estoque.
-//   parte ainda não iniciada            → gestor (nada separado: só diminui)
+// Fica registrado quem pegou a mercadoria e quem a entregou ao estoque (rastreabilidade).
+// CORTE de item:
+//   parte ainda não iniciada            → ninguém (nada separado: só diminui)
 //   parte em separação                  → separador confirma no coletor (corte simples ou "devolver item")
-//   separada, aguardando a conferência  → gestor tira da caixa na doca (a entrada nasce na hora)
-//   em conferência                      → conferente tira da caixa bipando (F9) e entrega ao estoque
-//   conferida                           → gestor tira da caixa e o pedido volta para refazer volumes e etiquetas
-// Cancelamento: sempre o gestor; o que já saiu da prateleira vira entrada na hora, entregue por quem está com a caixa.
+//   separada, aguardando a conferência  → conferente: a fila mostra "Item a devolver" e o posto abre direto no F9
+//   em conferência                      → conferente tira da caixa bipando (F9)
+//   conferida                           → conferente: o pedido é reaberto na fila de quem conferiu, ele tira (F9),
+//                                         refaz os volumes e reimprime as etiquetas (e o pedido sai da carga)
+// CANCELAMENTO: o pedido fica cancelado na hora. Ninguém bipa: o WMS gera a devolução com o que está na caixa,
+// "aguardando entrega", e o responsável (separador no coletor; conferente no posto) só marca "Entregue ao estoque".
+// A entrada só aparece para o estoque depois de entregue.
+// "gestor" sobra para o que ninguém tem na mão (fila; Montagem com a conferência dispensada): vale na hora.
 export const QUEM_DEVOLVE = { gestor: "Gestor", separador: "Separador", conferente: "Conferente" };
 export function quemEstaComAParte({ statusSeparacao, statusConferencia = null }) {
   if (statusSeparacao === "andamento") return "separador";
-  if (statusSeparacao === "concluido" && statusConferencia === "andamento") return "conferente";
+  if (statusSeparacao === "concluido" && statusConferencia !== "dispensada") return "conferente";
   return "gestor";
 }
+// o cancelamento gera a devolução "aguardando entrega" para quem está com a caixa (o gestor não tem nada na mão)
+export const entregaAguardaResponsavel = (tipo, quem) => tipo === "cancelamento" && quem !== "gestor";
 
 // O que a ocorrência muda, linha por linha (cada linha = um item de uma parte do pedido).
 // linhas = [{ chave, sku, qtd, sep, devolver, status, motivo, quem }]
@@ -98,7 +106,8 @@ export function quemEstaComAParte({ statusSeparacao, statusConferencia = null })
 // tipo "corte": novas = { sku: novaQtd } (já validadas) · tipo "cancelamento": tudo vai a zero
 // Devolve:
 //   linhas     [{ chave, qtd, sep, devolver, status, motivo }] as que mudaram
-//   devolucoes { gestor|separador|conferente: [{ sku, qtd }] } entradas que nascem AGORA (entregue por quem)
+//   devolucoes { gestor|separador|conferente: [{ sku, qtd }] } o que sai da caixa AGORA: no corte, só o do gestor
+//              (entrada na hora); no cancelamento, de todos (separador/conferente: "aguardando entrega")
 //   avisar     ["separador", "conferente"] quem tem que confirmar no aparelho
 //   resumo     [{ sku, de, para, devolver }] para o histórico
 export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
@@ -121,7 +130,7 @@ export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
     const sep = Number(l.sep) || 0, pend = Number(l.devolver) || 0, qtd = Number(l.qtd) || 0;
     if (tipo === "cancelamento") {
       if (!qtd && !sep) continue;
-      // tudo o que está na caixa volta ao estoque agora, entregue por quem está com ela
+      // tudo o que está na caixa volta ao estoque: quem está com ela marca "Entregue ao estoque"
       somar(l.quem, l.sku, sep);
       mudou.push({ chave: l.chave, qtd: 0, sep: 0, devolver: 0, status: "cortado", motivo: "" });
       anotar(l.sku, qtd, 0, sep);

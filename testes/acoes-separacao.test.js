@@ -10,8 +10,8 @@ const itens = (...lista) => lista.map(([qtd, status = "pendente"], n) => ({ sequ
 const acao = (tipo, dados, login = "ana") => ({ tipo, dados: { pedido: "PV-1", ...dados }, login, feitaEm: QUANDO });
 const avaliar = (a, p = pedido(), i = itens([10], [5])) => avaliarAcaoDaSeparacao(a, p, i);
 
-test("os quatro tipos de ação da Separação", () => {
-  assert.deepEqual(TIPOS_DA_SEPARACAO, ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia"]);
+test("os tipos de ação da Separação", () => {
+  assert.deepEqual(TIPOS_DA_SEPARACAO, ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia", "separacao.entregar"]);
 });
 
 test("pedido que não existe: recusada", () => {
@@ -170,4 +170,13 @@ test("pedido cancelado pelo gestor: nada mais muda; o que foi pego sem rede volt
   assert.match(avaliar(acao("separacao.concluir", { doca: "D1" }), cancelado, it).motivo, /O GESTOR CANCELOU O PV-1/);
   assert.match(avaliar(acao("separacao.iniciar"), cancelado, it).motivo, /O GESTOR CANCELOU/);
   assert.equal(avaliar(acao("separacao.ocorrencia", {}), cancelado, it).resultado, "aplicada");
+});
+
+test("separacao.entregar: pedido cancelado, quem estava com ele marca a entrega ao estoque", () => {
+  const cancelado = { id: "PV-1", status: "cancelado", separador: "ana" };
+  assert.deepEqual(avaliarAcaoDaSeparacao({ tipo: "separacao.entregar", dados: { pedido: "PV-1" }, login: "ana" }, cancelado, []),
+    { resultado: "aplicada", pedido: {}, itens: [], entregar: true });
+  assert.equal(avaliarAcaoDaSeparacao({ tipo: "separacao.entregar", dados: { pedido: "PV-1" }, login: "bia" }, cancelado, []).resultado, "recusada");
+  assert.equal(avaliarAcaoDaSeparacao({ tipo: "separacao.entregar", dados: { pedido: "PV-1" }, login: "ana" },
+    { ...cancelado, status: "andamento" }, []).resultado, "recusada");
 });
