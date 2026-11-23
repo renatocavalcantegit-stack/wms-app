@@ -10,6 +10,7 @@ import {
 } from "./js/dados/ocorrencias.js";
 import { ETAPAS_PEDIDO, MOTIVOS_OCORRENCIA, QUEM_DEVOLVE } from "./compartilhado/regras/ocorrencias.js";
 import { formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
+import { ouvirQuadro } from "./js/dados/quadro.js";
 
 // estado da aba: pedido aberto, mensagem e se o gestor está confirmando um cancelamento
 const estado = { pedido: null, msg: "", erro: false, confirmarCancelamento: false, historico: null, ocupado: false };
@@ -33,13 +34,45 @@ const EFEITO_CANCELAR = "Cancelar: o que já saiu da prateleira vira entrada pen
 export function telaOcorrencias(setor, { usuario, toast, sess }) {
   ctx = { setor, usuario, toast, sess };
   if (noServidor()) carregarHistorico();
+  ligarAtualizacao();
   return `<div class="oc-wrap">${conteudo()}</div>`;
 }
 
 async function carregarHistorico() {
   const r = await lerOcorrenciasDoServidor(ctx.sess, ctx.setor);
   estado.historico = r.ok ? r.ocorrencias : [];
-  redesenhar();
+  redesenharGuardando();
+}
+
+// O pedido aberto se atualiza sozinho: o separador separou, o conferente contou, outro gestor registrou...
+// Com o servidor, pelo canal de tempo real (e a cada 15 s, de reserva); na demonstração, quando outra aba
+// deste navegador grava (o coletor ou o posto abertos ao lado). O que o gestor já digitou continua no formulário.
+let ouvindo = false, espera = null;
+function ligarAtualizacao() {
+  if (ouvindo) return;
+  ouvindo = true;
+  const pedir = (historicoTambem = false) => {
+    clearTimeout(espera);
+    espera = setTimeout(() => { atualizarAberto(); if (historicoTambem && noServidor()) carregarHistorico(); }, 400);
+  };
+  if (noServidor()) {
+    ouvirQuadro(ctx.sess, (evento) => { if (evento === "quadro" || evento === "acoes") pedir(evento === "quadro"); });
+    setInterval(() => pedir(), 15_000);
+  } else window.addEventListener("storage", () => pedir());
+}
+async function atualizarAberto() {
+  const p = estado.pedido;
+  if (!p || estado.ocupado || !document.querySelector(".oc-wrap")) return;
+  let novo;
+  if (noServidor()) {
+    const r = await abrirPedidoNoServidor(ctx.sess, ctx.setor, p.id);
+    if (!r.ok) return;
+    novo = r.pedido;
+  } else novo = abrirPedido(ctx.setor, p.id);
+  // só redesenha se mudou (e se o gestor não trocou de pedido enquanto esperava a resposta)
+  if (!novo || estado.pedido?.id !== novo.id || JSON.stringify(novo) === JSON.stringify(estado.pedido)) return;
+  estado.pedido = novo;
+  redesenharGuardando();
 }
 
 function conteudo() {
@@ -147,7 +180,7 @@ async function registrar(form, tipo) {
     : registrarOcorrencia(ctx.setor, estado.pedido.id, dados);
   estado.ocupado = false;
   estado.confirmarCancelamento = false;
-  if (!r.ok) { avisar(r.msg, true); guardarCampos(form); return; }
+  if (!r.ok) { avisar(r.msg, true); redesenharGuardando(); return; }
   estado.pedido = r.pedido;
   avisar(resultado(tipo, r.ocorrencia, r.pedido));
   ctx.toast(tipo === "cancelamento" ? `${r.ocorrencia.pedido} cancelado` : `Corte registrado em ${r.ocorrencia.pedido}`);
@@ -166,15 +199,20 @@ export function ligarOcorrencias(board) {
   board.addEventListener("click", (e) => {
     if (!e.target.closest(".oc-wrap")) return;
     const form = e.target.closest("[data-oc-form]");
-    if (e.target.closest("[data-oc-cancelar]")) { estado.confirmarCancelamento = true; guardarCampos(form); return; }
-    if (e.target.closest("[data-oc-voltar]")) { estado.confirmarCancelamento = false; guardarCampos(form); return; }
+    if (e.target.closest("[data-oc-cancelar]")) { estado.confirmarCancelamento = true; redesenharGuardando(); return; }
+    if (e.target.closest("[data-oc-voltar]")) { estado.confirmarCancelamento = false; redesenharGuardando(); return; }
     if (e.target.closest("[data-oc-cancelar-sim]")) return registrar(form, "cancelamento");
   });
 }
-// ao trocar os botões de confirmação, o que já foi digitado (quantidades, motivo, referência) continua no formulário
-function guardarCampos(form) {
-  const valores = [...form.elements].filter((x) => x.name).map((x) => [x.name, x.value]);
+// redesenha a aba sem perder o que já foi digitado (número buscado, quantidades, motivo, referência) nem o cursor
+function redesenharGuardando() {
+  const w = document.querySelector(".oc-wrap");
+  if (!w) return;
+  const formDe = (x) => (x.closest("[data-oc-busca]") ? "[data-oc-busca]" : "[data-oc-form]");
+  const valores = [...w.querySelectorAll("input[name], select[name]")].map((x) => [formDe(x), x.name, x.value]);
+  const ativo = w.contains(document.activeElement) && document.activeElement.name ? document.activeElement : null;
+  const foco = ativo && [formDe(ativo), ativo.name];
   redesenhar();
-  const f = document.querySelector("[data-oc-form]");
-  valores.forEach(([nome, valor]) => { if (f.elements[nome]) f.elements[nome].value = valor; });
+  valores.forEach(([f, nome, valor]) => { const el = w.querySelector(f)?.elements[nome]; if (el) el.value = valor; });
+  if (foco) w.querySelector(foco[0])?.elements[foco[1]]?.focus();
 }

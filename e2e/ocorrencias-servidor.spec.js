@@ -95,3 +95,19 @@ test("corte com o pedido em conferência: o posto pede para tirar da caixa (F9) 
   await expect.poll(() => devolucoes("PV-10401")).toEqual([{ origem: "conferente", entregue_por: "conferente", itens: [{ produto: i.produto, qtd: 1 }] }]);
   expect(await item("PV-10401", i.produto)).toMatchObject({ sep: i.sep - 1, devolver: 0 });
 });
+
+test("o pedido aberto na aba Ocorrências se atualiza sozinho, sem perder o que o gestor digitou", async ({ browser }) => {
+  const g = await aparelho(browser, "coordenador", { width: 1366, height: 768 });
+  await expect(g).toHaveURL(/gestao\.html/);
+  await g.locator('.gx-tab[data-board="ocorr"]').click();
+  await g.locator('[data-oc-busca] input[name="pedido"]').fill("PV-10422");
+  await g.locator("[data-oc-busca] button").click();
+  await expect(g.locator(".oc-etapa")).toHaveText("Aguardando separação");
+  await g.locator('input[name="referencia"]').fill("ALT-55");
+
+  const ana = await aparelho(browser, "separador", { width: 412, height: 860 });
+  await ana.locator('[data-setor="exp"]').click();
+  await abrirPedidoNoColetor(ana, "PV-10422");
+  await expect(g.locator(".oc-etapa")).toHaveText("Em separação", { timeout: 20_000 });
+  await expect(g.locator('input[name="referencia"]')).toHaveValue("ALT-55");
+});
