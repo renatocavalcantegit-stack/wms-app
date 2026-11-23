@@ -41,7 +41,7 @@ export async function quadroDaSeparacao(pool, setor) {
        FROM pedidos p
        LEFT JOIN usuarios u ON u.login = p.separador
        LEFT JOIN itens_pedido i ON i.pedido_id = p.id
-      WHERE p.setor = $1 AND p.status <> 'concluido'
+      WHERE p.setor = $1 AND p.status NOT IN ('concluido', 'cancelado')
       GROUP BY p.id, u.nome
       ORDER BY p.designado_para NULLS FIRST, p.ordem_fila NULLS LAST, p.chegada, p.id`,
     [setor],

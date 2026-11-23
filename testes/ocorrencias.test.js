@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, aplicarCorte, faltaTirar, faltaPostar,
-  devolucaoPendente, lerDevolucao, validarDocaDevolucao,
+  devolucaoPendente, lerDevolucao, validarDocaDevolucao, quemEstaComAParte, planejarOcorrencia, confirmarDevolucaoDaLinha, itensCortados,
   MSG_PEDIDO_CANCELADO, MSG_EM_CARREGAMENTO, MSG_SEM_MOTIVO, MSG_SEM_REFERENCIA, MSG_NADA_A_DEVOLVER, MSG_NAO_E_DOCA_DEVOLUCAO,
 } from "../compartilhado/regras/ocorrencias.js";
 
@@ -75,4 +75,62 @@ test("doca de devolução: só endereço ativo do tipo devolução", () => {
   assert.equal(validarDocaDevolucao({ ativo: false, tipo: "devolucao" }), MSG_NAO_E_DOCA_DEVOLUCAO);
   assert.equal(validarDocaDevolucao({ ativo: true, tipo: "expedicao" }), MSG_NAO_E_DOCA_DEVOLUCAO);
   assert.equal(validarDocaDevolucao(null), MSG_NAO_E_DOCA_DEVOLUCAO);
+});
+
+// ---------- quem devolve (v75) ----------
+test("quem está com a mercadoria: separador, conferente ou o próprio gestor", () => {
+  assert.equal(quemEstaComAParte({ statusSeparacao: "pendente" }), "gestor");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "andamento" }), "separador");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: null }), "gestor");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "aguardando" }), "gestor");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "andamento" }), "conferente");
+  assert.equal(quemEstaComAParte({ statusSeparacao: "concluido", statusConferencia: "conferido" }), "gestor");
+});
+
+const linha = (x) => ({ chave: x.sku, devolver: 0, status: "ok", motivo: "", ...x });
+
+test("corte com o gestor: o que sobra na caixa vira entrada na hora; não separado só diminui", () => {
+  const r = planejarOcorrencia({ tipo: "corte", novas: { A: 3, B: 0, C: 1 }, linhas: [
+    linha({ sku: "A", qtd: 5, sep: 5, quem: "gestor" }),
+    linha({ sku: "B", qtd: 2, sep: 0, status: "pendente", quem: "gestor" }),
+    linha({ sku: "C", qtd: 4, sep: 2, status: "falta", motivo: "avaria", quem: "gestor" }),
+  ] });
+  assert.deepEqual(r.linhas, [
+    { chave: "A", qtd: 3, sep: 3, devolver: 0, status: "ok", motivo: "" },
+    { chave: "B", qtd: 0, sep: 0, devolver: 0, status: "cortado", motivo: "" },
+    { chave: "C", qtd: 1, sep: 1, devolver: 0, status: "ok", motivo: "" },
+  ]);
+  assert.deepEqual(r.devolucoes, { gestor: [{ sku: "A", qtd: 2 }, { sku: "C", qtd: 1 }] });
+  assert.deepEqual(r.avisar, []);
+  assert.deepEqual(r.resumo.map((x) => [x.sku, x.de, x.para, x.devolver]), [["A", 5, 3, 2], ["B", 2, 0, 0], ["C", 4, 1, 1]]);
+});
+
+test("corte com o separador ou o conferente: fica a devolver até ele confirmar", () => {
+  const r = planejarOcorrencia({ tipo: "corte", novas: { A: 3, B: 0 }, linhas: [
+    linha({ sku: "A", qtd: 5, sep: 5, quem: "separador" }),
+    linha({ sku: "B", qtd: 2, sep: 2, quem: "conferente" }),
+  ] });
+  assert.deepEqual(r.linhas, [
+    { chave: "A", qtd: 3, sep: 5, devolver: 2, status: "ok", motivo: "" },
+    { chave: "B", qtd: 0, sep: 2, devolver: 2, status: "ok", motivo: "" },
+  ]);
+  assert.deepEqual(r.devolucoes, {});
+  assert.deepEqual(r.avisar.sort(), ["conferente", "separador"]);
+  // confirmar: sai da caixa
+  assert.deepEqual(confirmarDevolucaoDaLinha({ qtd: 3, sep: 5, devolver: 2, status: "ok" }), { sep: 3, devolver: 0, status: "ok", motivo: "" });
+  assert.deepEqual(confirmarDevolucaoDaLinha({ qtd: 0, sep: 2, devolver: 2, status: "ok" }), { sep: 0, devolver: 0, status: "cortado", motivo: "" });
+});
+
+test("cancelamento: tudo zera e o que está na caixa vira entrada, entregue por quem está com ela", () => {
+  const r = planejarOcorrencia({ tipo: "cancelamento", linhas: [
+    linha({ chave: "1/1", sku: "A", qtd: 5, sep: 5, devolver: 1, quem: "separador" }),
+    linha({ chave: "1/2", sku: "B", qtd: 2, sep: 0, status: "pendente", quem: "separador" }),
+    linha({ chave: "2/1", sku: "C", qtd: 3, sep: 3, quem: "conferente" }),
+  ] });
+  assert.ok(r.linhas.every((l) => l.qtd === 0 && l.sep === 0 && l.devolver === 0 && l.status === "cortado"));
+  assert.deepEqual(r.devolucoes, { separador: [{ sku: "A", qtd: 5 }], conferente: [{ sku: "C", qtd: 3 }] });
+});
+
+test("o aviso do separador mostra os itens com menos do que o pedido original", () => {
+  assert.deepEqual(itensCortados([{ sku: "A", qtd: 3, qtdPedida: 5 }, { sku: "B", qtd: 2, qtdPedida: 2 }, { sku: "C", qtd: 1 }]).map((i) => i.sku), ["A"]);
 });

@@ -16,7 +16,7 @@ const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FR
 test("migrar de novo não aplica nada (cada arquivo roda uma vez só)", async () => {
   assert.deepEqual(await migrar(pool), []);
   const { rows } = await pool.query("SELECT nome FROM migracoes ORDER BY nome");
-  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql", "004_painel_ao_vivo.sql", "005_fila_do_separador_e_login_unico.sql", "006_passo_do_item.sql", "007_conferencia.sql"]);
+  assert.deepEqual(rows.map((r) => r.nome), ["001_base.sql", "002_quantidade_quebrada.sql", "003_resultado_das_acoes.sql", "004_painel_ao_vivo.sql", "005_fila_do_separador_e_login_unico.sql", "006_passo_do_item.sql", "007_conferencia.sql", "008_ocorrencias.sql"]);
 });
 
 test("a demonstração do banco é a mesma do app", async () => {
@@ -60,8 +60,8 @@ test("item de pedido aceita quantidade quebrada (até 3 casas) e volta como núm
     // mais de 3 casas: o banco arredonda para 3 (a regra do front já recusa antes de chegar aqui)
     await pool.query("UPDATE itens_pedido SET qtd_separada = 1.23456 WHERE pedido_id = 'PV-10421' AND sequencia = 98");
     assert.equal((await pool.query("SELECT qtd_separada FROM itens_pedido WHERE pedido_id = 'PV-10421' AND sequencia = 98")).rows[0].qtd_separada, 1.235);
-    // zero ou negativo continua recusado
-    await assert.rejects(pool.query("UPDATE itens_pedido SET qtd = 0 WHERE pedido_id = 'PV-10421' AND sequencia = 98"));
+    // negativo continua recusado (zero pode, desde a v75: item cortado pelo gestor)
+    await assert.rejects(pool.query("UPDATE itens_pedido SET qtd = -1 WHERE pedido_id = 'PV-10421' AND sequencia = 98"));
   } finally {
     await pool.query("DELETE FROM itens_pedido WHERE pedido_id = 'PV-10421' AND sequencia = 98");
   }

@@ -8,19 +8,27 @@
 //   separacao.item     { pedido, sequencia, qtdSeparada, status, motivo? } confirmou um item (ok) ou registrou falta
 //   separacao.concluir { pedido, doca }                                   leu o QR da doca de expedição
 //   separacao.reabrir  { pedido }                                         "separar novamente" um pedido concluído
+//   separacao.ocorrencia { pedido }                                       confirmou o pedido do gestor (corte/devolução, v75)
+//
+// Pedido do gestor (v75): o corte já está no servidor; o separador confirma e o que tinha que sair da caixa vira
+// entrada pendente no estoque (devolverAgora). Se ele separou sem rede a quantidade antiga, o FÍSICO VENCE:
+// o servidor aceita o que está na caixa (até a quantidade original) e o que passou vira "a devolver".
 //
 // O resultado é um destes:
-//   { resultado: "aplicada", pedido: {campos que mudam}, itens: [{ sequencia, campos que mudam }] }
+//   { resultado: "aplicada", pedido: {campos que mudam}, itens: [{ sequencia, campos que mudam }], devolverAgora? }
+//     devolverAgora = [{ sequencia, qtd }] o que sai da caixa e vira entrada pendente no estoque
 //   { resultado: "conflito", motivo }  outro separador já está com o pedido: o coordenador decide
 //   { resultado: "recusada", motivo }  ação inválida (item que não existe, quantidade errada...)
 //
 // Por que gravar o VALOR e não somar? Se o coletor reenviar a mesma ação, o resultado é o mesmo.
-import { lerQuantidade, quantidadeValida, formatarQtd } from "./quantidade.js";
+import { lerQuantidade, quantidadeValida, formatarQtd, arredondarQtd } from "./quantidade.js";
 import { podeSepararNovamente } from "./separacao.js";
+import { confirmarDevolucaoDaLinha } from "./ocorrencias.js";
 
-export const TIPOS_DA_SEPARACAO = ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir"];
+export const TIPOS_DA_SEPARACAO = ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia"];
 
-const aplicada = (pedido = {}, itens = []) => ({ resultado: "aplicada", pedido, itens });
+const aplicada = (pedido = {}, itens = [], devolverAgora = []) => ({ resultado: "aplicada", pedido, itens, ...(devolverAgora.length ? { devolverAgora } : {}) });
+export const msgCanceladoPeloGestor = (id) => `O GESTOR CANCELOU O ${id}. ENTREGUE O QUE JÁ SEPAROU AO ESTOQUE.`;
 const conflito = (motivo) => ({ resultado: "conflito", motivo });
 const recusada = (motivo) => ({ resultado: "recusada", motivo });
 
@@ -43,12 +51,25 @@ function conflitoDeDono(pedido, login) {
   return null;
 }
 
-// acao = { tipo, dados, login, feitaEm } · pedido = { id, status, separador, designadoPara?, statusConferencia? } ou null · itens = [{ sequencia, qtd, status }]
+// acao = { tipo, dados, login, feitaEm } · pedido = { id, status, separador, designadoPara?, statusConferencia? } ou null
+// itens = [{ sequencia, qtd, status, qtdPedida?, qtdSeparada?, devolver?, motivo? }] (qtdPedida: a quantidade antes do corte)
 // Devolve null quando o tipo não é da Separação (quem chamou decide o que fazer).
 export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
   const { tipo, dados = {}, login, feitaEm } = acao;
   if (!TIPOS_DA_SEPARACAO.includes(tipo)) return null;
   if (!pedido) return recusada(`PEDIDO ${dados.pedido ?? ""} NÃO ENCONTRADO.`);
+
+  // cancelado pelo gestor (v75): nada mais muda no pedido. O que o separador pegou sem saber (estava sem rede)
+  // volta ao estoque: vira entrada pendente, entregue por ele.
+  if (pedido.status === "cancelado") {
+    if (tipo === "separacao.ocorrencia") return aplicada();
+    if (tipo !== "separacao.item" || pedido.separador !== login) return recusada(msgCanceladoPeloGestor(pedido.id ?? ""));
+    const item = itens.find((i) => i.sequencia === Number(dados.sequencia));
+    const qtd = lerQuantidade(dados.qtdSeparada);
+    if (!item || !quantidadeValida(qtd)) return recusada(msgCanceladoPeloGestor(pedido.id ?? ""));
+    const extra = arredondarQtd(qtd - (Number(item.qtdSeparada) || 0));
+    return extra > 0 ? aplicada({}, [], [{ sequencia: item.sequencia, qtd: extra }]) : aplicada();
+  }
 
   if (tipo === "separacao.iniciar") {
     if (pedido.status === "concluido") return recusada("PEDIDO JÁ CONCLUÍDO. USE SEPARAR NOVAMENTE.");
@@ -67,9 +88,17 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
     if (pedido.status !== "andamento") return recusada("PEDIDO NÃO ESTÁ EM SEPARAÇÃO.");
     const item = itens.find((i) => i.sequencia === Number(dados.sequencia));
     if (!item) return recusada(`ITEM ${dados.sequencia} NÃO EXISTE NO PEDIDO.`);
-    if (item.status === "cortado") return recusada("ITEM CORTADO PELO GESTOR.");
     const qtd = lerQuantidade(dados.qtdSeparada);
     if (!quantidadeValida(qtd)) return recusada("QUANTIDADE SEPARADA INVÁLIDA (ZERO OU MAIS, ATÉ 3 CASAS).");
+    // o gestor cortou o item e o separador (sem rede) separou a quantidade antiga: o físico vence
+    const pedida = Number(item.qtdPedida ?? item.qtd);
+    if (Number(item.qtd) < pedida && qtd >= Number(item.qtd)) {
+      if (qtd > pedida) return recusada(`QUANTIDADE ACIMA DO PEDIDO (${formatarQtd(pedida)}).`);
+      const devolver = arredondarQtd(qtd - Number(item.qtd));
+      return aplicada(devolver > 0 ? { ocorrenciaPendente: true } : {},
+        [{ sequencia: item.sequencia, qtdSeparada: qtd, devolver, status: qtd === 0 ? "cortado" : "ok", motivo: "" }]);
+    }
+    if (item.status === "cortado") return recusada("ITEM CORTADO PELO GESTOR.");
     if (qtd > item.qtd) return recusada(`QUANTIDADE ACIMA DO PEDIDO (${formatarQtd(item.qtd)}).`);
     if (dados.status === "ok") {
       if (qtd !== item.qtd) return recusada("ITEM COMPLETO TEM QUE TER A QUANTIDADE DO PEDIDO. MENOS QUE ISSO É FALTA.");
@@ -93,6 +122,19 @@ export function avaliarAcaoDaSeparacao(acao, pedido, itens) {
     if (!doca) return recusada("INFORME A DOCA DE EXPEDIÇÃO.");
     if (itens.some((i) => i.status === "pendente")) return recusada("AINDA HÁ ITEM PENDENTE NO PEDIDO.");
     return aplicada({ status: "concluido", fim: feitaEm, doca });
+  }
+
+  // separacao.ocorrencia — o separador confirmou o pedido do gestor: o que tinha que sair da caixa saiu
+  if (tipo === "separacao.ocorrencia") {
+    const dono = conflitoDeDono(pedido, login);
+    if (dono) return dono;
+    const saem = itens.filter((i) => Number(i.devolver) > 0);
+    return aplicada({ ocorrenciaPendente: false },
+      saem.map((i) => {
+        const r = confirmarDevolucaoDaLinha({ qtd: i.qtd, sep: i.qtdSeparada, devolver: i.devolver, status: i.status, motivo: i.motivo });
+        return { sequencia: i.sequencia, qtdSeparada: r.sep, devolver: r.devolver, status: r.status, motivo: r.motivo };
+      }),
+      saem.map((i) => ({ sequencia: i.sequencia, qtd: Number(i.devolver) })));
   }
 
   // separacao.reabrir — quem reabre fica com o pedido; o item cortado continua cortado.

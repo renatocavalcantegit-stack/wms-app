@@ -11,6 +11,7 @@ import { rotasDeSincronizacao } from "./rotas-api/sincronizacao.js";
 import { rotasDoPainel } from "./rotas-api/painel.js";
 import { rotasDosDispositivos } from "./rotas-api/dispositivos.js";
 import { rotasDoQuadro } from "./rotas-api/quadro.js";
+import { rotasDasOcorrencias } from "./rotas-api/ocorrencias.js";
 import { rotasDasTelas } from "./telas.js";
 
 export function criarServidor({ pool, registrarLog = false }) {
@@ -46,6 +47,7 @@ export function criarServidor({ pool, registrarLog = false }) {
   rotasDoPainel(app, contexto);
   rotasDosDispositivos(app, contexto);
   rotasDoQuadro(app, contexto);
+  rotasDasOcorrencias(app, contexto);
   rotasDasTelas(app); // por último: o que não for /api/... é tela
 
   // ao desligar o servidor, fecha ANTES as conexões de tempo real: elas não terminam sozinhas

@@ -8,6 +8,8 @@
 //   conferencia.finalizar { pedido, volumes, observacao, posto, contagens } finalizou (contagens = tudo o que contou)
 //   conferencia.volumes   { pedido, volumes, observacao }                   corrigiu os volumes de um pedido conferido
 //   conferencia.reabrir   { pedido }                                        "conferir novamente" um pedido conferido
+//   conferencia.devolver  { pedido, itens: [{ produto, qtd }] }              tirou da caixa o que o gestor cortou (v75):
+//                                                                           vira entrada pendente no estoque
 //
 // Resultado: { resultado: "aplicada", conferencia: {campos que mudam}, contagens: [{ produto, qtd, fora }], zerar? }
 //            { resultado: "conflito", motivo }   outro conferente já está com o pedido
@@ -16,7 +18,8 @@
 import { lerQuantidade, quantidadeValida, arredondarQtd } from "./quantidade.js";
 import { msgFinalizarComPartes } from "./partes-da-conferencia.js";
 
-export const TIPOS_DA_CONFERENCIA = ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar", "conferencia.volumes", "conferencia.reabrir"];
+export const TIPOS_DA_CONFERENCIA = ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar", "conferencia.volumes", "conferencia.reabrir", "conferencia.devolver"];
+export const MSG_DEVOLUCAO_PENDENTE = "FAÇA A DEVOLUÇÃO DO QUE O GESTOR CORTOU ANTES DE FINALIZAR (F9).";
 export const FINALIZADA = ["conferido", "divergente"];
 
 const aplicada = (conferencia = {}, contagens = [], extra = {}) => ({ resultado: "aplicada", conferencia, contagens, ...extra });
@@ -75,7 +78,8 @@ function lerVolumes(setor, dados) {
   return { volumes, observacao: o };
 }
 
-// acao = { tipo, dados, login, feitaEm } · conferencia = { pedido, setor, status, conferente, designadoPara? } ou null
+// acao = { tipo, dados, login, feitaEm } · conferencia = { pedido, setor, status, conferente, designadoPara?, devolver? } ou null
+//   devolver = [{ produto, qtd }] o que o gestor cortou e ainda tem que sair da caixa (v75)
 // esperado = o que foi separado, por produto · contagens = o que já está contado
 // Devolve null quando o tipo não é da Conferência.
 export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], contagens = []) {
@@ -85,6 +89,24 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
   if (!c) return recusada(`PEDIDO ${dados.pedido ?? ""} NÃO ESTÁ NA CONFERÊNCIA (A SEPARAÇÃO AINDA NÃO TERMINOU).`);
   // Montagem: o coordenador pulou a conferência pelo quadro (v67); o posto volta para a fila
   if (c.status === "dispensada") return recusada(`O COORDENADOR DISPENSOU A CONFERÊNCIA DO ${c.pedido}.`);
+  if (c.status === "cancelado") return recusada(`O GESTOR CANCELOU O ${c.pedido}.`);
+  const aDevolver = (c.devolver || []).filter((x) => Number(x.qtd) > 0);
+
+  if (tipo === "conferencia.devolver") {
+    const dono = conflitoDeDono(c, login);
+    if (dono) return dono;
+    if (c.status !== "andamento") return recusada("PEDIDO NÃO ESTÁ EM CONFERÊNCIA.");
+    const itens = [];
+    for (const x of Array.isArray(dados.itens) ? dados.itens : []) {
+      const produto = String(x?.produto ?? "").trim(), qtd = lerQuantidade(x?.qtd);
+      if (!produto || !quantidadeValida(qtd) || qtd <= 0) return recusada("DEVOLUÇÃO INVÁLIDA (PRODUTO E QUANTIDADE).");
+      const falta = Number(aDevolver.find((d) => d.produto === produto)?.qtd || 0);
+      // reenvio da mesma devolução: já saiu, nada a fazer
+      if (falta <= 0) continue;
+      itens.push({ produto, qtd: Math.min(qtd, falta) });
+    }
+    return aplicada({}, [], { devolver: itens });
+  }
 
   if (tipo === "conferencia.iniciar") {
     if (FINALIZADA.includes(c.status)) return recusada("PEDIDO JÁ CONFERIDO. USE CONFERIR NOVAMENTE.");
@@ -111,6 +133,7 @@ export function avaliarAcaoDaConferencia(acao, conferencia, esperado = [], conta
     if (c.status !== "andamento") return recusada("PEDIDO NÃO ESTÁ EM CONFERÊNCIA.");
     // pedido dividido (v72): só finaliza quando todas as partes terminaram a separação
     if (c.partesEmSeparacao?.length) return recusada(msgFinalizarComPartes(c.pedido, c.partesEmSeparacao));
+    if (aDevolver.length) return recusada(MSG_DEVOLUCAO_PENDENTE);
     const v = lerVolumes(c.setor, dados);
     if (typeof v === "string") return recusada(v);
     // as contagens da finalização valem por tudo (o posto manda o que contou de cada produto)

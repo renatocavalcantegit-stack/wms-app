@@ -24,7 +24,8 @@ async function entrar(login) {
   tokens[login] ||= (await app.inject({ method: "POST", url: "/api/login", payload: { login, pin: pin(login) } })).json().token;
   return tokens[login];
 }
-let relogio = Date.parse("2026-11-19T08:00:00Z");
+// as ações são de HOJE ("conferidos hoje" compara com a data do banco)
+let relogio = Date.now() - 3_600_000;
 const acao = (tipo, dados) => ({ id: randomUUID(), tipo, dados, feitaEm: new Date((relogio += 1000)).toISOString() });
 const sincronizar = async (login, acoes) =>
   (await app.inject({ method: "POST", url: "/api/sincronizar", headers: { authorization: `Bearer ${await entrar(login)}` }, payload: { acoes } })).json();

@@ -10,7 +10,7 @@ import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderec
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
   statusDaNota, resumoDaNota, validarDoca, validarDocaDeArmazenamento, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
-  STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA,
+  STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA, rotuloDaNota,
 } from "./compartilhado/regras/recebimento.js";
 
 let db = lerEstoque();
@@ -26,7 +26,7 @@ function pilulasDaNota(nota) {
     + pilula(s.armazenamento, STATUS_ARMAZENAMENTO[s.armazenamento]);
 }
 const cartaoNota = (nota, extra = "") => `<div class="rc-nota">
-  <div><b>NF ${esc(nota.numero)}</b><span>${esc(nota.fornecedor.nome)}</span><small>${diaCurto(nota.data)} · ${esc(nota.tipo)}</small></div>${extra}</div>`;
+  <div><b>${esc(rotuloDaNota(nota))}</b><span>${esc(nota.fornecedor.nome)}</span><small>${diaCurto(nota.data)} · ${esc(nota.tipo)}</small></div>${extra}</div>`;
 const linhaDoca = (doca) => `<div class="rc-doca">${tipoTag("doca")}<span class="line-addr">${doca.codigo}</span></div>`;
 
 // números do menu (aguardando, em aberto, produtos na doca)
@@ -117,8 +117,8 @@ function desenharNotas() {
   $("#rcRes").innerHTML = `<p class="es-h">Notas para conferir</p><div class="es-lista">${notas.map(({ n, st }) => {
     const r = resumoDaNota(n, db.conferencias);
     const feito = r.reduce((t, i) => t + i.conferido, 0), total = r.reduce((t, i) => t + i.qtdNota, 0);
-    return `<button class="line" data-nota="${n.id}"><span class="line-desc"><b>NF ${esc(n.numero)}</b> · ${esc(n.fornecedor.nome)}
-      <small>${diaCurto(n.data)} · ${n.itens.length} produtos · ${num(feito)}/${num(total)} conferidos</small></span>${pilula(st, STATUS_CONFERENCIA[st])}</button>`;
+    return `<button class="line" data-nota="${n.id}"><span class="line-desc"><b>${esc(rotuloDaNota(n))}</b> · ${esc(n.fornecedor.nome)}
+      <small>${diaCurto(n.data)} · ${n.itens.length} produto${n.itens.length === 1 ? "" : "s"} · ${num(feito)}/${num(total)} conferidos</small></span>${pilula(st, STATUS_CONFERENCIA[st])}</button>`;
   }).join("") || `<p class="empty">Nenhuma nota para conferir.</p>`}</div>`;
 }
 
@@ -198,7 +198,7 @@ function escolherNota(nota) {
   if (!nota) return msg($("#rcMsg"), "Nota não encontrada.", "err");
   if (nota.finalizada) return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err");
   conf.notaId = nota.id;
-  msg($("#rcMsg"), `NF ${nota.numero} aberta`, "ok");
+  msg($("#rcMsg"), `${rotuloDaNota(nota)} aberta`, "ok");
   desenharConferencia();
 }
 
@@ -213,7 +213,7 @@ function escolherProduto(codigo, embalagem) {
 
 // lê a doca e confirma a conferência (o saldo entra na doca e os volumes são impressos)
 function lerDoca(endereco) {
-  const erro = validarDoca(endereco);
+  const erro = validarDoca(endereco, notaPorId(db, conf.notaId));
   if (erro) return msg($("#rcMsg"), erro, "err");
   const r = conferir({ notaId: conf.notaId, produto: conf.produto, qtd: conf.qtd, volumes: conf.volumes, docaId: endereco.id });
   if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
@@ -253,10 +253,10 @@ $("#rcFinalizar").addEventListener("click", () => {
   const nota = notaPorId(db, conf.notaId);
   const faltas = resumoDaNota(nota, db.conferencias).filter((i) => i.conferido < i.qtdNota);
   const aviso = faltas.length ? "A NOTA SERÁ FINALIZADA COM DIVERGÊNCIA E NÃO PODERÁ SER REABERTA." : "DESEJA FINALIZAR A NOTA? ELA NÃO PODERÁ SER REABERTA.";
-  const sub = faltas.map((i) => `${esc(i.produto)}: faltam ${num(-i.divergencia)}`).join("<br>") || `NF ${esc(nota.numero)} · tudo conferido`;
+  const sub = faltas.map((i) => `${esc(i.produto)}: faltam ${num(-i.divergencia)}`).join("<br>") || `${esc(rotuloDaNota(nota))} · tudo conferido`;
   confirmar("Finalizar nota", aviso, sub, () => {
     finalizarNota(nota.id);
-    toast(`NF ${nota.numero} finalizada` + (faltas.length ? " com divergência" : ""));
+    toast(`${rotuloDaNota(nota)} finalizada` + (faltas.length ? " com divergência" : ""));
     db = lerEstoque(); iniciarConferencia();
   });
 });
@@ -381,12 +381,12 @@ function desenharConsulta() {
     .filter((n) => !t || n.numero.includes(t) || n.fornecedor.nome.toLowerCase().includes(t))
     .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id);
   $("#rqRes").innerHTML = `<div class="es-lista">${notas.map((n) => `<button class="line rc-linha" data-rqnota="${n.id}">
-    <span class="line-desc"><b>NF ${esc(n.numero)}</b> · ${esc(n.fornecedor.nome)}<small>${diaCurto(n.data)} · ${esc(n.tipo)}</small><span class="rc-pills">${pilulasDaNota(n)}</span></span>
+    <span class="line-desc"><b>${esc(rotuloDaNota(n))}</b> · ${esc(n.fornecedor.nome)}<small>${diaCurto(n.data)} · ${esc(n.tipo)}</small><span class="rc-pills">${pilulasDaNota(n)}</span></span>
   </button>`).join("") || `<p class="empty">Nenhuma nota encontrada.</p>`}</div>`;
 }
 
 function desenharDetalheDaNota(nota) {
-  $("#rqPasso").textContent = `NF ${nota.numero}`;
+  $("#rqPasso").textContent = rotuloDaNota(nota);
   $("#rqRes").innerHTML = cartaoNota(nota, `<span class="rc-pills">${pilulasDaNota(nota)}</span>`)
     + resumoDaNota(nota, db.conferencias).map((i) => {
       const p = produtoPorCodigo(db, i.produto);

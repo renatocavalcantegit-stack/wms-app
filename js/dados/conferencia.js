@@ -113,11 +113,13 @@ export function conferenciaDoServidor(c) {
   // item de parte ainda em separação (v72): o separado não vale ainda; "espera" diz de que parte ele é
   const porProduto = new Map();
   for (const i of c.itens) {
-    const sep = i.em_separacao ? 0 : num(i.qtd_separada);
+    // corte do gestor (v75): "sep" é o que fica na caixa; "devolver", o que ainda tem que sair dela
+    const devolver = i.em_separacao ? 0 : num(i.qtd_devolver);
+    const sep = i.em_separacao ? 0 : num(i.qtd_separada) - devolver;
     const falta = !i.em_separacao && i.status === "falta";
     const x = porProduto.get(i.produto);
     if (x) {
-      x.qtd += num(i.qtd); x.sep += sep;
+      x.qtd += num(i.qtd); x.sep += sep; x.devolver += devolver;
       if (falta) { x.status = "falta"; x.motivo ||= i.motivo; }
       if (i.em_separacao && !x.espera.includes(i.parte)) x.espera.push(i.parte);
       continue;
@@ -125,7 +127,7 @@ export function conferenciaDoServidor(c) {
     porProduto.set(i.produto, {
       sku: i.produto, ean: i.codigos_de_barras?.[0] || "", eans: i.codigos_de_barras || [], desc: i.descricao, un: i.un,
       end: i.endereco_codigo, qtd: num(i.qtd), sep, status: falta ? "falta" : "ok", motivo: falta ? i.motivo || "" : "",
-      espera: i.em_separacao ? [i.parte] : [],
+      espera: i.em_separacao ? [i.parte] : [], devolver,
     });
   }
   const itens = [...porProduto.values()];
@@ -146,7 +148,7 @@ export function conferenciaDoServidor(c) {
     conf: {
       status: c.status, itens: contado, fora, log: [], inicio: ms(c.inicio), fim: ms(c.fim), volumes: c.volumes || 0,
       conferente: c.conferente_nome || null, conferenteLogin: c.conferente || null, posto: c.posto || null,
-      obs: c.observacao || undefined, devolvido: {}, postado: {}, reaberto: null,
+      obs: c.observacao || undefined, devolvido: {}, postado: {}, reaberto: c.reaberto || null,
     },
   };
 }

@@ -87,3 +87,22 @@ test("separar novamente: recusado depois que a conferência começou", () => {
   assert.equal(avaliarAcaoDaSeparacao(reabrir, { ...p, statusConferencia: null }, []).resultado, "aplicada");
   assert.match(avaliarAcaoDaSeparacao(reabrir, { ...p, statusConferencia: "andamento" }, []).motivo, /SENDO CONFERIDO/);
 });
+
+// ---------- devolução pedida pelo gestor (v75) ----------
+test("devolver: o conferente tira da caixa o que o gestor cortou (nunca mais do que falta); finalizar espera a devolução", () => {
+  const c = conf({ status: "andamento", conferente: "conferente", devolver: [{ produto: "176", qtd: "2.000" }] });
+  assert.deepEqual(avaliarAcaoDaConferencia(acao("conferencia.devolver", { itens: [{ produto: "176", qtd: 3 }] }), c),
+    { resultado: "aplicada", conferencia: {}, contagens: [], devolver: [{ produto: "176", qtd: 2 }] });
+  // reenvio depois de já devolvido: nada a fazer
+  assert.deepEqual(avaliarAcaoDaConferencia(acao("conferencia.devolver", { itens: [{ produto: "176", qtd: 2 }] }), conf({ status: "andamento", conferente: "conferente" })).devolver, []);
+  assert.equal(avaliarAcaoDaConferencia(acao("conferencia.devolver", { itens: [{ produto: "176", qtd: 0 }] }), c).resultado, "recusada");
+  assert.equal(avaliarAcaoDaConferencia(acao("conferencia.devolver", { itens: [] }, "outro"), c).resultado, "conflito");
+  const fin = avaliarAcaoDaConferencia(acao("conferencia.finalizar", { volumes: 1, observacao: OBS, contagens: [] }), c);
+  assert.equal(fin.motivo, "FAÇA A DEVOLUÇÃO DO QUE O GESTOR CORTOU ANTES DE FINALIZAR (F9).");
+});
+
+test("pedido cancelado pelo gestor: o posto não mexe mais", () => {
+  for (const t of ["conferencia.iniciar", "conferencia.contagem", "conferencia.finalizar"]) {
+    assert.equal(avaliarAcaoDaConferencia(acao(t, { produto: "176", qtd: 1 }), conf({ status: "cancelado", conferente: "conferente" })).motivo, "O GESTOR CANCELOU O PV-1.");
+  }
+});

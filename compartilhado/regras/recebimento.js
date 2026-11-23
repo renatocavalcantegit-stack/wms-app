@@ -64,11 +64,26 @@ export function statusDaNota(nota, conferencias) {
 
 // ---------- conferência (coletor) ----------
 // a conferência é vinculada a uma doca: o endereço lido tem que existir, estar ativo e ser do tipo doca
-export function validarDoca(endereco) {
+// (devolução de pedido, v75: também pode ir para a doca de devolução)
+export function validarDoca(endereco, nota = null) {
   if (!endereco) return MSG_ENDERECO_NAO_ENCONTRADO;
   if (!endereco.ativo) return MSG_ENDERECO_INATIVO;
+  if (endereco.tipo === "devolucao" && ehDevolucao(nota)) return null;
   if (endereco.tipo !== "doca") return MSG_NAO_E_DOCA;
   return null;
+}
+
+// ---------- devolução de pedido (v75) ----------
+// Corte ou cancelamento com mercadoria já separada: quem estava com a caixa entrega ao estoque e nasce uma
+// ENTRADA PENDENTE, que o estoquista confere e armazena como uma nota. O "número" é o do pedido.
+export const TIPO_DEVOLUCAO = "Devolução";
+export const ehDevolucao = (nota) => nota?.tipo === TIPO_DEVOLUCAO;
+// como a nota aparece nas telas: "NF 48230" ou "DEV PV-10421"
+export const rotuloDaNota = (nota) => `${ehDevolucao(nota) ? "DEV" : "NF"} ${nota.numero}`;
+// número da entrada: o do pedido; a segunda devolução do mesmo pedido ganha "-2", e assim por diante
+export function numeroDaDevolucao(notas, pedido) {
+  const ja = notas.filter((n) => ehDevolucao(n) && (n.numero === pedido || n.numero.startsWith(`${pedido}-`))).length;
+  return ja ? `${pedido}-${ja + 1}` : pedido;
 }
 
 // armazenamento: sai de uma doca de recebimento OU da doca de devolução (o fluxo do estoquista é o mesmo)

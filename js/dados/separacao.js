@@ -82,11 +82,14 @@ export function pedidoDoServidor(p) {
     atual: 0,
     doca: p.doca ? { id: p.doca_id, codigo: p.doca, quando: fim, por: p.separador_nome || p.separador } : null,
     lote: p.lote || null, pos: p.posicao_lote || null,
+    // pedido do gestor (v75): corte/devolução que o separador ainda não confirmou
+    ocorrenciaPendente: !!p.ocorrencia_pendente, cancelado: p.cancelado || null,
     parte: p.pedido_pai ? { pai: p.pedido_pai, n: p.parte_numero, de: p.partes_total, ruas: p.parte_ruas, por: p.dividido_por } : null,
     itens: p.itens.map((i) => ({
       sku: i.produto, ean: i.codigos_de_barras[0] || "", eans: i.codigos_de_barras, desc: i.descricao, un: i.un,
       checkout: i.checkout, tipo: tipoDoProduto(i.descricao), end: i.endereco_codigo,
       qtd: i.qtd, sep: i.qtd_separada, status: i.status, motivo: i.motivo,
+      qtdPedida: i.qtd_pedida ?? i.qtd, devolver: i.qtd_devolver || 0,
     })),
   };
 }

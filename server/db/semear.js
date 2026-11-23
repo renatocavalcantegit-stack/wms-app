@@ -64,7 +64,7 @@ export async function semear(pool, { conferencia = false } = {}) {
 
   await emTransacao(pool, async (c) => {
     // começa do zero (a ordem não importa com CASCADE)
-    await c.query("TRUNCATE conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
+    await c.query("TRUNCATE devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
 
     await inserirLista(c, "usuarios", ["login text", "nome text", "perfil text", "pin_hash text"],
       USERS.map((u) => ({ login: u.login, nome: u.nome, perfil: u.perfil, pin_hash: gerarHash(u.pin) })));
@@ -115,9 +115,9 @@ export async function semear(pool, { conferencia = false } = {}) {
 
     // os itens já vêm na ordem da rota de separação; a posição na lista vira a sequência
     await inserirLista(c, "itens_pedido",
-      ["pedido_id text", "sequencia integer", "produto text", "endereco_codigo text", "qtd numeric", "qtd_separada numeric", "status text", "motivo text"],
+      ["pedido_id text", "sequencia integer", "produto text", "endereco_codigo text", "qtd numeric", "qtd_pedida numeric", "qtd_separada numeric", "status text", "motivo text"],
       pedidos.flatMap((o) => o.itens.map((i, n) => ({
-        pedido_id: o.id, sequencia: n + 1, produto: i.sku, endereco_codigo: i.end, qtd: i.qtd,
+        pedido_id: o.id, sequencia: n + 1, produto: i.sku, endereco_codigo: i.end, qtd: i.qtd, qtd_pedida: i.qtd,
         qtd_separada: i.sep || 0, status: i.status, motivo: i.motivo || "",
       }))));
 

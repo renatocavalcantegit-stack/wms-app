@@ -18,6 +18,8 @@ import { rota as rotaPeloId } from "./compartilhado/regras/rotas.js";
 import { cadastroDoCliente } from "./js/dados/clientes.js";
 import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } from "./js/dados/conferencia.js";
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
+import { confirmarNaSeparacao } from "./js/dados/ocorrencias.js";
+import { itensCortados } from "./compartilhado/regras/ocorrencias.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
@@ -178,9 +180,10 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     atualizarDoServidor();
   }
 
-  // ---------- o gestor mudou o pedido em outra tela (corte de item ou cancelamento) ----------
-  // Recarrega os pedidos e redesenha o que está aberto. O item cortado é pulado; pedido cancelado
-  // sem nada separado some; com algo separado, o separador termina e leva para a doca (a conferência devolve).
+  // ---------- o gestor mudou o pedido (corte de item ou cancelamento) ----------
+  // Recarrega os pedidos e redesenha o que está aberto. O item cortado é pulado; pedido cancelado sai da tela
+  // (o que já foi separado vira entrada no estoque: o separador entrega). Corte: o aviso "O gestor alterou o
+  // pedido" aparece e o separador confirma (v75). Demonstração: outra aba avisa; servidor: verificarAbertos.
   const visivel = (v) => !$("#" + v).hidden;
   function recarregarPorOutraTela() {
     if (!sess || sess.perfil !== "sep" || !sess.setor) return;
@@ -189,21 +192,92 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (id) {
       current = pedido(id);
       if (!current || current.status === "cancelado") {
-        current = null; renderHome(); show("viewHome"); toast("PEDIDO CANCELADO PELO GESTOR"); beep(false); return;
+        current = null; renderHome(); show("viewHome"); beep(false); vibrate([80, 50, 80]);
+        toast("PEDIDO CANCELADO PELO GESTOR · entregue o que já separou ao estoque"); return;
       }
-      if (!visivel("viewPick")) return;
-      if (current.cancelado) toast("PEDIDO CANCELADO PELO GESTOR · leve o que já separou para a doca");
-      return item().status === "pendente" ? renderPick() : next();
+      if (!visivel("viewPick") && !visivel("viewDoca")) return;
+      if (visivel("viewPick")) { if (item().status === "pendente") renderPick(); else next(); }
+      return mostrarPedidoDoGestor();
     }
     if (loteId) {
       lote = lotes.find((l) => l.id === loteId) || null;
       if (!lote) { renderHome(); show("viewHome"); return; }
       if (!visivel("viewPick")) return;
       const p = paradas()[lote.atual];
-      return p && !paradaConcluida(p) ? renderPick() : proximaParada(true);
+      if (p && !paradaConcluida(p)) renderPick(); else proximaParada(true);
+      return mostrarPedidoDoGestor();
     }
     if (visivel("viewHome")) renderHome();
   }
+
+  // ---------- pedido do gestor (v75) ----------
+  // O gestor cortou um item de um pedido que está com este separador: o aviso mostra o que mudou e ele confirma.
+  // Item ainda não separado: só é pulado. Já separado: ele tira da caixa e entrega ao estoque (vira entrada pendente).
+  const abertos = () => (current ? [current] : lote ? pedidosDoLote(lote) : []);
+  const comPedidoDoGestor = () => abertos().find((o) => o.ocorrenciaPendente && o.status !== "cancelado") || null;
+  function mostrarPedidoDoGestor() {
+    const o = comPedidoDoGestor();
+    if (!o) return false;
+    const itens = itensCortados(o.itens).concat(o.itens.filter((i) => i.devolver > 0 && !itensCortados([i]).length));
+    const devolver = itens.filter((i) => i.devolver > 0);
+    $("#sgTitulo").textContent = `${nomeDo(o)} · o gestor alterou`;
+    $("#sgSub").textContent = devolver.length
+      ? "Tire da caixa o que está em vermelho e entregue ao estoque."
+      : "O que foi cortado sai da sua lista.";
+    $("#sgItens").innerHTML = itens.map((i) => `<div class="line"><span class="line-addr">${i.end}</span>
+      <span class="line-desc">${esc(i.desc)}<small>${i.sku} · era ${fq(i.qtdPedida ?? i.qtd)}, agora ${fq(i.qtd)}</small></span>
+      <span class="line-q ${i.devolver > 0 ? "sp-devolver" : ""}">${i.devolver > 0 ? `devolver ${fq(i.devolver)}` : i.qtd === 0 ? "cortado" : fq(i.qtd)}</span></div>`).join("");
+    $("#sgOk").textContent = devolver.length ? "Tirei da caixa · vou entregar ao estoque" : "Ciente";
+    $("#sgOk").dataset.id = o.id;
+    openSheet("sheetGestor");
+    beep(false); vibrate([80, 50, 80]);
+    return true;
+  }
+  $("#sgOk").addEventListener("click", () => {
+    const o = pedido($("#sgOk").dataset.id);
+    closeSheets();
+    if (!o) return;
+    const r = confirmarNaSeparacao(o, user, { entrada: !sess?.token });
+    registrar("separacao.ocorrencia", { pedido: o.id });
+    save();
+    const un = r.saiu.reduce((t, x) => t + x.qtd, 0);
+    toast(un ? `${fq(un)} un. para entregar ao estoque · ${o.parte?.pai || o.id}` : "Corte confirmado");
+    if (mostrarPedidoDoGestor()) return; // outro pedido do lote também mudou
+    if (visivel("viewPick")) { if (lote) { const p = parada(); if (!p || paradaConcluida(p)) proximaParada(true); else renderPick(); } else if (item().status === "pendente") renderPick(); else next(); }
+  });
+
+  // Com servidor: o pedido aberto na tela não se atualiza sozinho (nunca mexe no que o separador está fazendo).
+  // A cada 15 s, se este aparelho não tem nada a enviar desse pedido, confere no servidor se o gestor mudou algo.
+  async function verificarAbertos() {
+    if (!sess?.token || sess.perfil !== "sep" || !sess.setor || baixando) return;
+    if (!visivel("viewPick") && !visivel("viewDoca")) return;
+    const comFila = new Set(acoesPendentes(sess.login).map((a) => a.dados.pedido));
+    const ids = abertos().map((o) => o.id).filter((id) => !comFila.has(id));
+    if (!ids.length) return;
+    baixando = true;
+    try {
+      const r = await baixarDoServidor(sess, setor());
+      if (!r.ok) return;
+      let mudou = false;
+      for (const id of ids) {
+        const s = r.pedidos.find((x) => x.id === id), l = pedido(id);
+        if (!s || !l) continue;
+        if (s.status === "cancelado" && l.status !== "cancelado") { Object.assign(l, { status: "cancelado", cancelado: s.cancelado }); mudou = true; continue; }
+        if (s.ocorrenciaPendente && !l.ocorrenciaPendente) {
+          // o corte do gestor: as quantidades e o que sai da caixa vêm do servidor
+          s.itens.forEach((si, n) => {
+            const li = l.itens[n];
+            if (!li || li.sku !== si.sku) return;
+            Object.assign(li, { qtd: si.qtd, qtdPedida: si.qtdPedida, devolver: si.devolver });
+            if (li.status === "pendente" && si.status === "cortado") li.status = "cortado";
+          });
+          l.ocorrenciaPendente = true; mudou = true;
+        }
+      }
+      if (mudou) { save(); recarregarPorOutraTela(); }
+    } finally { baixando = false; }
+  }
+  setInterval(verificarAbertos, 15_000);
   ["exp", "mont"].forEach((s) => aoMudarPedidos(s, () => s === setor() && recarregarPorOutraTela()));
 
   // ---------- lista do servidor (Fase 1d) ----------
@@ -433,7 +507,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       : i.status === "falta" ? `<span class="dot falta">!</span>` : `<span class="dot"></span>`;
     return `<button class="line ${cur ? "current" : ""}" ${idx != null ? `data-idx="${idx}"` : ""}>
       ${dot}<span class="line-addr">${i.end}</span>
-      <span class="line-desc">${esc(i.desc)}<small>${i.sku}${i.status === "falta" ? " · " + esc(i.motivo) : ""}</small></span>
+      <span class="line-desc">${esc(i.desc)}<small>${i.sku}${i.status === "falta" ? " · " + esc(i.motivo) : ""}${i.devolver > 0 ? ` · devolver ${fq(i.devolver)} ao estoque` : ""}</small></span>
       <span class="line-q">${i.status === "pendente" ? fq(i.qtd) : fq(i.sep) + "/" + fq(i.qtd)}</span>
     </button>`;
   }
@@ -470,8 +544,9 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (o.itens[o.atual || 0]?.status !== "pendente") o.atual = Math.max(0, o.itens.findIndex((i) => i.status === "pendente"));
     current = o; lote = null; save(); closeSheets();
     // todos os itens já resolvidos (saiu do app na hora de ler a doca): vai direto para a doca
-    if (!o.itens.some((i) => i.status === "pendente")) return abrirDoca({ pedidos: [o.id], lote: null });
+    if (!o.itens.some((i) => i.status === "pendente")) { abrirDoca({ pedidos: [o.id], lote: null }); mostrarPedidoDoGestor(); return; }
     show("viewPick"); renderPick(true);
+    mostrarPedidoDoGestor();
   });
 
   function criarLoteEIniciar() {
@@ -658,6 +733,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     const code = raw.trim().toUpperCase();
     if (!code) return;
     $("#scanInput").value = "";
+    if (mostrarPedidoDoGestor()) return; // primeiro confirma o que o gestor mudou
     if (etapa() === "endereco") return lerEndereco(code);
     if (etapa() === "produto") return lerProduto(code);
     setMsg("Produto já confirmado · digite a quantidade"); focarQuantidade();
@@ -904,6 +980,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       const f = $("#docaForm"); f.classList.remove("err"); void f.offsetWidth; f.classList.add("err");
       return;
     }
+    if (mostrarPedidoDoGestor()) return; // primeiro confirma o que o gestor mudou
     beep(true);
     concluir({ id: end.id, codigo: end.codigo });
   });

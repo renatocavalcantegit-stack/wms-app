@@ -217,6 +217,8 @@ input { font: inherit; color: inherit; }
 /* Separação: item que o gestor zerou antes de separar */
 .line.sp-cortado { opacity: .5; }
 .line.sp-cortado .line-desc { text-decoration: line-through; }
+/* pedido do gestor (v75): o que sai da caixa e volta ao estoque */
+.line-q.sp-devolver { color: var(--red); font-weight: 800; white-space: nowrap; }
 .line-addr { font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 12px; background: var(--bg); padding: 6px 8px; border-radius: 8px; white-space: nowrap; }
 .line-desc { flex: 1; min-width: 0; font-size: 14px; }
 .line-desc small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }

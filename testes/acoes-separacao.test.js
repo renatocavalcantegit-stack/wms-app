@@ -11,7 +11,7 @@ const acao = (tipo, dados, login = "ana") => ({ tipo, dados: { pedido: "PV-1", .
 const avaliar = (a, p = pedido(), i = itens([10], [5])) => avaliarAcaoDaSeparacao(a, p, i);
 
 test("os quatro tipos de ação da Separação", () => {
-  assert.deepEqual(TIPOS_DA_SEPARACAO, ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir"]);
+  assert.deepEqual(TIPOS_DA_SEPARACAO, ["separacao.iniciar", "separacao.item", "separacao.concluir", "separacao.reabrir", "separacao.ocorrencia"]);
 });
 
 test("pedido que não existe: recusada", () => {
@@ -129,4 +129,45 @@ test("separar novamente só vale para pedido concluído", () => {
 
 test("tipo que esta regra não conhece: devolve null (quem chamou decide)", () => {
   assert.equal(avaliar(acao("separacao.leitura")), null);
+});
+
+// ---------- pedido do gestor (v75) ----------
+const emSeparacao = pedido({ status: "andamento", separador: "ana" });
+const cortado = (extra) => ({ sequencia: 1, qtd: 3, qtdPedida: 5, qtdSeparada: 0, devolver: 0, status: "pendente", motivo: "", ...extra });
+
+test("físico vence: o gestor cortou de 5 para 3 e o separador (sem rede) separou 5 — aceita e 2 viram a devolver", () => {
+  const r = avaliar(acao("separacao.item", { sequencia: 1, qtdSeparada: 5, status: "ok" }), emSeparacao, [cortado()]);
+  assert.deepEqual(r, { resultado: "aplicada", pedido: { ocorrenciaPendente: true },
+    itens: [{ sequencia: 1, qtdSeparada: 5, devolver: 2, status: "ok", motivo: "" }] });
+  // separou exatamente a quantidade nova: nada a devolver
+  assert.deepEqual(avaliar(acao("separacao.item", { sequencia: 1, qtdSeparada: 3, status: "ok" }), emSeparacao, [cortado()]).itens[0].devolver, 0);
+  // item zerado pelo gestor e separado mesmo assim: tudo volta
+  const zerado = cortado({ qtd: 0, status: "cortado" });
+  assert.deepEqual(avaliar(acao("separacao.item", { sequencia: 1, qtdSeparada: 5, status: "ok" }), emSeparacao, [zerado]).itens[0],
+    { sequencia: 1, qtdSeparada: 5, devolver: 5, status: "ok", motivo: "" });
+  // acima da quantidade original continua recusado
+  assert.match(avaliar(acao("separacao.item", { sequencia: 1, qtdSeparada: 6, status: "ok" }), emSeparacao, [cortado()]).motivo, /ACIMA DO PEDIDO \(5\)/);
+});
+
+test("confirmar o pedido do gestor: o que tinha que sair da caixa vira entrada pendente", () => {
+  const itensDoPedido = [cortado({ qtdSeparada: 5, devolver: 2, status: "ok" }), { sequencia: 2, qtd: 4, qtdPedida: 4, qtdSeparada: 4, devolver: 0, status: "ok" },
+    cortado({ sequencia: 3, qtd: 0, qtdSeparada: 6, devolver: 6, status: "ok", qtdPedida: 6 })];
+  assert.deepEqual(avaliar(acao("separacao.ocorrencia", {}), emSeparacao, itensDoPedido), {
+    resultado: "aplicada", pedido: { ocorrenciaPendente: false },
+    itens: [{ sequencia: 1, qtdSeparada: 3, devolver: 0, status: "ok", motivo: "" }, { sequencia: 3, qtdSeparada: 0, devolver: 0, status: "cortado", motivo: "" }],
+    devolverAgora: [{ sequencia: 1, qtd: 2 }, { sequencia: 3, qtd: 6 }],
+  });
+  // só corte simples (nada separado): só apaga o aviso
+  assert.deepEqual(avaliar(acao("separacao.ocorrencia", {}), emSeparacao, [cortado()]), { resultado: "aplicada", pedido: { ocorrenciaPendente: false }, itens: [] });
+  assert.equal(avaliar(acao("separacao.ocorrencia", {}, "bia"), emSeparacao, [cortado()]).resultado, "conflito");
+});
+
+test("pedido cancelado pelo gestor: nada mais muda; o que foi pego sem rede volta ao estoque", () => {
+  const cancelado = pedido({ status: "cancelado", separador: "ana" });
+  const it = [{ sequencia: 1, qtd: 0, qtdPedida: 5, qtdSeparada: 0, devolver: 0, status: "cortado" }];
+  assert.deepEqual(avaliar(acao("separacao.item", { sequencia: 1, qtdSeparada: 5, status: "ok" }), cancelado, it),
+    { resultado: "aplicada", pedido: {}, itens: [], devolverAgora: [{ sequencia: 1, qtd: 5 }] });
+  assert.match(avaliar(acao("separacao.concluir", { doca: "D1" }), cancelado, it).motivo, /O GESTOR CANCELOU O PV-1/);
+  assert.match(avaliar(acao("separacao.iniciar"), cancelado, it).motivo, /O GESTOR CANCELOU/);
+  assert.equal(avaliar(acao("separacao.ocorrencia", {}), cancelado, it).resultado, "aplicada");
 });

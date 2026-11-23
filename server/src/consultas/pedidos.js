@@ -23,7 +23,7 @@ export async function listarPedidos(pool, { setor, status = null }) {
 // (o coletor confere o bipe no próprio aparelho, mesmo sem rede).
 export const COLUNAS_DO_ITEM = `
   i.pedido_id, i.sequencia, i.produto, pr.descricao, pr.un, pr.checkout, i.endereco_codigo,
-  i.qtd, i.qtd_separada, i.status, i.motivo,
+  i.qtd, i.qtd_separada, i.status, i.motivo, i.qtd_pedida, i.qtd_devolver,
   coalesce(
     (SELECT array_agg(e.codigo ORDER BY e.qtd, e.id) FROM embalagens e
       WHERE e.produto = i.produto AND e.codigo IS NOT NULL),
@@ -71,6 +71,7 @@ export async function pedidosDoColetor(pool, setor, login) {
       WHERE p.setor = $1
         AND ((p.designado_para = $2 AND p.status <> 'concluido')
           OR (p.separador = $2 AND (p.status <> 'concluido' OR p.fim >= current_date)))
+        AND (p.status <> 'cancelado' OR (p.cancelado->>'quando')::timestamptz >= current_date)
       ORDER BY p.ordem_fila NULLS LAST, p.chegada, p.id`,
     [setor, login],
   )).rows;

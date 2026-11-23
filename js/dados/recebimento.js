@@ -7,7 +7,7 @@ import { lerEstoque, gravarEstoque, enderecoPorId, somarSaldo, saldoNoEndereco, 
 import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   validarDoca, validarConferencia, validarArmazenamento, distribuirArmazenamento, pendenteNaDoca, pendenteDaConferencia,
-  codigoDoVolume, separarNotasImportadas,
+  codigoDoVolume, separarNotasImportadas, TIPO_DEVOLUCAO, numeroDaDevolucao,
 } from "../../compartilhado/regras/recebimento.js";
 
 // dia de hoje no formato AAAA-MM-DD (é a "data de armazenagem" da conferência)
@@ -31,7 +31,7 @@ export const volumePorCodigo = (db, codigo) => db.volumes.find((v) => v.codigo =
 export function conferir({ notaId, produto, qtd, volumes, docaId }) {
   const db = lerEstoque();
   const nota = notaPorId(db, notaId);
-  const erroDoca = validarDoca(enderecoPorId(db, docaId));
+  const erroDoca = validarDoca(enderecoPorId(db, docaId), nota);
   if (erroDoca) return { ok: false, msg: erroDoca };
   const erro = validarConferencia(nota, { produto, qtd, volumes }, db.conferencias);
   if (erro) return { ok: false, msg: erro };
@@ -90,6 +90,24 @@ export function cancelarPendente(notaId, produto) {
   const db = lerEstoque();
   for (const c of db.conferencias.filter((x) => x.notaId === notaId && x.produto === produto)) c.cancelado = arredondarQtd(c.cancelado + pendenteDaConferencia(c));
   gravarEstoque(db);
+}
+
+// ---------- devolução de pedido (v75) ----------
+// O que saiu de um pedido (corte ou cancelamento) vira uma entrada pendente, igual a uma nota:
+// o estoquista confere bipando, lê a doca e depois armazena. itens = [{ produto, qtd }]
+export function criarDevolucao({ pedido, itens, entreguePor }) {
+  const soma = new Map();
+  itens.filter((i) => i.qtd > 0).forEach((i) => soma.set(i.produto, arredondarQtd((soma.get(i.produto) || 0) + i.qtd)));
+  if (!soma.size) return null;
+  const db = lerEstoque();
+  const nota = {
+    id: db.proximoId.nota++, numero: numeroDaDevolucao(db.notas, pedido), pedido, tipo: TIPO_DEVOLUCAO, finalizada: false,
+    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(),
+    itens: [...soma].map(([produto, qtd]) => ({ produto, qtd })),
+  };
+  db.notas.push(nota);
+  gravarEstoque(db);
+  return nota;
 }
 
 // ---------- notas do ERP (simulado) ----------

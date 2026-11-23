@@ -27,6 +27,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 005 fila do separador, rota e aguardando no pedido; aparelho e fim da sessão (login único)
                             · 006 passo do item da vez (a bolinha do item na gaveta da Gestão)
                             · 007 conferência: um registro por pedido (fila do conferente, volumes, observação) e o que foi contado
+                            · 008 ocorrências do pedido (corte e cancelamento) e devoluções ao estoque (entradas pendentes)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -44,6 +45,8 @@ src/consultas/              TODO o SQL, separado por assunto
   quadro-conferencia.js     o quadro da Conferência: caixa, filas dos conferentes, mover e pular conferência (Montagem)
   painel.js                 o painel Ao vivo da Gestão: pedidos, separadores e ações não aplicadas (em standby)
   quadro.js                 o quadro da Separação: caixa de entrada, fila de cada separador, rota e lotes
+  ocorrencias.js            corte de item e cancelamento do pedido (aba Ocorrências da Gestão)
+  devolucoes.js             a devolução ao estoque: entrada pendente "DEV PV-…" com o que saiu da caixa
 src/rotas-api/              os endereços da API (validam a entrada e chamam as consultas)
 src/tempo-real.js           canal SSE: avisa as telas conectadas na hora
 src/telas.js                entrega as telas do app (só a lista do que é do app: nunca server/, .env, .git...)
@@ -142,6 +145,9 @@ npm test
 | `GET /api/quadro/conferencia?setor=exp` | coordenador do setor | `{ agora, pedidos, conferentes }`: o que ainda não foi conferido (caixa e filas, com o `andamento`: itens e unidades conferidos) e todos os conferentes, com o contato e quantos conferiram hoje. Na Montagem, também os entregues à montagem hoje |
 | `POST /api/quadro/conferencia/mover` | coordenador do setor | `{ setor, pedido, para, ordem }`: muda o pedido de fila (`para` = login do conferente, `null` = caixa). **409** em conferência |
 | `POST /api/quadro/conferencia/pular` | coordenador da Montagem | `{ setor: "mont", pedidos }` → `{ feitos, erros }`: dispensa a conferência (status `dispensada`); o pedido vai direto para a montagem |
+| `GET /api/ocorrencias?setor=exp` | coordenador do setor | `{ ocorrencias }`: o histórico do setor, mais novas primeiro (até 200) |
+| `GET /api/ocorrencias/pedido?setor=exp&pedido=PV-…` | coordenador do setor | `{ pedido }`: etapa, itens (pedido, na caixa, a devolver) e quem está com ele. **404** não existe |
+| `POST /api/ocorrencias` | coordenador do setor | `{ setor, pedido, tipo: "corte" ou "cancelamento", cortes: { produto: novaQtd }, motivo, referencia }` → `{ ocorrencia, pedido }`. **409** quando a etapa não deixa (ex.: já embarcado), **400** sem motivo/referência ou corte inválido |
 | `GET /api/dispositivos` | coordenador | `{ agora, esta, dispositivos }`: os aparelhos conectados (o token nunca sai do servidor) |
 | `POST /api/dispositivos/:id/desconectar` | coordenador | encerra a sessão do aparelho (coletor perdido ou quebrado) |
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
@@ -246,7 +252,7 @@ e manda tudo quando a rede volta. A lista é baixada ao voltar para a fila, a ca
 (`juntarConferencia` em `compartilhado/regras/juntar-pedidos.js`: pedido com ação na fila fica como está no posto).
 O que muda com cada ação é decidido por `compartilhado/regras/acoes-conferencia.js`.
 
-Ainda só no posto: devolução de corte/cancelamento (F9) e o envio da observação dos volumes ao Sankhya.
+Ainda só no posto: o envio da observação dos volumes ao Sankhya.
 Na Gestão (v67), a aba **Conferência** é o quadro de verdade (`gestao-conferencia-real.js`, regras em
 `compartilhado/regras/fila-do-conferente.js`): arrastar para a fila do conferente, ao vivo o que ele já conferiu,
 e na Montagem "Pular conferência" (status `dispensada`). Travas no servidor: em conferência não muda de fila;
@@ -254,6 +260,29 @@ conferido ou dispensado não volta. O posto que estava com um pedido dispensado 
 ("O COORDENADOR DISPENSOU A CONFERÊNCIA DO …") e volta para a fila.
 O coletor que mandou "separar novamente" de um pedido que já está sendo conferido recebe a recusa e volta para a lista.
 Para testar dois postos, a demonstração tem um segundo conferente (`conferente2`, PIN em `js/sessao.js`).
+
+## Ocorrências e devoluções (v75)
+
+O gestor registra na aba **Ocorrências** da Gestão o corte de item ou o cancelamento do pedido, com motivo e a
+referência do Sankhya (`POST /api/ocorrencias`). Quem decide o que muda é `compartilhado/regras/ocorrencias.js`
+(`planejarOcorrencia`), a mesma regra da demonstração. **Quem está com a mercadoria na mão devolve**:
+
+| Etapa | Quem devolve | Como |
+|---|---|---|
+| Na fila (não começou) | ninguém | o corte vale na hora; nada saiu da prateleira |
+| Em separação | separador | `pedidos.ocorrencia_pendente` e `itens_pedido.qtd_devolver`; o coletor percebe (a cada 15 s), mostra o aviso e manda `separacao.ocorrencia` |
+| Separado aguardando conferência | gestor | a devolução nasce no registro |
+| Em conferência | conferente | o posto mostra "Sai da caixa"; o F9 tira bipando e manda `conferencia.devolver`. Finalizar com algo a devolver é recusado |
+| Conferido | gestor | a devolução nasce no registro e a conferência volta para `aguardando` (`reaberto`): refazer volumes e etiquetas |
+| Cancelamento (qualquer etapa) | gestor | tudo zera; o que estava na caixa vira devolução, entregue por quem está com ela |
+
+Cada devolução é uma linha em `devolucoes` (+ `devolucao_itens`) com número "PV-10421" (a segunda do mesmo pedido,
+"PV-10421-2"), origem, quem entregou e status `pendente`: é a **entrada pendente** que o Estoque vai conferir quando
+o Estoque vier para o servidor. `itens_pedido.qtd_separada` é o que está fisicamente na caixa; `qtd_devolver` é o que
+ainda tem que sair; a conferência espera `qtd_separada − qtd_devolver`. `qtd_pedida` guarda a quantidade antes do
+primeiro corte. **Físico vence**: o separador sem rede que separou a quantidade antiga tem a separação aceita (até a
+quantidade original) e o que passou vira "a devolver". Devolução de pedido já embarcado (o cliente devolveu) fica para
+a fase do Estoque.
 
 ## Quadro da Separação e fila do separador (Fase 1e)
 

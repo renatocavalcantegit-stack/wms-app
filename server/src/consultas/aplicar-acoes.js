@@ -3,13 +3,15 @@
 // Aqui só se lê o pedido, chama a regra e grava o resultado.
 import { avaliarAcaoDaSeparacao } from "../../../compartilhado/regras/acoes-separacao.js";
 import { aplicarAcaoDaConferencia, entrarNaConferencia, sairDaConferencia, conferenciaDoPedido } from "./aplicar-conferencia.js";
+import { criarDevolucao } from "./devolucoes.js";
 
 // quais perfis podem mandar cada grupo de ações
 const PERFIS_DA_SEPARACAO = ["sep"];
 
 // nome do campo na regra → coluna no banco
-const COLUNAS_DO_PEDIDO = { status: "status", separador: "separador", inicio: "inicio", fim: "fim", doca: "doca", lote: "lote", posicaoLote: "posicao_lote" };
-const COLUNAS_DO_ITEM = { qtdSeparada: "qtd_separada", status: "status", motivo: "motivo" };
+const COLUNAS_DO_PEDIDO = { status: "status", separador: "separador", inicio: "inicio", fim: "fim", doca: "doca", lote: "lote", posicaoLote: "posicao_lote",
+  ocorrenciaPendente: "ocorrencia_pendente" };
+const COLUNAS_DO_ITEM = { qtdSeparada: "qtd_separada", status: "status", motivo: "motivo", devolver: "qtd_devolver" };
 
 // monta "coluna1 = $2, coluna2 = $3" a partir das mudanças (os valores vão separados, nunca dentro do SQL)
 function montarSet(mudancas, colunas, primeiroParametro) {
@@ -36,8 +38,11 @@ export async function aplicarAcao(conexao, usuario, acao) {
   )).rows[0] || null;
   // separar novamente só enquanto ninguém começou a conferir (pedido dividido: a conferência é a do pedido original)
   if (pedido && acao.tipo === "separacao.reabrir") pedido.statusConferencia = (await conferenciaDoPedido(conexao, pedido.pedidoPai || pedido.id))?.status ?? null;
+  // qtdPedida/devolver (v75): o corte do gestor e o que ainda tem que sair da caixa
   const itens = pedido
-    ? (await conexao.query("SELECT sequencia, qtd, status FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia", [pedidoId])).rows
+    ? (await conexao.query(
+      `SELECT sequencia, produto, qtd, status, motivo, qtd_separada AS "qtdSeparada", qtd_pedida AS "qtdPedida", qtd_devolver AS devolver
+         FROM itens_pedido WHERE pedido_id = $1 ORDER BY sequencia`, [pedidoId])).rows
     : [];
 
   const r = avaliarAcaoDaSeparacao({ ...acao, login: usuario.login }, pedido, itens);
@@ -51,6 +56,14 @@ export async function aplicarAcao(conexao, usuario, acao) {
   for (const { sequencia, ...mudancas } of r.itens) {
     const { set, valores } = montarSet(mudancas, COLUNAS_DO_ITEM, 3);
     await conexao.query(`UPDATE itens_pedido SET ${set} WHERE pedido_id = $1 AND sequencia = $2`, [pedidoId, sequencia, ...valores]);
+  }
+  // v75: o que saiu da caixa (o separador confirmou o pedido do gestor, ou pegou sem rede um item de pedido cancelado)
+  // vira entrada pendente no estoque, entregue por ele
+  if (r.devolverAgora?.length) {
+    await criarDevolucao(conexao, {
+      pedido: pedido.pedidoPai || pedido.id, setor: pedido.setor, origem: "separador", entreguePor: usuario.login,
+      itens: r.devolverAgora.map((x) => ({ produto: itens.find((i) => i.sequencia === x.sequencia).produto, qtd: x.qtd })),
+    });
   }
   // Fase 2: o pedido separado entra na caixa de entrada da conferência; separado de novo, sai de lá
   if (acao.tipo === "separacao.concluir" && r.pedido.status === "concluido") await entrarNaConferencia(conexao, pedido);

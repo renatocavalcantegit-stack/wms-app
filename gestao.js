@@ -782,7 +782,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       const b = $("#board");
       if (reset || !b.querySelector(".oc-wrap")) {
         b.classList.add("list");
-        b.innerHTML = telaOcorrencias(SETOR, { usuario: sess.nome, toast });
+        b.innerHTML = telaOcorrencias(SETOR, { usuario: sess.nome, toast, sess });
       }
       renderTop(); return;
     }

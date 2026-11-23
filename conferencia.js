@@ -12,11 +12,9 @@ import { juntarConferencia } from "./compartilhado/regras/juntar-pedidos.js";
 import { sobrasDaConferencia } from "./compartilhado/regras/acoes-conferencia.js";
 import { partesEmSeparacao, itemEmEspera, msgAguardandoPartes, msgItemEmEspera, rotuloDasPartes } from "./compartilhado/regras/partes-da-conferencia.js";
 import { somDePedidoNovo } from "./js/som.js";
-import { registrarDevolucao } from "./js/dados/movimentacao.js";
-import { lerEstoque } from "./js/dados/estoque.js";
-import { acharEndereco } from "./compartilhado/regras/enderecos.js";
+import { devolverNaConferencia } from "./js/dados/ocorrencias.js";
 import { ehAguardando, ehPrioridade } from "./compartilhado/regras/aguardando.js";
-import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, validarDocaDevolucao, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
+import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, MOTIVOS_OCORRENCIA } from "./compartilhado/regras/ocorrencias.js";
 import { Etiqueta } from "./etiqueta.js";
 import { lerQuantidade, quantidadePositiva, arredondarQtd as arr, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
 import { $, $$, esc } from "./js/util.js";
@@ -125,8 +123,8 @@ import { $, $$, esc } from "./js/util.js";
       const faltaSep = o.itens.some((i) => i.status === "falta");
       const espera = partesEmSeparacao(o.partes);
       const emSep = espera.length ? `Parte${espera.length > 1 ? "s" : ""} ${rotuloDasPartes(espera)} em separação` : "";
-      const tag = o.cancelado ? `<span class="tag div">Cancelado · devolver</span>`
-        : o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">Reaberto pelo gestor</span>`
+      const tag = o.conf.reaberto && o.conf.status === "aguardando" ? `<span class="tag parcial">Reaberto pelo gestor · refazer volumes</span>`
+        : o.conf.status === "andamento" && devolucaoPendente(o.itens, o.conf.postado) ? `<span class="tag div">Em conferência · devolver ao estoque</span>`
         : o.conf.status === "andamento" ? `<span class="tag andamento">Em conferência${emSep ? ` · ${emSep.toLowerCase()}` : ""}</span>`
         : emSep ? `<span class="tag parcial">${emSep}</span>`
         : o.conf.status === "conferido" ? `<span class="tag ok">Conferido${MONT ? " · p/ montagem" : ` · ${o.conf.volumes} vol.`}</span>`
@@ -408,9 +406,10 @@ import { $, $$, esc } from "./js/util.js";
     setMsg(`Última leitura estornada (${l.sku} −${fq(l.q)})`);
   }
 
-  // ---------- devolução (item cortado ou pedido cancelado pelo gestor) ----------
-  // F9 liga o modo devolução: cada bipe é uma unidade que SAI da caixa. Depois, o QR da doca de devolução
-  // registra a entrada no estoque (o estoquista armazena pelo Armazenamento, como uma nota).
+  // ---------- devolução (item cortado pelo gestor, v75) ----------
+  // F9 liga o modo devolução: cada bipe é uma unidade que SAI da caixa. Quando tudo saiu, o conferente entrega
+  // ao estoque e nasce a ENTRADA PENDENTE de devolução (o estoquista confere e armazena, como uma nota).
+  // Pedido cancelado não passa por aqui: o gestor cancela e a entrada nasce na hora (o pedido sai do posto).
   let devolvendo = false;
   const temDevolucao = (o) => o.itens.some((i) => (i.devolver || 0) > 0);
   const tirado = (o, sku) => (o.conf.devolvido || {})[sku] || 0;
@@ -419,16 +418,16 @@ import { $, $$, esc } from "./js/util.js";
   function renderDevolucao() {
     const box = $("#cfDev");
     if (!cur || !temDevolucao(cur)) { box.hidden = true; return; }
-    const ocorr = cur.cancelado || cur.conf.reaberto;
+    const ocorr = cur.conf.reaberto;
     const motivo = ocorr ? `${MOTIVOS_OCORRENCIA[ocorr.motivo] || ""} · Sankhya ${esc(ocorr.referencia)}` : "";
     const pend = devolucaoPendente(cur.itens, cur.conf.postado);
     box.hidden = false;
     box.className = "cf-dev" + (pend ? "" : " feito");
-    box.innerHTML = `<div class="cf-dev-top"><b>${cur.cancelado ? "Pedido cancelado · tudo sai da caixa" : "Sai da caixa (corte do gestor)"}</b>
+    box.innerHTML = `<div class="cf-dev-top"><b>Sai da caixa (corte do gestor) · entregue ao estoque</b>
       <span>${motivo}</span>
-      ${pend ? `<button id="btnDevolver" class="lb-btn">${devolvendo ? "Sair da devolução" : "Devolver"} <kbd>F9</kbd></button>` : `<span class="cf-dev-ok">Devolução registrada</span>`}</div>
+      ${pend ? `<button id="btnDevolver" class="lb-btn">${devolvendo ? "Sair da devolução" : "Devolver"} <kbd>F9</kbd></button>` : `<span class="cf-dev-ok">Entregue ao estoque</span>`}</div>
       ${cur.itens.filter((i) => i.devolver > 0).map((i) => `<div class="cf-dev-row"><b>${i.sku}</b><span>${esc(i.desc)}</span>
-        <span>tirar <b>${i.devolver}</b> · tirado <b>${tirado(cur, i.sku)}</b> · na doca <b>${postado(cur, i.sku)}</b></span></div>`).join("")}`;
+        <span>tirar <b>${fq(i.devolver)}</b> · tirado <b>${fq(tirado(cur, i.sku))}</b> · entregue <b>${fq(postado(cur, i.sku))}</b></span></div>`).join("")}`;
   }
   $("#cfDev").addEventListener("click", (e) => { if (e.target.closest("#btnDevolver")) alternarDevolucao(); });
 
@@ -475,15 +474,12 @@ import { $, $$, esc } from "./js/util.js";
     if (!cur || !devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Este pedido não tem nada a devolver nem excesso.", "err"); beep(false); return; }
     devolvendo = !devolvendo;
     document.body.classList.toggle("cf-devolvendo", devolvendo);
-    $("#scan").placeholder = devolvendo ? "Bipe o que SAI da caixa… depois o QR da doca de devolução" : "Bipe o produto…";
+    $("#scan").placeholder = devolvendo ? "Bipe o que SAI da caixa…" : "Bipe o produto…";
     setMsg(devolvendo ? "Modo devolução: bipe cada unidade que sai da caixa" : "Modo conferência", devolvendo ? "err" : "ok");
     renderDevolucao(); focusScan();
   }
 
   function lerNaDevolucao(code, q) {
-    // QR da doca de devolução (ID ou código R…): o que já saiu da caixa entra no estoque
-    const end = /^\d{5,}$/.test(code) || /^R\d+-P/i.test(code) ? acharEndereco(lerEstoque().enderecos, code) : null;
-    if (end) return levarParaDoca(end);
     const p = produto(code);
     if (!p) { setMsg("Código não cadastrado.", "err"); beep(false); errLast("Código não cadastrado", code); return; }
     const it = cur.itens.find((i) => i.sku === p.sku);
@@ -497,32 +493,25 @@ import { $, $$, esc } from "./js/util.js";
     const falta = faltaTirar(it, tirado(cur, p.sku));
     setLast({ label: `Saiu da caixa −${fq(r.qtd)}`, desc: p.desc, code: p.sku, conf: tirado(cur, p.sku), exp: it.devolver, kind: "ok" });
     const tudo = cur.itens.every((i) => faltaTirar(i, tirado(cur, i.sku)) === 0);
-    setMsg(tudo ? "Tudo separado · leia o QR da doca de devolução" : falta ? `Faltam ${fq(falta)} un. de ${p.sku} para tirar` : `${p.sku} completo`, "ok");
     beep(true);
+    if (tudo) return entregarAoEstoque();
+    setMsg(falta ? `Faltam ${fq(falta)} un. de ${p.sku} para tirar` : `${p.sku} completo`, "ok");
   }
 
-  function levarParaDoca(end) {
-    const erro = validarDocaDevolucao(end);
-    if (erro) { setMsg(erro, "err"); beep(false); return; }
+  // tudo o que o gestor cortou saiu da caixa: o conferente entrega ao estoque e nasce a entrada pendente
+  // (demonstração: no estoque deste aparelho · servidor: a ação "conferencia.devolver", que funciona sem rede)
+  function entregarAoEstoque() {
     const itens = cur.itens.map((i) => ({ produto: i.sku, qtd: faltaPostar(tirado(cur, i.sku), postado(cur, i.sku)) })).filter((i) => i.qtd > 0);
-    if (!itens.length) { setMsg("Nada tirado da caixa ainda. Bipe o que sai antes da doca.", "err"); beep(false); return; }
-    const r = registrarDevolucao({ pedido: cur.id, itens, docaId: end.id, usuario: user });
-    if (!r.ok) { setMsg(r.msg, "err"); beep(false); return; }
+    if (!itens.length) return;
+    if (SERVIDOR) registrar("conferencia.devolver", { pedido: cur.id, itens });
+    else devolverNaConferencia(SETOR, cur.id, itens, user);
     cur.conf.postado = { ...(cur.conf.postado || {}) };
-    itens.forEach((i) => (cur.conf.postado[i.produto] = (cur.conf.postado[i.produto] || 0) + i.qtd));
+    itens.forEach((i) => (cur.conf.postado[i.produto] = arr((cur.conf.postado[i.produto] || 0) + i.qtd)));
     save();
-    const pend = devolucaoPendente(cur.itens, cur.conf.postado);
-    if (!pend) { devolvendo = false; document.body.classList.remove("cf-devolvendo"); $("#scan").placeholder = "Bipe o produto…"; }
+    devolvendo = false; document.body.classList.remove("cf-devolvendo"); $("#scan").placeholder = "Bipe o produto…";
     renderItems(); renderTotals();
-    setMsg(`${itens.reduce((t, i) => t + i.qtd, 0)} un. na ${end.codigo}${pend ? " · ainda falta devolver" : cur.cancelado ? " · finalize para encerrar o pedido (F10)" : " · continue a conferência"}`, "ok");
-    beep(true);
-  }
-
-  // pedido cancelado: depois da devolução, encerra sem volumes nem etiquetas (não vai para o embarque)
-  function encerrarCancelado() {
-    Object.assign(cur.conf, { status: "cancelado", fim: Date.now(), conferente: user });
-    const id = cur.id;
-    save(); showQueue(); toast(`${id} encerrado como cancelado`);
+    setMsg(`${fq(arr(itens.reduce((t, i) => t + i.qtd, 0)))} un. fora da caixa · entregue ao estoque (entrada de devolução criada) · continue a conferência`, "ok");
+    toast(`Entregue ao estoque · DEV ${cur.id}`);
   }
 
   // o gestor mudou o pedido em outra tela: recarrega a fila e o pedido aberto
@@ -532,7 +521,7 @@ import { $, $$, esc } from "./js/util.js";
     db = load();
     if (!id) return renderQueue();
     const o = db.orders.find((x) => x.id === id);
-    if (!o || o.conf.status === "cancelado") { showQueue(); toast(`${id} cancelado pelo gestor`); return; }
+    if (!o || o.conf.status === "cancelado") { closeModal(); showQueue(); toast(`${id} CANCELADO PELO GESTOR · entregue o que está na caixa ao estoque`); beep(false); return; }
     cur = o;
     renderItems(); renderTotals();
     setMsg("O gestor alterou este pedido", "err"); beep(false);
@@ -554,7 +543,6 @@ import { $, $$, esc } from "./js/util.js";
     if (!cur) return;
     // o que o gestor cortou tem que sair da caixa e entrar na doca de devolução antes de fechar
     if (devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Faça a devolução antes de finalizar (F9).", "err"); beep(false); return; }
-    if (cur.cancelado) return encerrarCancelado();
     if (partesEmSeparacao(cur.partes).length) { setMsg(msgAguardandoPartes(cur.partes), "err"); beep(false); return; }
     if (sobras(cur).length) { setMsg("Retire o excesso do volume antes de finalizar (F9).", "err"); beep(false); return; }
     fin = { o: cur, fix: false, vol: 0 };
@@ -892,7 +880,7 @@ import { $, $$, esc } from "./js/util.js";
   const ATUALIZAR_LISTA_MS = 30_000;
   let baixando = false, primeiraLista = true; // a primeira lista não toca o som
   async function atualizarDoServidor() {
-    if (SERVIDOR && cur && !baixando && partesEmSeparacao(cur.partes).length) return atualizarPartes();
+    if (SERVIDOR && cur && !baixando) return atualizarAberto();
     const pode = () => !cur && !modal;
     if (!SERVIDOR || baixando || !pode()) return;
     baixando = true;
@@ -913,19 +901,40 @@ import { $, $$, esc } from "./js/util.js";
       renderQueue();
     } finally { baixando = false; }
   }
-  // pedido dividido aberto (v72): a parte que faltava terminou? os itens dela entram nesta mesma tela,
-  // e o que o conferente já contou fica como está
-  async function atualizarPartes() {
+  // O pedido aberto na tela (o que o conferente já contou fica como está):
+  //   pedido dividido (v72): a parte que faltava terminou? os itens dela entram nesta mesma tela
+  //   corte do gestor (v75): o que tem que sair da caixa aparece (F9); cancelado: o pedido sai do posto
+  // "pendente" = o que ainda falta sair da caixa (no servidor é o "devolver"; aqui, devolver − entregue)
+  const pendentesDo = (o) => o.itens.map((i) => `${i.sku}:${i.qtd}:${i.sep}:${arr((i.devolver || 0) - ((o.conf.postado || {})[i.sku] || 0))}`).join("|");
+  async function atualizarAberto() {
     baixando = true;
     try {
       const r = await baixarConferencia(sess, SETOR);
       const s = r.ok && cur && r.pedidos.find((x) => x.id === cur.id);
       if (!s) return;
-      if (partesEmSeparacao(s.partes).length === partesEmSeparacao(cur.partes).length) return;
+      if (s.conf.status === "cancelado") {
+        const id = cur.id;
+        db.orders = db.orders.filter((o) => o.id !== id); save();
+        closeModal(); showQueue(); beep(false);
+        toast(`${id} CANCELADO PELO GESTOR · entregue o que está na caixa ao estoque`);
+        return;
+      }
+      // a devolução deste pedido ainda está na fila de envio: o servidor ainda não sabe que saiu da caixa
+      const devolucaoNaFila = acoesPendentes(sess.login).some((a) => a.tipo === "conferencia.devolver" && a.dados.pedido === cur.id);
+      const chegouParte = partesEmSeparacao(s.partes).length !== partesEmSeparacao(cur.partes).length;
+      const gestorMudou = !devolucaoNaFila && pendentesDo(s) !== pendentesDo(cur);
+      if (!chegouParte && !gestorMudou) return;
       Object.assign(cur, { itens: s.itens, partes: s.partes, operador: s.operador, fim: s.fim });
+      if (gestorMudou) Object.assign(cur.conf, { devolvido: {}, postado: {}, reaberto: s.conf.reaberto || cur.conf.reaberto });
       s.itens.forEach((i) => { if (!(i.sku in cur.conf.itens)) cur.conf.itens[i.sku] = 0; });
       save(); renderItems(); renderTotals();
-      $("#oSub").innerHTML = `${esc(cur.cidade)} · separado por ${esc(cur.operador || "—")} · ${cur.itens.length} itens · pegar nas docas ${docasDo(cur)}`;
+      $("#oSub").innerHTML = `${esc(cur.cidade)} · separado por ${esc(cur.operador || "—")} · ${cur.itens.length} itens · ${cur.partes?.length ? "pegar nas docas " : "pegar na doca "}${docasDo(cur)}`;
+      if (gestorMudou && devolucaoPendente(cur.itens, cur.conf.postado)) {
+        setMsg("O gestor cortou item deste pedido · tire da caixa (F9) e entregue ao estoque", "err"); beep(false);
+        toast(`${cur.id}: o gestor alterou o pedido`);
+        return;
+      }
+      if (gestorMudou) { setMsg("O gestor alterou este pedido", "err"); beep(false); return; }
       const falta = partesEmSeparacao(cur.partes);
       setMsg(falta.length ? `Chegou mais uma parte · ${msgAguardandoPartes(cur.partes)}` : "Todas as partes chegaram · confira e finalize (F10)", "ok");
       somDePedidoNovo(); toast(`${cur.id}: chegou mais uma parte`);
@@ -933,6 +942,8 @@ import { $, $$, esc } from "./js/util.js";
   }
   if (SERVIDOR) {
     setInterval(atualizarDoServidor, ATUALIZAR_LISTA_MS);
+    // com um pedido aberto, confere mais vezes (o gestor pode ter cortado ou cancelado)
+    setInterval(() => { if (cur && !modal) atualizarDoServidor(); }, 15_000);
     window.addEventListener("online", atualizarDoServidor);
   }
 

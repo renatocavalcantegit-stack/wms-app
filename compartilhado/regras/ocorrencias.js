@@ -8,9 +8,9 @@
 // Ideia central: cada item tem
 //   qtd      = quanto o cliente quer agora (cai com o corte)
 //   mantido  = quanto, já separado, continua na caixa do pedido
-//   devolver = quanto, já separado, tem que SAIR da caixa e voltar ao estoque (pela doca de devolução)
+//   devolver = quanto, já separado, tem que SAIR da caixa e voltar ao estoque (vira entrada pendente no estoque)
 // O que ainda não foi separado só diminui a quantidade: não há o que devolver.
-// O que já foi separado e passou a sobrar vira "a devolver" e é tirado na conferência (bipando).
+// O que já foi separado e passou a sobrar sai da caixa pelas mãos de quem está com ela (ver planejarOcorrencia).
 import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd } from "./quantidade.js";
 
 export const MOTIVOS_OCORRENCIA = {
@@ -75,6 +75,86 @@ export function aplicarCorte({ qtd, mantido, devolver = 0 }, novaQtd) {
   const novoMantido = Math.min(mantido, novaQtd);
   return { qtd: novaQtd, mantido: novoMantido, devolver: arredondarQtd(devolver + (mantido - novoMantido)) };
 }
+
+// ---------- quem devolve (decisão de 23/11/2026) ----------
+// Quem está com a mercadoria na mão é quem devolve, e toda devolução vira uma ENTRADA PENDENTE no estoque.
+//   parte ainda não iniciada            → gestor (nada separado: só diminui)
+//   parte em separação                  → separador confirma no coletor (corte simples ou "devolver item")
+//   separada, aguardando a conferência  → gestor tira da caixa na doca (a entrada nasce na hora)
+//   em conferência                      → conferente tira da caixa bipando (F9) e entrega ao estoque
+//   conferida                           → gestor tira da caixa e o pedido volta para refazer volumes e etiquetas
+// Cancelamento: sempre o gestor; o que já saiu da prateleira vira entrada na hora, entregue por quem está com a caixa.
+export const QUEM_DEVOLVE = { gestor: "Gestor", separador: "Separador", conferente: "Conferente" };
+export function quemEstaComAParte({ statusSeparacao, statusConferencia = null }) {
+  if (statusSeparacao === "andamento") return "separador";
+  if (statusSeparacao === "concluido" && statusConferencia === "andamento") return "conferente";
+  return "gestor";
+}
+
+// O que a ocorrência muda, linha por linha (cada linha = um item de uma parte do pedido).
+// linhas = [{ chave, sku, qtd, sep, devolver, status, motivo, quem }]
+//   sep      = o que está na caixa (inclui o que ainda tem que sair)
+//   devolver = o que ainda tem que sair da caixa (pedido do gestor que o separador/conferente não confirmou)
+// tipo "corte": novas = { sku: novaQtd } (já validadas) · tipo "cancelamento": tudo vai a zero
+// Devolve:
+//   linhas     [{ chave, qtd, sep, devolver, status, motivo }] as que mudaram
+//   devolucoes { gestor|separador|conferente: [{ sku, qtd }] } entradas que nascem AGORA (entregue por quem)
+//   avisar     ["separador", "conferente"] quem tem que confirmar no aparelho
+//   resumo     [{ sku, de, para, devolver }] para o histórico
+export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
+  const mudou = [], devolucoes = {}, avisar = new Set(), resumo = new Map();
+  const somar = (quem, sku, qtd) => {
+    if (!(qtd > 0)) return;
+    const lista = (devolucoes[quem] ||= []);
+    const x = lista.find((d) => d.sku === sku);
+    if (x) x.qtd = arredondarQtd(x.qtd + qtd); else lista.push({ sku, qtd: arredondarQtd(qtd) });
+  };
+  const anotar = (sku, de, para, devolver) => {
+    const r = resumo.get(sku) || { sku, de: 0, para: 0, devolver: 0 };
+    r.de = arredondarQtd(r.de + de); r.para = arredondarQtd(r.para + para); r.devolver = arredondarQtd(r.devolver + devolver);
+    resumo.set(sku, r);
+  };
+  // a nova quantidade de um produto se distribui pelas linhas dele, na ordem
+  const restante = Object.fromEntries(Object.entries(novas).map(([sku, n]) => [sku, lerQuantidade(n)]));
+
+  for (const l of linhas) {
+    const sep = Number(l.sep) || 0, pend = Number(l.devolver) || 0, qtd = Number(l.qtd) || 0;
+    if (tipo === "cancelamento") {
+      if (!qtd && !sep) continue;
+      // tudo o que está na caixa volta ao estoque agora, entregue por quem está com ela
+      somar(l.quem, l.sku, sep);
+      mudou.push({ chave: l.chave, qtd: 0, sep: 0, devolver: 0, status: "cortado", motivo: "" });
+      anotar(l.sku, qtd, 0, sep);
+      continue;
+    }
+    if (!(l.sku in restante)) continue;
+    const nova = Math.min(restante[l.sku], qtd);
+    restante[l.sku] = arredondarQtd(restante[l.sku] - nova);
+    if (nova === qtd) continue;
+    const r = aplicarCorte({ qtd, mantido: arredondarQtd(sep - pend), devolver: pend }, nova);
+    let novoSep = sep, novoDev = r.devolver;
+    if (l.quem === "gestor") { somar("gestor", l.sku, r.devolver); novoSep = r.mantido; novoDev = 0; }
+    else avisar.add(l.quem);
+    let status = l.status, motivo = l.motivo || "";
+    if (r.qtd === 0 && arredondarQtd(novoSep - novoDev) === 0 && (status === "pendente" || novoSep === 0)) status = "cortado";
+    else if (status === "falta" && r.mantido >= r.qtd) { status = "ok"; motivo = ""; }
+    mudou.push({ chave: l.chave, qtd: r.qtd, sep: novoSep, devolver: novoDev, status, motivo });
+    anotar(l.sku, qtd, r.qtd, arredondarQtd(r.devolver - pend));
+  }
+  return { linhas: mudou, devolucoes, avisar: [...avisar], resumo: [...resumo.values()] };
+}
+
+// o separador (ou o conferente) confirmou: o que tinha que sair saiu da caixa e vai para o estoque
+export function confirmarDevolucaoDaLinha({ qtd, sep, devolver = 0, status, motivo = "" }) {
+  const novoSep = arredondarQtd((Number(sep) || 0) - (Number(devolver) || 0));
+  if (Number(qtd) === 0 && novoSep === 0) return { sep: 0, devolver: 0, status: "cortado", motivo: "" };
+  if (status === "falta" && novoSep >= Number(qtd)) return { sep: novoSep, devolver: 0, status: "ok", motivo: "" };
+  return { sep: novoSep, devolver: 0, status, motivo };
+}
+
+// o corte que o separador vê no aviso: itens com quantidade menor que a do pedido original
+// itens = [{ sku, desc, qtd, qtdPedida, devolver, status }]
+export const itensCortados = (itens) => itens.filter((i) => i.qtdPedida != null && Number(i.qtd) < Number(i.qtdPedida));
 
 // ---------- devolução na Conferência ----------
 // devolvido: unidades que o conferente já tirou da caixa (bipando) · postado: já entrou na doca de devolução

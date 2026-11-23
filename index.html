@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=74">
+  <link rel="stylesheet" href="styles.css?v=75">
 </head>
 <body>
 
@@ -415,6 +415,20 @@
     <button id="startGo" class="btn primary block">Iniciar separação</button>
   </div>
 
+  <!-- pedido do gestor (v75): corte ou devolução que o separador confirma -->
+  <div id="sheetGestor" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <div>
+        <p id="sgTitulo" class="sheet-title">O gestor alterou o pedido</p>
+        <p id="sgSub" class="muted"></p>
+      </div>
+      <span class="tag alta">Gestor</span>
+    </div>
+    <div id="sgItens" class="sheet-list"></div>
+    <button id="sgOk" class="btn primary block">Ciente</button>
+  </div>
+
   <div id="sheetList" class="sheet" hidden>
     <div class="sheet-grip"></div>
     <p id="listTitle" class="sheet-title">Itens do pedido</p>
@@ -468,6 +482,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=74"></script>
+  <script type="module" src="app.js?v=75"></script>
 </body>
 </html>

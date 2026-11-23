@@ -5,7 +5,7 @@ import { esc } from "./js/util.js";
 import { etiquetaVolumeHtml } from "./js/etiqueta-recebimento.js";
 import { produtoPorCodigo, enderecoPorId } from "./js/dados/estoque.js";
 import { notaPorId, volumesDoItem, cancelarPendente, importarNotasDoErp } from "./js/dados/recebimento.js";
-import { statusDaNota, resumoDaNota, resumoDoItem, STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO } from "./compartilhado/regras/recebimento.js";
+import { statusDaNota, resumoDaNota, resumoDoItem, STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, rotuloDaNota } from "./compartilhado/regras/recebimento.js";
 
 export const FILTROS_ENTRADA = { nf: "", fornecedor: "", de: "", ate: "", conferencia: "", divergencia: "", armazenamento: "" };
 
@@ -98,7 +98,7 @@ function lista(db, f) {
       <tbody>${itens.map(({ n, s }) => {
         const p = pilulasDoStatus(s);
         return `<tr data-nota="${n.id}">
-          <td><b class="ge-nf">${esc(n.numero)}</b></td><td>${esc(n.fornecedor.nome)} <small class="ge-cod">${n.fornecedor.codigo}</small></td>
+          <td><b class="ge-nf">${esc(n.numero)}</b></td><td>${esc(n.fornecedor.nome)} <small class="ge-cod">${n.fornecedor.codigo ?? ""}</small></td>
           <td>${dataBr(n.data)}</td><td>${esc(n.tipo)}</td><td class="r">${n.itens.length}</td>
           <td>${p.conferencia}</td><td>${p.divergencia}</td><td>${p.armazenamento}</td></tr>`;
       }).join("") || `<tr><td colspan="8" class="ge-vazio">Nenhuma nota com esses filtros.</td></tr>`}</tbody>
@@ -117,8 +117,8 @@ function detalhe(db, nota) {
   <div class="ge-head">
     <div>
       <button class="ge-voltar" data-voltarlista><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg> Entrada</button>
-      <h1>NF ${esc(nota.numero)}</h1>
-      <p class="ge-sub">${esc(nota.fornecedor.nome)} · fornecedor ${nota.fornecedor.codigo} · ${dataBr(nota.data)} · ${esc(nota.tipo)}</p>
+      <h1>${esc(rotuloDaNota(nota))}</h1>
+      <p class="ge-sub">${esc(nota.fornecedor.nome)}${nota.fornecedor.codigo != null ? ` · fornecedor ${nota.fornecedor.codigo}` : ""} · ${dataBr(nota.data)} · ${esc(nota.tipo)}</p>
     </div>
     <div class="ge-nota-st">
       <div><small>Conferência</small>${p.conferencia}</div>

@@ -53,7 +53,7 @@ async function montar(pool, conferencias) {
 }
 
 const COLUNAS = `c.pedido, c.setor, c.status, c.designado_para, c.ordem_fila, c.conferente, coalesce(u.nome, c.conferente) AS conferente_nome,
-  c.inicio, c.fim, c.posto, c.volumes, c.observacao, c.chegou_em`;
+  c.inicio, c.fim, c.posto, c.volumes, c.observacao, c.chegou_em, c.reaberto, c.cancelado`;
 
 // A lista do posto: só a FILA de quem pediu (o que o coordenador mandou para ele, na ordem do quadro),
 // o que ele está conferindo e o que conferiu hoje.
