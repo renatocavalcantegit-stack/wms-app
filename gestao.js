@@ -777,10 +777,11 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   function render(reset = false) {
     if (dragId) { pendingRender = true; return; }
     // aba Ocorrências: pedidos de verdade, fora da simulação. Só redesenha ao entrar nela
-    // (a simulação redesenha o quadro a cada passo e apagaria o que o gestor está digitando).
+    // (a simulação redesenha o quadro a cada passo e apagaria o que o gestor está digitando; o quadro real que
+    // termina de ligar também pede render(true): por isso aqui o "reset" não vale, a aba se atualiza sozinha).
     if (board === "ocorr") {
       const b = $("#board");
-      if (reset || !b.querySelector(".oc-wrap")) {
+      if (!b.querySelector(".oc-wrap")) {
         b.classList.add("list");
         b.innerHTML = telaOcorrencias(SETOR, { usuario: sess.nome, toast, sess });
       }

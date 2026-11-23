@@ -86,9 +86,11 @@ import { $, $$, esc } from "./js/util.js";
     if (c > i.sep) return "excesso";
     return c === 0 ? "pendente" : "parcial";
   }
-  // pedido dividido (v72): o item que só existe na parte ainda em separação não entra nos totais
+  // v75: item que o gestor cortou inteiro e que já saiu da caixa (nada a conferir): fica apagado no fim, "Cortado pelo gestor"
+  const cortadoInteiro = (o, i) => i.qtd === 0 && !(i.sep > 0) && !(i.devolver > 0) && !(o.conf.itens[i.sku] > 0);
+  // pedido dividido (v72): o item que só existe na parte ainda em separação não entra nos totais (nem o cortado inteiro)
   function stats(o) {
-    const itens = o.itens.filter((i) => !itemEmEspera(i));
+    const itens = o.itens.filter((i) => !itemEmEspera(i) && !cortadoInteiro(o, i));
     const st = itens.map((i) => itemState(o, i));
     return {
       itensOk: st.filter((s) => s === "ok").length,
@@ -227,7 +229,8 @@ import { $, $$, esc } from "./js/util.js";
   function renderItems(flashSku) {
     const o = cur, checkout = consultaDeCheckout();
     // pedido dividido (v72): o que ainda está em separação vai para o fim da lista (o que dá para conferir fica em cima)
-    const ordem = [...o.itens.filter((i) => !itemEmEspera(i)), ...o.itens.filter(itemEmEspera)];
+    const ordem = [...o.itens.filter((i) => !itemEmEspera(i) && !cortadoInteiro(o, i)), ...o.itens.filter(itemEmEspera),
+      ...o.itens.filter((i) => !itemEmEspera(i) && cortadoInteiro(o, i))];
     const rows = ordem.map((i) => {
       const s = itemState(o, i), c = o.conf.itens[i.sku] || 0;
       const label = { ok: "Conferido", parcial: `Faltam ${fq(arr(i.sep - c))}`, excesso: `Excesso +${fq(arr(c - i.sep))}`, pendente: "Pendente" }[s];
@@ -238,6 +241,13 @@ import { $, $$, esc } from "./js/util.js";
         <td><span class="addr-chip">${i.end}</span></td>
         <td class="r">${fq(i.qtd)}</td><td class="r strong">—</td><td class="r conf">—</td>
         <td><span class="tag cf-parte-espera">Parte ${i.espera.join(" e ")} · em separação</span></td></tr>`;
+      if (cortadoInteiro(o, i)) return `<tr class="cf-cortado" data-sku="${i.sku}">
+        <td><span class="s-dot"></span></td>
+        <td class="code"><b>${i.sku}</b>${i.ean}</td>
+        <td>${esc(i.desc)}</td>
+        <td><span class="addr-chip">${i.end}</span></td>
+        <td class="r">0</td><td class="r strong">—</td><td class="r conf">—</td>
+        <td><span class="tag cf-parte-espera">Cortado pelo gestor</span></td></tr>`;
       const sepWarn = (i.status === "falta" || (!i.espera?.length && i.sep < i.qtd) ? `<span class="sub-warn">falta na separação (${i.motivo || "—"})</span>` : "")
         + (i.espera?.length ? `<span class="sub-warn">+ parte ${i.espera.join(" e ")} em separação</span>` : "")
         + (i.devolver > 0 ? `<span class="sub-warn">sai da caixa: ${fq(i.devolver)} un. (devolução)</span>` : "");
