@@ -142,3 +142,18 @@ test("cancelamento: tudo zera e o que está na caixa vira entrada, entregue por 
 test("o aviso do separador mostra os itens com menos do que o pedido original", () => {
   assert.deepEqual(itensCortados([{ sku: "A", qtd: 3, qtdPedida: 5 }, { sku: "B", qtd: 2, qtdPedida: 2 }, { sku: "C", qtd: 1 }]).map((i) => i.sku), ["A"]);
 });
+
+test("cancelamento: uma devolução aguardando entrega por pessoa (dois separadores no mesmo pedido)", () => {
+  const r = planejarOcorrencia({ tipo: "cancelamento", linhas: [
+    { chave: "a", sku: "A", qtd: 5, sep: 5, quem: "separador", dono: "davi" },
+    { chave: "b", sku: "A", qtd: 3, sep: 2, quem: "separador", dono: "ana" },
+    { chave: "c", sku: "B", qtd: 4, sep: 4, quem: "separador", dono: "davi" },
+    { chave: "d", sku: "C", qtd: 2, sep: 0, quem: "gestor" },
+  ] });
+  assert.deepEqual(r.entregas, [
+    { quem: "separador", dono: "davi", itens: [{ sku: "A", qtd: 5 }, { sku: "B", qtd: 4 }] },
+    { quem: "separador", dono: "ana", itens: [{ sku: "A", qtd: 2 }] },
+  ]);
+  // no corte não há entrega aguardando
+  assert.deepEqual(planejarOcorrencia({ tipo: "corte", novas: { A: 1 }, linhas: [{ chave: "a", sku: "A", qtd: 5, sep: 5, quem: "separador", dono: "davi" }] }).entregas, []);
+});

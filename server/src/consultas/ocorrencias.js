@@ -111,6 +111,11 @@ export async function registrarOcorrencia(pool, dados, usuario) {
     const linhas = d.itens.map((i) => ({
       chave: `${i.pedido_id}|${i.sequencia}`, sku: i.produto, qtd: Number(i.qtd), sep: Number(i.qtd_separada), devolver: Number(i.qtd_devolver),
       status: i.status, motivo: i.motivo, quem: d.quem(parteDe.get(i.pedido_id)),
+      // quem está com a caixa desta parte (cada separador entrega o que pegou; o conferente, o que está no posto)
+      dono: (() => {
+        const p = parteDe.get(i.pedido_id), q = d.quem(p);
+        return q === "separador" ? p.separador || null : q === "conferente" ? d.conf?.conferente || d.conf?.designado_para || null : null;
+      })(),
     }));
     const plano = planejarOcorrencia({ tipo, novas: Object.fromEntries(Object.entries(novas).map(([k, v]) => [k, lerQuantidade(v)])), linhas });
     const registro = { quando: new Date().toISOString(), motivo, referencia, usuario: usuario.nome || usuario.login };
@@ -153,19 +158,20 @@ export async function registrarOcorrencia(pool, dados, usuario) {
       }
     }
     // 4. o que sai da caixa agora: no corte, só o que ninguém tem na mão (entrada na hora); no cancelamento, a
-    //    devolução de quem está com a caixa espera ele marcar "Entregue ao estoque" (a_entregar)
-    const quemEsta = {
-      gestor: usuario.login,
-      separador: d.partes.find((p) => d.quem(p) === "separador")?.separador || null,
-      conferente: d.conf?.conferente || d.conf?.designado_para || null, // na caixa de entrada: quem o gestor designar
-    };
+    //    devolução de quem está com a caixa espera ele marcar "Entregue ao estoque" (a_entregar), uma por pessoa.
+    //    Na caixa de entrada da conferência, sem ninguém: o responsável é quem o gestor designar (quadro).
     const entradas = [];
+    const paraEstoque = (itens) => itens.map((x) => ({ produto: x.sku, qtd: x.qtd }));
     for (const [q, itens] of Object.entries(plano.devolucoes)) {
-      const aEntregar = entregaAguardaResponsavel(tipo, q);
+      if (entregaAguardaResponsavel(tipo, q)) continue; // vem por plano.entregas
       const numero = await criarDevolucao(c, {
-        pedido: d.alvo, setor, origem: aEntregar ? q : tipo === "cancelamento" ? "cancelamento" : q,
-        entreguePor: usuario.login, aEntregar, responsavel: aEntregar ? quemEsta[q] : null,
-        itens: itens.map((x) => ({ produto: x.sku, qtd: x.qtd })),
+        pedido: d.alvo, setor, origem: tipo === "cancelamento" ? "cancelamento" : q, entreguePor: usuario.login, itens: paraEstoque(itens),
+      });
+      if (numero) entradas.push(numero);
+    }
+    for (const e of plano.entregas) {
+      const numero = await criarDevolucao(c, {
+        pedido: d.alvo, setor, origem: e.quem, aEntregar: true, responsavel: e.dono, itens: paraEstoque(e.itens),
       });
       if (numero) entradas.push(numero);
     }

@@ -6,6 +6,7 @@ import { emTransacao } from "../banco.js";
 import { travaParaMoverConferencia, travaParaPular, novaOrdem, andamentoDaConferencia } from "../../../compartilhado/regras/fila-do-conferente.js";
 import { montarConferencias, COLUNAS_DA_CONFERENCIA, CONFERENCIA_A_ENTREGAR } from "./conferencia.js";
 import { ErroDoQuadro } from "./quadro.js";
+import { trocarResponsavel } from "./devolucoes.js";
 
 // Tudo o que o quadro mostra, numa chamada só. Devolve { agora, pedidos, conferentes }.
 //   pedidos: o que ainda não foi conferido (caixa de entrada e filas), com o andamento de quem está conferindo,
@@ -61,6 +62,7 @@ export async function moverNaConferencia(pool, { setor, pedido, para, ordem = []
         "UPDATE conferencias SET designado_para = NULL, ordem_fila = NULL, designado_em = now(), designado_por = $2 WHERE pedido = $1",
         [pedido, por],
       );
+      await trocarResponsavel(c, { pedido, origem: "conferente", responsavel: null }); // cancelado: volta a ficar sem ninguém
       return { ok: true };
     }
     const conferente = (await c.query("SELECT 1 FROM usuarios WHERE login = $1 AND perfil = 'conf' AND ativo", [para])).rowCount;
@@ -79,6 +81,8 @@ export async function moverNaConferencia(pool, { setor, pedido, para, ordem = []
       "UPDATE conferencias SET designado_para = $2, designado_em = now(), designado_por = $3 WHERE pedido = $1",
       [pedido, para, por],
     );
+    // pedido cancelado: quem recebe passa a ser o responsável pela entrega ao estoque (fica no histórico)
+    await trocarResponsavel(c, { pedido, origem: "conferente", responsavel: para });
     for (const [n, id] of ordemNova.entries()) {
       await c.query("UPDATE conferencias SET ordem_fila = $2 WHERE pedido = $1 AND status = 'aguardando'", [id, n + 1]);
     }

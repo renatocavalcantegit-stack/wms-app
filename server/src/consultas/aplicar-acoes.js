@@ -62,11 +62,12 @@ export async function aplicarAcao(conexao, usuario, acao) {
   const pedidoOriginal = pedido?.pedidoPai || pedido?.id;
   if (r.devolverAgora?.length) {
     const lista = r.devolverAgora.map((x) => ({ produto: itens.find((i) => i.sequencia === x.sequencia).produto, qtd: x.qtd }));
-    const somou = pedido.status === "cancelado" && await somarNaEntrega(conexao, { pedido: pedidoOriginal, origem: "separador", itens: lista });
+    const somou = pedido.status === "cancelado"
+      && await somarNaEntrega(conexao, { pedido: pedidoOriginal, origem: "separador", responsavel: usuario.login, itens: lista });
     if (!somou) await criarDevolucao(conexao, { pedido: pedidoOriginal, setor: pedido.setor, origem: "separador", entreguePor: usuario.login, itens: lista });
   }
   // pedido cancelado: ele marcou "Entregue ao estoque" (registra quem e quando; o estoque passa a ver a entrada)
-  if (r.entregar) await marcarEntregue(conexao, { pedido: pedidoOriginal, origem: "separador", login: usuario.login });
+  if (r.entregar) await marcarEntregue(conexao, { pedido: pedidoOriginal, origem: "separador", login: usuario.login, soDele: true });
   // Fase 2: o pedido separado entra na caixa de entrada da conferência; separado de novo, sai de lá
   if (acao.tipo === "separacao.concluir" && r.pedido.status === "concluido") await entrarNaConferencia(conexao, pedido);
   if (acao.tipo === "separacao.reabrir") await sairDaConferencia(conexao, pedido.pedidoPai || pedido.id);

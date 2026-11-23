@@ -100,7 +100,8 @@ export function quemEstaComAParte({ statusSeparacao, statusConferencia = null })
 export const entregaAguardaResponsavel = (tipo, quem) => tipo === "cancelamento" && quem !== "gestor";
 
 // O que a ocorrência muda, linha por linha (cada linha = um item de uma parte do pedido).
-// linhas = [{ chave, sku, qtd, sep, devolver, status, motivo, quem }]
+// linhas = [{ chave, sku, qtd, sep, devolver, status, motivo, quem, dono? }]
+//   dono     = quem está com a caixa daquela linha (login ou nome): cada pessoa entrega a sua parte
 //   sep      = o que está na caixa (inclui o que ainda tem que sair)
 //   devolver = o que ainda tem que sair da caixa (pedido do gestor que o separador/conferente não confirmou)
 // tipo "corte": novas = { sku: novaQtd } (já validadas) · tipo "cancelamento": tudo vai a zero
@@ -108,15 +109,23 @@ export const entregaAguardaResponsavel = (tipo, quem) => tipo === "cancelamento"
 //   linhas     [{ chave, qtd, sep, devolver, status, motivo }] as que mudaram
 //   devolucoes { gestor|separador|conferente: [{ sku, qtd }] } o que sai da caixa AGORA: no corte, só o do gestor
 //              (entrada na hora); no cancelamento, de todos (separador/conferente: "aguardando entrega")
+//   entregas   [{ quem, dono, itens: [{ sku, qtd }] }] cancelamento: uma devolução "aguardando entrega" por pessoa
+//              (dois separadores com partes do mesmo pedido: cada um entrega a sua)
 //   avisar     ["separador", "conferente"] quem tem que confirmar no aparelho
 //   resumo     [{ sku, de, para, devolver }] para o histórico
 export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
-  const mudou = [], devolucoes = {}, avisar = new Set(), resumo = new Map();
-  const somar = (quem, sku, qtd) => {
-    if (!(qtd > 0)) return;
-    const lista = (devolucoes[quem] ||= []);
+  const mudou = [], devolucoes = {}, avisar = new Set(), resumo = new Map(), porDono = new Map();
+  const juntar = (lista, sku, qtd) => {
     const x = lista.find((d) => d.sku === sku);
     if (x) x.qtd = arredondarQtd(x.qtd + qtd); else lista.push({ sku, qtd: arredondarQtd(qtd) });
+  };
+  const somar = (quem, sku, qtd, dono = null) => {
+    if (!(qtd > 0)) return;
+    juntar((devolucoes[quem] ||= []), sku, qtd);
+    if (tipo !== "cancelamento" || !entregaAguardaResponsavel(tipo, quem)) return;
+    const k = `${quem}|${dono ?? ""}`;
+    if (!porDono.has(k)) porDono.set(k, { quem, dono: dono ?? null, itens: [] });
+    juntar(porDono.get(k).itens, sku, qtd);
   };
   const anotar = (sku, de, para, devolver) => {
     const r = resumo.get(sku) || { sku, de: 0, para: 0, devolver: 0 };
@@ -131,7 +140,7 @@ export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
     if (tipo === "cancelamento") {
       if (!qtd && !sep) continue;
       // tudo o que está na caixa volta ao estoque: quem está com ela marca "Entregue ao estoque"
-      somar(l.quem, l.sku, sep);
+      somar(l.quem, l.sku, sep, l.dono);
       mudou.push({ chave: l.chave, qtd: 0, sep: 0, devolver: 0, status: "cortado", motivo: "" });
       anotar(l.sku, qtd, 0, sep);
       continue;
@@ -150,7 +159,7 @@ export function planejarOcorrencia({ tipo, novas = {}, linhas }) {
     mudou.push({ chave: l.chave, qtd: r.qtd, sep: novoSep, devolver: novoDev, status, motivo });
     anotar(l.sku, qtd, r.qtd, arredondarQtd(r.devolver - pend));
   }
-  return { linhas: mudou, devolucoes, avisar: [...avisar], resumo: [...resumo.values()] };
+  return { linhas: mudou, devolucoes, entregas: [...porDono.values()], avisar: [...avisar], resumo: [...resumo.values()] };
 }
 
 // o separador (ou o conferente) confirmou: o que tinha que sair saiu da caixa e vai para o estoque

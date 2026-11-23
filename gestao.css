@@ -391,6 +391,7 @@ button.etag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; s
 .c-doca { margin: 0; font-size: 11.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 /* pedido dividido com parte em separação (v72): a conferência já pode começar, mas só fecha com todas */
 .gc-parte-espera { margin: 2px 0 0; padding: 4px 7px; border-radius: 6px; background: #FEF3C7; color: #B45309; font-size: 11.5px; font-weight: 700; }
+.gc-parte-espera.gc-cancelado { background: var(--red-soft); color: var(--red); } /* pedido cancelado: entregar ao estoque */
 .dr-items tr.gc-espera { opacity: .5; }
 .c-parte, .c-lote { font-size: 10.5px; font-weight: 800; letter-spacing: .3px; padding: 3px 6px; border-radius: 6px; background: #E8F0FE; color: #1A56DB; }
 .card.lote { box-shadow: inset 4px 0 0 #1A56DB, var(--shadow, 0 1px 2px rgba(0,0,0,.06)); }

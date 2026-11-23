@@ -122,11 +122,12 @@ const emSeparacao = (c) => (c.partes || []).filter((x) => x.pronta === false);
 const docasHtml = (c) => (c.partes?.length
   ? prontas(c).map((x) => `<span class="dchip" title="Parte ${x.numero}/${x.de} · ${esc(x.separador_nome || "")}">${x.numero}/${x.de} ${esc(x.doca || "—")}</span>`).join("")
   : c.doca ? `<span class="dchip">${esc(c.doca)}</span>` : "");
-const faixaDasPartes = (c) => emSeparacao(c).map((x) =>
+const faixaDasPartes = (c) => (c.status === "cancelado" ? [] : emSeparacao(c)).map((x) =>
   `<p class="gc-parte-espera">⏳ Parte ${x.numero}/${x.de} em separação${x.separador_nome ? ` · ${esc(x.separador_nome)}` : ""}</p>`).join("");
-// v75: o que o gestor pediu e ainda espera o conferente (cancelado: entregar ao estoque; corte: tirar da caixa)
+// v75: o que o gestor pediu e ainda espera o conferente (cancelado: entregar ao estoque, em vermelho; corte: tirar
+// da caixa). Cancelado não mostra "parte em separação": as partes foram canceladas.
 const faixaDaOcorrencia = (c) => (c.status === "cancelado" && c.entregar
-  ? `<p class="gc-parte-espera">Cancelado · entregar ao estoque (DEV ${esc(c.entregar.numero)})</p>`
+  ? `<p class="gc-parte-espera gc-cancelado">Cancelado · entregar ao estoque (DEV ${esc(c.entregar.numero)})</p>`
   : (c.itens || []).some((i) => !i.em_separacao && Number(i.qtd_devolver) > 0) ? `<p class="gc-parte-espera">Item a devolver ao estoque</p>` : "");
 
 function card(c, { col, pos = "", primeiro = false }) {

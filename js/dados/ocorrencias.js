@@ -87,6 +87,8 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   const { confDb, pedidos, partes, conf, quem } = lerPedido(setor, ped.id);
   const linhas = partes.flatMap((p) => p.itens.map((i, n) => ({
     chave: `${p.id}|${n}`, sku: i.sku, qtd: i.qtd, sep: i.sep || 0, devolver: i.devolver || 0, status: i.status, motivo: i.motivo, quem: quem(p),
+    // quem está com a caixa desta parte (cada separador entrega o que pegou)
+    dono: quem(p) === "separador" ? p.operador || null : quem(p) === "conferente" ? conf?.conf?.conferente || null : null,
   })));
   const plano = planejarOcorrencia({ tipo, novas: Object.fromEntries(Object.entries(novas).map(([k, v]) => [k, lerQuantidade(v)])), linhas });
   const quando = agora(), registro = { quando, motivo, referencia: String(referencia).trim(), usuario };
@@ -100,19 +102,24 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   const quemDaParte = new Map(partes.map((p) => [p.id, quem(p)]));
 
   // 0. Estoque: no corte, só o que ninguém tem na mão vira entrada na hora (Montagem dispensada); no cancelamento,
-  //    a devolução de quem está com a caixa espera ele marcar "Entregue ao estoque"
-  const devolucoes = {};
+  //    a devolução de quem está com a caixa espera ele marcar "Entregue ao estoque" (uma por pessoa)
+  const entradas = [];
   const descDe = (sku) => ped.itens.find((i) => i.sku === sku)?.desc || "";
+  const paraEstoque = (itens) => itens.map((d) => ({ produto: d.sku, qtd: d.qtd }));
   for (const [q, itens] of Object.entries(plano.devolucoes)) {
-    const lista = itens.map((d) => ({ produto: d.sku, qtd: d.qtd }));
-    const n = entregaAguardaResponsavel(tipo, q)
-      ? criarDevolucao({ pedido: ped.id, itens: lista, aguardando: { responsavel: q, nome: nomeDe[q] } })
-      : criarDevolucao({ pedido: ped.id, itens: lista, entreguePor: nomeDe[q] || usuario });
-    if (n) devolucoes[q] = n;
+    if (entregaAguardaResponsavel(tipo, q)) continue; // vem por plano.entregas
+    const n = criarDevolucao({ pedido: ped.id, itens: paraEstoque(itens), entreguePor: nomeDe[q] || usuario });
+    if (n) entradas.push(n);
   }
-  // o que o responsável vê para entregar: { numero, itens: [{ sku, desc, qtd }] }
-  const aEntregar = (q) => (devolucoes[q]?.aguardando
-    ? { numero: devolucoes[q].numero, itens: devolucoes[q].itens.map((i) => ({ sku: i.produto, desc: descDe(i.produto), qtd: i.qtd })) } : null);
+  // o que cada responsável vê para entregar: { numero, itens: [{ sku, desc, qtd }] }, por "quem|dono"
+  const aEntregarDe = new Map();
+  for (const e of plano.entregas) {
+    const n = criarDevolucao({ pedido: ped.id, itens: paraEstoque(e.itens), aguardando: { responsavel: e.quem, nome: e.dono || nomeDe[e.quem] } });
+    if (!n) continue;
+    entradas.push(n);
+    aEntregarDe.set(`${e.quem}|${e.dono ?? ""}`, { numero: n.numero, itens: n.itens.map((i) => ({ sku: i.produto, desc: descDe(i.produto), qtd: i.qtd })) });
+  }
+  const aEntregar = (q, dono = null) => aEntregarDe.get(`${q}|${dono ?? ""}`) || null;
 
   // 1. Separação: todas as partes do pedido
   const mudadas = new Set();
@@ -125,7 +132,7 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   }
   if (tipo === "cancelamento") {
     partes.forEach((p) => Object.assign(p, { status: "cancelado", cancelado: registro, ocorrenciaPendente: false },
-      quemDaParte.get(p.id) === "separador" && aEntregar("separador") ? { entregar: aEntregar("separador") } : {}));
+      quemDaParte.get(p.id) === "separador" && aEntregar("separador", p.operador) ? { entregar: aEntregar("separador", p.operador) } : {}));
   }
   // o separador confirma no coletor (corte simples ou "devolver item")
   else [...mudadas].filter((p) => quem(p) === "separador").forEach((p) => (p.ocorrenciaPendente = true));
@@ -145,7 +152,8 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
     if (tipo === "cancelamento") {
       conf.cancelado = registro;
       // o conferente (de quem está na fila, ou que conferiu) marca "Entregue ao estoque" no posto
-      Object.assign(conf.conf, { status: "cancelado", fim: Date.now() }, aEntregar("conferente") ? { entregar: aEntregar("conferente") } : {});
+      const doConferente = aEntregar("conferente", conf.conf.conferente || null);
+      Object.assign(conf.conf, { status: "cancelado", fim: Date.now() }, doConferente ? { entregar: doConferente } : {});
     } else if (plano.avisar.includes("conferente") && (conf.conf.status === "conferido" || conf.conf.status === "divergente")) {
       // já conferido: volta para a fila de quem conferiu tirar da caixa (F9), refazer os volumes e reimprimir as
       // etiquetas. Como no servidor: volumes e observação são refeitos do zero, e o pedido sai da carga.
@@ -159,7 +167,6 @@ export function registrarOcorrencia(setor, id, { tipo, cortes = {}, motivo, refe
   // 3. Embarque: cancelado sai da carga
   if (tipo === "cancelamento") retirarDasCargas(ped.id);
 
-  const entradas = Object.values(devolucoes);
   const lista = lerHistorico(setor);
   const resumo = plano.resumo.map((r) => ({ ...r, desc: ped.itens.find((i) => i.sku === r.sku)?.desc || "" }));
   const ocorrencia = { id: (lista[0]?.id || 0) + 1, pedido: ped.id, cliente: ped.cliente, tipo, etapa: ped.etapa, itens: resumo, ...registro,

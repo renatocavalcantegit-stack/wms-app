@@ -212,3 +212,36 @@ test("cancelamento: sai de tudo; o que estava na caixa vira entrada, entregue po
   const quadro = (await app.inject({ method: "GET", url: "/api/quadro/separacao?setor=exp", headers: await auth("coordenador") })).json();
   assert.ok(!JSON.stringify(quadro).includes("PV-10424"));
 });
+
+test("cancelamento com dois separadores no mesmo pedido: cada um entrega a sua parte", async () => {
+  const [a1] = await emSeparacao("PV-10426/1", "separador");
+  const [a2] = await emSeparacao("PV-10426/2", "separador2");
+  await ocorrencia({ pedido: "PV-10426", tipo: "cancelamento" });
+  const ds = (await devolucoesDoPedido(pool, "PV-10426")).map((x) => [x.origem, x.status, x.responsavel, x.itens]);
+  assert.deepEqual(ds, [
+    ["separador", "a_entregar", "separador", [{ produto: a1.produto, qtd: a1.qtd }]],
+    ["separador", "a_entregar", "separador2", [{ produto: a2.produto, qtd: a2.qtd }]],
+  ]);
+  // o coletor de cada um mostra só a sua
+  const lista = (await app.inject({ method: "GET", url: "/api/separacao?setor=exp", headers: await auth("separador") })).json().pedidos;
+  assert.deepEqual(lista.find((o) => o.id === "PV-10426/1").entregar.itens.map((i) => i.sku), [a1.produto]);
+  // a entrega de um não marca a do outro
+  await sincronizar("separador", [acao("separacao.entregar", { pedido: "PV-10426/1" })]);
+  assert.deepEqual((await devolucoesDoPedido(pool, "PV-10426")).map((x) => [x.responsavel, x.status, x.entregue_por]),
+    [["separador", "pendente", "separador"], ["separador2", "a_entregar", null]]);
+});
+
+test("cancelado na caixa de entrada da conferência: quem o gestor designa passa a ser o responsável pela entrega", async () => {
+  await pool.query("UPDATE conferencias SET designado_para = NULL, ordem_fila = NULL WHERE pedido = 'PV-10403'");
+  await ocorrencia({ pedido: "PV-10403", tipo: "cancelamento" });
+  const resp = async () => (await devolucoesDoPedido(pool, "PV-10403")).map((x) => [x.origem, x.status, x.responsavel]);
+  assert.deepEqual(await resp(), [["conferente", "a_entregar", null]]);
+  const mover = (para) => app.inject({ method: "POST", url: "/api/quadro/conferencia/mover", headers: { authorization: `Bearer ${tokens.coordenador}` },
+    payload: { setor: "exp", pedido: "PV-10403", para, ordem: [] } });
+  assert.equal((await mover("conferente2")).statusCode, 200);
+  assert.deepEqual(await resp(), [["conferente", "a_entregar", "conferente2"]]);
+  const hist = (await app.inject({ method: "GET", url: "/api/ocorrencias?setor=exp", headers: await auth("coordenador") })).json().ocorrencias;
+  assert.equal(hist.find((o) => o.pedido === "PV-10403").entregas[0].quem, (await nome("conferente2")));
+  assert.equal((await mover(null)).statusCode, 200);
+  assert.deepEqual(await resp(), [["conferente", "a_entregar", null]]);
+});

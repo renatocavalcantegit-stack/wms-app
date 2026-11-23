@@ -31,10 +31,11 @@ export async function criarDevolucao(conexao, { pedido, setor, origem, entregueP
 
 // Pedido cancelado que o separador pegou mais sem rede: soma na devolução que ainda espera a entrega dele.
 // Devolve o número, ou null se não havia nenhuma esperando (quem chamou cria uma).
-export async function somarNaEntrega(conexao, { pedido, origem, itens }) {
+export async function somarNaEntrega(conexao, { pedido, origem, responsavel, itens }) {
   const d = (await conexao.query(
-    "SELECT id, numero FROM devolucoes WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' ORDER BY id LIMIT 1 FOR UPDATE",
-    [pedido, origem],
+    `SELECT id, numero FROM devolucoes WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' AND responsavel = $3
+      ORDER BY id LIMIT 1 FOR UPDATE`,
+    [pedido, origem, responsavel],
   )).rows[0];
   if (!d) return null;
   for (const { produto, qtd } of itens) {
@@ -49,26 +50,35 @@ export async function somarNaEntrega(conexao, { pedido, origem, itens }) {
 }
 
 // O responsável marcou "Entregue ao estoque": a devolução vira entrada pendente para o estoque.
-// origem = separador ou conferente. Devolve os números entregues ([] se já estava entregue: não duplica).
-export async function marcarEntregue(conexao, { pedido, origem, login }) {
+// origem = separador ou conferente. soDele = só a que está no nome dele (separador: cada um entrega a sua).
+// Devolve os números entregues ([] se já estava entregue: não duplica).
+export async function marcarEntregue(conexao, { pedido, origem, login, soDele = false }) {
   const { rows } = await conexao.query(
     `UPDATE devolucoes SET status = 'pendente', entregue_por = $3, entregue_em = now()
-      WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' RETURNING numero`,
-    [pedido, origem, login],
+      WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' AND (NOT $4::boolean OR responsavel = $3) RETURNING numero`,
+    [pedido, origem, login, soDele],
   );
   return rows.map((r) => r.numero);
 }
 
+// Quando o gestor arrasta o pedido cancelado para um conferente (ou de volta para a caixa), ele passa a ser o responsável.
+export async function trocarResponsavel(conexao, { pedido, origem, responsavel }) {
+  await conexao.query(
+    "UPDATE devolucoes SET responsavel = $3 WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar'",
+    [pedido, origem, responsavel],
+  );
+}
 // O que ainda espera a entrega, por pedido, como o aparelho mostra: Map(pedido → { numero, itens: [{ sku, desc, qtd }] })
-export async function aEntregarDosPedidos(conexao, pedidos, origem) {
+// responsavel: só a que está no nome dele (o separador vê só a sua)
+export async function aEntregarDosPedidos(conexao, pedidos, origem, responsavel = null) {
   if (!pedidos.length) return new Map();
   const { rows } = await conexao.query(
     `SELECT d.pedido, d.numero,
             json_agg(json_build_object('sku', i.produto, 'desc', p.descricao, 'qtd', i.qtd::float8) ORDER BY i.produto) AS itens
        FROM devolucoes d JOIN devolucao_itens i ON i.devolucao_id = d.id JOIN produtos p ON p.codigo = i.produto
-      WHERE d.pedido = ANY($1) AND d.origem = $2 AND d.status = 'a_entregar'
+      WHERE d.pedido = ANY($1) AND d.origem = $2 AND d.status = 'a_entregar' AND ($3::text IS NULL OR d.responsavel = $3)
       GROUP BY d.id ORDER BY d.id`,
-    [pedidos, origem],
+    [pedidos, origem, responsavel],
   );
   return new Map(rows.map((r) => [r.pedido, { numero: r.numero, itens: r.itens }]));
 }

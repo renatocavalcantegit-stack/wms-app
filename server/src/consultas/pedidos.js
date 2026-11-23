@@ -91,7 +91,7 @@ export async function pedidosDoColetor(pool, setor, login) {
   )).rows;
   const porPedido = Map.groupBy(itens, (i) => i.pedido_id);
   const cancelados = pedidos.filter((p) => p.status === "cancelado" && p.separador === login);
-  const entregar = await aEntregarDosPedidos(pool, [...new Set(cancelados.map((p) => p.pedido_pai || p.id))], "separador");
+  const entregar = await aEntregarDosPedidos(pool, [...new Set(cancelados.map((p) => p.pedido_pai || p.id))], "separador", login);
   return pedidos.map((p) => ({
     ...p, itens: porPedido.get(p.id) || [],
     entregar: p.status === "cancelado" && p.separador === login ? entregar.get(p.pedido_pai || p.id) || null : null,

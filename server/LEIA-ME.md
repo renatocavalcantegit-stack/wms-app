@@ -283,7 +283,9 @@ Cada devolução é uma linha em `devolucoes` (+ `devolucao_itens`) com número 
 "PV-10421-2"), origem, quem entregou e status `pendente`: é a **entrada pendente** que o Estoque vai conferir quando
 o Estoque vier para o servidor. A do cancelamento nasce `a_entregar`, com o `responsavel` (quem está com a caixa), e
 só vira `pendente` quando ele marca "Entregue ao estoque" (`entregue_por`, `entregue_em`): até lá o estoque não vê.
-O histórico da aba Ocorrências mostra "DEV PV-… · aguardando entrega (nome)" enquanto isso. `itens_pedido.qtd_separada` é o que está fisicamente na caixa; `qtd_devolver` é o que
+O histórico da aba Ocorrências mostra "DEV PV-… · aguardando entrega (nome)" enquanto isso. É uma devolução **por pessoa**:
+dois separadores com partes do mesmo pedido entregam cada um a sua. Na caixa de entrada da conferência ainda não há
+responsável; quando o gestor arrasta o pedido para um conferente no quadro, ele passa a ser o responsável. `itens_pedido.qtd_separada` é o que está fisicamente na caixa; `qtd_devolver` é o que
 ainda tem que sair; a conferência espera `qtd_separada − qtd_devolver`. `qtd_pedida` guarda a quantidade antes do
 primeiro corte. **Físico vence**: o separador sem rede que separou a quantidade antiga tem a separação aceita (até a
 quantidade original) e o que passou vira "a devolver". Devolução de pedido já embarcado (o cliente devolveu) fica para
