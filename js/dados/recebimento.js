@@ -113,7 +113,7 @@ export function criarDevolucao({ pedido, itens, entreguePor, aguardando = null }
   }
   const nota = {
     id: db.proximoId.nota++, numero, pedido, tipo: TIPO_DEVOLUCAO, finalizada: false,
-    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(), itens: lista,
+    fornecedor: { nome: `Entregue por ${entreguePor || "—"}` }, data: hoje(), itens: lista, entreguePor: entreguePor || null,
   };
   db.notas.push(nota);
   gravarEstoque(db);
@@ -135,6 +135,11 @@ export function entregarDevolucao(numero, entreguePor) {
   db.notas.push(nota);
   gravarEstoque(db);
   return nota;
+}
+// quem entregou a devolução ao estoque (ou null)
+export function quemEntregou(numero) {
+  const n = lerEstoque().notas.find((x) => x.numero === numero && x.tipo === TIPO_DEVOLUCAO);
+  return n?.entreguePor || n?.entregue?.por || null;
 }
 // a devolução ainda esperando a entrega (ou null)
 export const devolucaoAEntregar = (numero) => (lerEstoque().aEntregar || []).find((d) => d.numero === numero) || null;

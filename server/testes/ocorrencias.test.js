@@ -135,6 +135,9 @@ test("em conferência: o conferente tira (F9), entrega ao estoque e só então f
   assert.equal((await conferencia("PV-10401")).status, "conferido");
   const [d] = await devolucoesDoPedido(pool, "PV-10401");
   assert.deepEqual([d.origem, d.entregue_por, d.itens], ["conferente", "conferente", [{ produto: a.produto, qtd: 1 }]]);
+  // o histórico do corte passa a mostrar a DEV e quem entregou
+  const hist = (await app.inject({ method: "GET", url: "/api/ocorrencias?setor=exp", headers: await auth("coordenador") })).json().ocorrencias;
+  assert.deepEqual(hist.find((o) => o.pedido === "PV-10401").entregas, [{ numero: d.numero, aguardando: false, quem: await nome("conferente") }]);
 });
 
 test("conferido: volta para a fila de quem conferiu tirar da caixa (F9) e refazer volumes e etiquetas", async () => {

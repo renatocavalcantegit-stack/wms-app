@@ -2,7 +2,7 @@
 // até a conferência. Quem decide O QUE muda é a regra pura compartilhado/regras/acoes-conferencia.js;
 // aqui só se lê, chama a regra e grava. Roda dentro da transação do lote (consultas/acoes.js).
 import { avaliarAcaoDaConferencia } from "../../../compartilhado/regras/acoes-conferencia.js";
-import { criarDevolucao, marcarEntregue } from "./devolucoes.js";
+import { criarDevolucao, marcarEntregue, anotarNaOcorrencia } from "./devolucoes.js";
 
 const PERFIS_DA_CONFERENCIA = ["conf"];
 // nome do campo na regra → coluna no banco
@@ -103,7 +103,8 @@ export async function aplicarAcaoDaConferencia(conexao, usuario, acao) {
         resta = Math.round((resta - x) * 1000) / 1000;
       }
     }
-    await criarDevolucao(conexao, { pedido: id, setor: conferencia.setor, origem: "conferente", entreguePor: usuario.login, itens: r.devolver });
+    const numero = await criarDevolucao(conexao, { pedido: id, setor: conferencia.setor, origem: "conferente", entreguePor: usuario.login, itens: r.devolver });
+    await anotarNaOcorrencia(conexao, { pedido: id, origem: "conferente", numero }); // o histórico mostra a DEV
   }
   // pedido cancelado: o conferente marcou "Entregue ao estoque" (registra quem e quando; o estoque passa a ver a entrada)
   if (r.entregar) await marcarEntregue(conexao, { pedido: id, origem: "conferente", login: usuario.login });

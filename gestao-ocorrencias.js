@@ -31,8 +31,9 @@ const EFEITO = {
 };
 const EFEITO_CANCELAR = "Cancelar: o pedido é cancelado na hora e ninguém bipa. O que está na caixa vira devolução aguardando entrega: quem está com ela (separador ou conferente) leva ao estoque e marca \"Entregue ao estoque\".";
 
-// coluna "Entrada no estoque": DEV x, ou DEV x · aguardando entrega (de quem)
-const textoDaEntrega = (e) => `DEV ${esc(e.numero)}${e.aguardando ? ` <small>· aguardando entrega${e.quem ? ` (${esc(e.quem)})` : ""}</small>` : ""}`;
+// coluna "Entrada no estoque": DEV x · entregue por (quem), ou DEV x · aguardando entrega (de quem)
+const textoDaEntrega = (e) => `DEV ${esc(e.numero)}${e.aguardando ? ` <small>· aguardando entrega${e.quem ? ` (${esc(e.quem)})` : ""}</small>`
+  : e.quem ? ` <small>· entregue por ${esc(e.quem)}</small>` : ""}`;
 
 export function telaOcorrencias(setor, { usuario, toast, sess }) {
   ctx = { setor, usuario, toast, sess };

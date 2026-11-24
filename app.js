@@ -266,7 +266,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     closeSheets();
     if (!o) return;
     if (entrega) return aEntregar(o) ? entregarAoEstoque(o) : undefined;
-    const r = confirmarNaSeparacao(o, user, { entrada: !sess?.token });
+    const r = confirmarNaSeparacao(o, user, { entrada: !sess?.token, setor: setor() });
     registrar("separacao.ocorrencia", { pedido: o.id });
     save();
     const un = r.saiu.reduce((t, x) => t + x.qtd, 0);

@@ -14,7 +14,7 @@
 import { carregarPedidos, salvarPedidos } from "./separacao.js";
 import { carregarConferencia, salvarConferencia } from "./conferencia.js";
 import { pedidoEmCarregamento, retirarDasCargas } from "./embarque.js";
-import { criarDevolucao, entregarDevolucao, devolucaoAEntregar } from "./recebimento.js";
+import { criarDevolucao, entregarDevolucao, devolucaoAEntregar, quemEntregou } from "./recebimento.js";
 import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   etapaDoPedido, bloqueioDaOcorrencia, validarOcorrencia, validarCorte, planejarOcorrencia, quemEstaComAParte,
@@ -27,13 +27,30 @@ const mesmoPedido = (o, id) => o.id === id || o.parte?.pai === id;
 const PRONTA = (p) => p.status === "concluido";
 
 // histórico das ocorrências do setor (mais novas primeiro), com a situação de cada devolução:
-// entregas = [{ numero, aguardando, quem }] (aguardando = o responsável ainda não marcou "Entregue ao estoque")
+// entregas = [{ numero, aguardando, quem }] (aguardando = o responsável ainda não marcou "Entregue ao estoque";
+//            entregue: quem = quem entregou)
 const lerHistorico = (setor) => { try { return JSON.parse(localStorage.getItem(chave(setor))) || []; } catch { return []; } };
 export function lerOcorrencias(setor) {
   return lerHistorico(setor).map((o) => ({ ...o, entregas: (o.entradas || []).map((numero) => {
     const d = devolucaoAEntregar(numero);
-    return { numero, aguardando: !!d, quem: d?.quem || null };
+    return { numero, aguardando: !!d, quem: d ? d.quem || null : quemEntregou(numero) };
   }) }));
+}
+
+// O separador (coletor) ou o conferente (F9) entregou o que o gestor cortou: a devolução fica anotada na ocorrência
+// do corte (o histórico troca "Conferente confirma" pelo número da DEV). Vai para os cortes do pedido que ainda
+// esperavam essa pessoa; se nenhum esperava (entregou em duas vezes), para o corte mais recente.
+function anotarNaOcorrencia(setor, pedido, quem, numero) {
+  if (!numero) return;
+  const lista = lerHistorico(setor);
+  const cortes = lista.filter((o) => o.pedido === pedido && o.tipo === "corte" && o.avisar?.includes(quem));
+  if (!cortes.length) return;
+  const esperando = cortes.filter((o) => !(o.entregue || []).includes(quem));
+  for (const o of esperando.length ? esperando : [cortes[0]]) {
+    o.entradas = [...new Set([...(o.entradas || []), numero])];
+    o.entregue = [...new Set([...(o.entregue || []), quem])];
+  }
+  localStorage.setItem(chave(setor), JSON.stringify(lista));
 }
 
 // o pedido como está agora: as partes da Separação, a cópia da Conferência e quem está com cada parte
@@ -188,7 +205,7 @@ export function marcarEntregue(entregar, usuario, { entrada = true } = {}) {
 // O separador confirmou o pedido do gestor no coletor: o que tinha que sair da caixa vira entrada pendente.
 // pedido = o pedido (ou a parte) como o coletor guarda · Devolve a entrada criada (ou null: só corte simples).
 // Com servidor (entrada: false), a entrada nasce lá, quando a ação "separacao.ocorrencia" chega.
-export function confirmarNaSeparacao(pedido, usuario, { entrada = true } = {}) {
+export function confirmarNaSeparacao(pedido, usuario, { entrada = true, setor = "exp" } = {}) {
   const saem = [];
   pedido.itens.forEach((i) => {
     if (!(i.devolver > 0)) return;
@@ -197,7 +214,10 @@ export function confirmarNaSeparacao(pedido, usuario, { entrada = true } = {}) {
     Object.assign(i, { sep: r.sep, devolver: r.devolver, status: r.status, motivo: r.motivo });
   });
   pedido.ocorrenciaPendente = false;
-  return { saiu: saem, nota: entrada ? criarDevolucao({ pedido: pedido.parte?.pai || pedido.id, itens: saem, entreguePor: usuario }) : null };
+  const pai = pedido.parte?.pai || pedido.id;
+  const nota = entrada ? criarDevolucao({ pedido: pai, itens: saem, entreguePor: usuario }) : null;
+  anotarNaOcorrencia(setor, pai, "separador", nota?.numero);
+  return { saiu: saem, nota };
 }
 
 // O conferente tirou da caixa (bipando) o que o gestor cortou e entregou ao estoque.
@@ -216,7 +236,9 @@ export function devolverNaConferencia(setor, pedidoId, itens, conferente) {
     }
   }
   salvarPedidos(setor, pedidos);
-  return criarDevolucao({ pedido: pedidoId, itens, entreguePor: conferente });
+  const nota = criarDevolucao({ pedido: pedidoId, itens, entreguePor: conferente });
+  anotarNaOcorrencia(setor, pedidoId, "conferente", nota?.numero);
+  return nota;
 }
 
 // ---------- com servidor (a Gestão de verdade) ----------

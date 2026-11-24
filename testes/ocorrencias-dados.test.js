@@ -59,6 +59,8 @@ test("separado aguardando conferência: o conferente tira da caixa (F9); nada na
   assert.deepEqual([devolucoes(), lerOcorrencias("exp")[0].entradas], [[], []]);
   devolverNaConferencia("exp", "PV-10421", [{ produto: "176", qtd: 8 }], "Diego");
   assert.deepEqual(devolucoes().map((d) => [d.numero, d.fornecedor.nome]), [["PV-10421", "Entregue por Diego"]]);
+  // o histórico do corte passa a mostrar a DEV e quem entregou
+  assert.deepEqual(lerOcorrencias("exp")[0].entregas, [{ numero: "PV-10421", aguardando: false, quem: "Diego" }]);
 });
 
 test("em separação: fica a devolver até o separador confirmar no coletor", () => {
@@ -77,6 +79,7 @@ test("em separação: fica a devolver até o separador confirmar no coletor", ()
   const { nota } = confirmarNaSeparacao(x, "Davi");
   assert.deepEqual([x.itens[0].sep, x.itens[0].devolver, x.ocorrenciaPendente], [total - 2, 0, false]);
   assert.deepEqual([nota.numero, nota.fornecedor.nome, nota.itens], ["PV-10421", "Entregue por Davi", [{ produto: sku, qtd: 2 }]]);
+  assert.deepEqual(lerOcorrencias("exp")[0].entregas, [{ numero: "PV-10421", aguardando: false, quem: "Davi" }]);
 });
 
 test("em conferência: o conferente tira bipando e entrega; a cópia da conferência continua certa", () => {
@@ -121,7 +124,7 @@ test("pedido conferido: reaberto para o conferente tirar (F9) e refazer volumes;
   const nota = marcarEntregue(c.conf.entregar, "Diego");
   assert.deepEqual([nota.numero, nota.fornecedor.nome], ["PV-10421", "Entregue por Diego"]);
   assert.equal(marcarEntregue(c.conf.entregar, "Diego"), null); // o mesmo toque duas vezes não duplica
-  assert.deepEqual(lerOcorrencias("exp")[0].entregas, [{ numero: "PV-10421", aguardando: false, quem: null }]);
+  assert.deepEqual(lerOcorrencias("exp")[0].entregas, [{ numero: "PV-10421", aguardando: false, quem: "Diego" }]);
 });
 
 test("cancelado com o separador no meio: a devolução espera ele marcar a entrega", () => {

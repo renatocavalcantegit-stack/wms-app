@@ -3,7 +3,7 @@
 // Aqui só se lê o pedido, chama a regra e grava o resultado.
 import { avaliarAcaoDaSeparacao } from "../../../compartilhado/regras/acoes-separacao.js";
 import { aplicarAcaoDaConferencia, entrarNaConferencia, sairDaConferencia, conferenciaDoPedido } from "./aplicar-conferencia.js";
-import { criarDevolucao, somarNaEntrega, marcarEntregue } from "./devolucoes.js";
+import { criarDevolucao, somarNaEntrega, marcarEntregue, anotarNaOcorrencia } from "./devolucoes.js";
 
 // quais perfis podem mandar cada grupo de ações
 const PERFIS_DA_SEPARACAO = ["sep"];
@@ -64,7 +64,10 @@ export async function aplicarAcao(conexao, usuario, acao) {
     const lista = r.devolverAgora.map((x) => ({ produto: itens.find((i) => i.sequencia === x.sequencia).produto, qtd: x.qtd }));
     const somou = pedido.status === "cancelado"
       && await somarNaEntrega(conexao, { pedido: pedidoOriginal, origem: "separador", responsavel: usuario.login, itens: lista });
-    if (!somou) await criarDevolucao(conexao, { pedido: pedidoOriginal, setor: pedido.setor, origem: "separador", entreguePor: usuario.login, itens: lista });
+    if (!somou) {
+      const numero = await criarDevolucao(conexao, { pedido: pedidoOriginal, setor: pedido.setor, origem: "separador", entreguePor: usuario.login, itens: lista });
+      await anotarNaOcorrencia(conexao, { pedido: pedidoOriginal, origem: "separador", numero }); // o histórico mostra a DEV
+    }
   }
   // pedido cancelado: ele marcou "Entregue ao estoque" (registra quem e quando; o estoque passa a ver a entrada)
   if (r.entregar) await marcarEntregue(conexao, { pedido: pedidoOriginal, origem: "separador", login: usuario.login, soDele: true });

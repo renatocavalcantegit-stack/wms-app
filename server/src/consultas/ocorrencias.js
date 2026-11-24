@@ -69,10 +69,13 @@ export async function abrirPedidoDoGestor(pool, setor, id) {
   return vista(d);
 }
 
-// a situação de cada devolução da ocorrência: [{ numero, aguardando, quem }] (aguardando = ainda não entregue)
+// a situação de cada devolução da ocorrência: [{ numero, aguardando, quem }]
+// aguardando = ainda não entregue (quem = o responsável) · entregue: quem = quem entregou
 const ENTREGAS = `coalesce((SELECT json_agg(json_build_object('numero', d.numero, 'aguardando', d.status = 'a_entregar',
-            'quem', CASE WHEN d.status = 'a_entregar' THEN coalesce(r.nome, d.responsavel) END) ORDER BY d.id)
-       FROM devolucoes d LEFT JOIN usuarios r ON r.login = d.responsavel WHERE d.numero = ANY(o.entradas)), '[]') AS entregas`;
+            'quem', CASE WHEN d.status = 'a_entregar' THEN coalesce(r.nome, d.responsavel) ELSE coalesce(e.nome, d.entregue_por) END)
+            ORDER BY d.id)
+       FROM devolucoes d LEFT JOIN usuarios r ON r.login = d.responsavel LEFT JOIN usuarios e ON e.login = d.entregue_por
+      WHERE d.numero = ANY(o.entradas)), '[]') AS entregas`;
 
 // histórico do setor, mais novas primeiro (o mesmo formato da demonstração)
 export async function listarOcorrencias(pool, setor, id = null) {

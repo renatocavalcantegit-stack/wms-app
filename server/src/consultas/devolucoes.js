@@ -29,6 +29,20 @@ export async function criarDevolucao(conexao, { pedido, setor, origem, entregueP
   return numero;
 }
 
+// O separador (coletor) ou o conferente (F9) entregou o que o gestor cortou: a devolução fica anotada na ocorrência
+// do corte, para o histórico trocar "Conferente confirma" pelo número da DEV. Vai para os cortes do pedido que ainda
+// esperavam essa pessoa; se nenhum esperava (entregou em duas vezes), para o corte mais recente.
+export async function anotarNaOcorrencia(conexao, { pedido, origem, numero }) {
+  if (!numero) return;
+  await conexao.query(
+    `UPDATE ocorrencias o SET entradas = array_append(o.entradas, $3::text)
+      WHERE o.pedido = $1 AND o.tipo = 'corte' AND $2 = ANY(o.avisar) AND NOT ($3 = ANY(o.entradas))
+        AND (NOT EXISTS (SELECT 1 FROM devolucoes d WHERE d.numero = ANY(o.entradas) AND d.origem = $2)
+             OR o.id = (SELECT max(x.id) FROM ocorrencias x WHERE x.pedido = $1 AND x.tipo = 'corte' AND $2 = ANY(x.avisar)))`,
+    [pedido, origem, numero],
+  );
+}
+
 // Pedido cancelado que o separador pegou mais sem rede: soma na devolução que ainda espera a entrega dele.
 // Devolve o número, ou null se não havia nenhuma esperando (quem chamou cria uma).
 export async function somarNaEntrega(conexao, { pedido, origem, responsavel, itens }) {
