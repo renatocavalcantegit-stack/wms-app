@@ -5,6 +5,7 @@
 // dela vêm com "em_separacao: true" (o separado ainda não vale; o posto mostra apagado).
 import { COLUNAS_DO_ITEM } from "./pedidos.js";
 import { aEntregarDosPedidos } from "./devolucoes.js";
+import { cienciasDosPedidos } from "./observacao.js";
 
 // pedido cancelado cuja devolução ainda espera o conferente marcar "Entregue ao estoque" (v75)
 export const CONFERENCIA_A_ENTREGAR = `c.status = 'cancelado' AND EXISTS (SELECT 1 FROM devolucoes d
@@ -33,6 +34,7 @@ async function montar(pool, conferencias) {
     [ids],
   )).rows;
   const entregar = await aEntregarDosPedidos(pool, conferencias.filter((c) => c.status === "cancelado").map((c) => c.pedido), "conferente");
+  const ciencias = await cienciasDosPedidos(pool, ids);
   const doPedido = Map.groupBy(pedidos, (p) => p.pedido_pai || p.id);
   const itensDe = Map.groupBy(itens, (i) => i.pedido_id);
   const contagensDe = Map.groupBy(contagens, (x) => x.pedido);
@@ -46,6 +48,9 @@ async function montar(pool, conferencias) {
       ...c,
       cliente: base.cliente, cidade: base.cidade, prioridade: base.prioridade, chegada: base.chegada,
       rota: base.rota ?? null, aguardando: !!base.aguardando,
+      // v76: a observação do vendedor (cada parte leva o texto do pedido original) e quem já leu
+      observacao_pedido: base.observacao_pedido ?? null, observacao_para: base.observacao_para ?? null,
+      ciencias: ciencias.get(c.pedido) || [],
       separador_nome: [...new Set(prontas.map((p) => p.separador_nome).filter(Boolean))].join(" + ") || null,
       doca: partes.length ? null : base.doca ?? null,
       separado_em: prontas.length ? new Date(Math.max(...prontas.map((p) => +new Date(p.fim || 0)))) : null,

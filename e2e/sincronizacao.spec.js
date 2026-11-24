@@ -54,7 +54,8 @@ test("sem rede no meio da separação: o coletor termina o pedido e a fila vai p
   await expect(page.locator("#doneDoca")).toContainText("R9002-P1-A100-AP101");
 
   // o que foi feito está na fila do aparelho; o servidor ainda não sabe
-  const naFila = await page.evaluate(() => JSON.parse(localStorage.getItem("wms-bb-fila-v1")).length);
+  // (a resposta da observação do pedido também vai pela fila: aqui só contam as da separação)
+  const naFila = await page.evaluate(() => JSON.parse(localStorage.getItem("wms-bb-fila-v1")).filter((a) => a.tipo !== "observacao.ciente").length);
   expect(naFila).toBe(pedido.itens.length + 1); // um por item + a doca
   await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("wms-bb-sinc-v1"))?.semRedeDesde)).toBeTruthy();
   expect((await pedidoNoBanco("PV-10421")).status).toBe("andamento");

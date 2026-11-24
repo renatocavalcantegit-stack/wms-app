@@ -9,7 +9,8 @@ import { algumaParteConcluida, juntarPartes } from "../../compartilhado/regras/s
 // v4: doca de expedição e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
 // com servidor (Fase 2), a cópia da lista do servidor fica numa chave à parte: não mistura com a demonstração
-const chave = (setor, servidor = false) => (setor === "mont" ? "wms-bb-conf-mont-v7" : "wms-bb-conf-v7") + (servidor ? "-srv" : "");
+// v8: observação do pedido (v76)
+const chave = (setor, servidor = false) => (setor === "mont" ? "wms-bb-conf-mont-v8" : "wms-bb-conf-v8") + (servidor ? "-srv" : "");
 // posto de conferência escolhido neste aparelho
 const CHAVE_POSTO = "wms-bb-posto";
 
@@ -144,6 +145,8 @@ export function conferenciaDoServidor(c) {
     doca: doca(c.doca),
     partes: (c.partes || []).map((p) => ({ n: p.numero, de: p.de, operador: p.separador_nome, doca: doca(p.doca), fim: ms(p.fim), pronta: p.pronta !== false })),
     ordem: c.ordem_fila ?? null,
+    // observação do vendedor (v76): o texto, para quem é obrigatória (null = o padrão) e quem já leu
+    obsPedido: c.observacao_pedido || null, obsPara: c.observacao_para ?? null, ciencias: c.ciencias || [],
     itens,
     conf: {
       status: c.status, itens: contado, fora, log: [], inicio: ms(c.inicio), fim: ms(c.fim), volumes: c.volumes || 0,

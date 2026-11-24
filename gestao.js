@@ -13,6 +13,8 @@ import { telaAoVivo, ligarAoVivo } from "./gestao-ao-vivo.js";
 import { ligarQuadroReal, desenhar as desenharQuadroReal, resumoDoQuadroReal, textoDaBusca } from "./gestao-separacao-real.js";
 import { ligarQuadroDaConferencia, desenhar as desenharConferenciaReal, resumoDaConferenciaReal, textoDaBuscaDaConferencia } from "./gestao-conferencia-real.js";
 import { abrirDispositivos } from "./gestao-dispositivos.js";
+import { marcaDaObservacao, secaoDaObservacao } from "./js/ui-observacao.js";
+import { cienciasDoPedido } from "./js/dados/observacao.js";
 import { AGUARDANDO, precisaDeRota } from "./compartilhado/regras/aguardando.js";
 import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regras/distribuicao.js";
 
@@ -185,6 +187,28 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       : `Embarque previsto: ${R.tag(e.data, R.iso(new Date(t))).label.toLowerCase()} (${R.fmtDia(e.data)})`, t);
   }
 
+  // observação do pedido (v76): na simulação, um pedido a cada cinco chega com o texto do vendedor
+  const OBS_DA_SIMULACAO = [
+    "Adesivo infantil: 10 do Homem-Aranha, 6 do Batman e 4 da Mulher-Maravilha. Separar cada herói num saquinho com o nome.",
+    "Cuidado com os aros: embalar com papelão.\nCliente pede entrega antes das 12h.",
+    "Câmaras 26: metade Pirelli e metade Kenda, em pacotes separados.",
+    "Entregar na filial (Rua 24 de Maio), não na matriz.",
+    "Cliente pediu as notas fiscais dentro da primeira caixa.",
+  ];
+  const comObservacao = (p, n) => (n % 5 === 0 ? Object.assign(p, { obsPedido: OBS_DA_SIMULACAO[(n / 5) % OBS_DA_SIMULACAO.length], obsPara: null }) : p);
+  // quem leu (simulação): separador e conferente respondem ao começar e ao terminar; mais o que este aparelho registrou
+  function cienciasDaSimulacao(p) {
+    const iso = (t) => new Date(t).toISOString();
+    const sim = [];
+    for (const [k, papel] of [["sep", "separador"], ["conf", "conferente"]]) {
+      if (!p[k]?.inicio || !p[k].resp) continue;
+      const nome = nameOf(p[k].resp);
+      sim.push({ login: p[k].resp, nome, papel, momento: "inicio", resposta: "li", feita_em: iso(p[k].inicio) });
+      if (p[k].fim) sim.push({ login: p[k].resp, nome, papel, momento: "fim", resposta: "apliquei", feita_em: iso(p[k].fim) });
+    }
+    return [...sim, ...cienciasDoPedido(p.id)].sort((a, b) => Date.parse(a.feita_em) - Date.parse(b.feita_em));
+  }
+
   // prioridade: na expedição só o aguardando é prioridade; a urgência dos outros vem da rota e do horário de corte
   function makePedido({ semRota = false, chegada = now(), rota = null, itens: nItens = null, aguardando = false } = {}) {
     // o cliente vem do ranking (com peso); a rota e o vendedor são os do cadastro do cliente
@@ -195,6 +219,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     for (let n = nItens || qtdItens(); n > 0; n--) { const x = pickPeso(restantes, (y) => Math.sqrt(y.vendidos)); prods.push(x); restantes.splice(restantes.indexOf(x), 1); }
     const itens = prods.map((x) => ({ sku: x.sku, ean: x.ean, eans: x.eans, desc: x.desc, end: ENDERECOS[x.sku], qtd: qtdDoItem(x), sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
+    const n = db.seq;
     const p = {
       id: "PV-" + db.seq++, cli: { cod: cli.cod, nome: cli.nome, cidade: cli.cidade, bairro: cli.bairro },
       vendedor: cli.vendedor, rota: aguardando ? null : rid, prio: aguardando ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
@@ -202,6 +227,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     };
     // aguardando: a rota do cadastro fica guardada só para consulta (não vale para nada)
     if (aguardando) Object.assign(p, { aguardando: true, rotaCadastro: rid });
+    comObservacao(p, n);
     db.pedidos[p.id] = p;
     log(p, "Pedido recebido via integração (Sankhya)", chegada);
     if (aguardando) log(p, "Aguardando: o cliente retira na empresa · entra como prioridade, sem rota e sem carga", chegada);
@@ -214,10 +240,12 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     const pool = COMPONENTES;
     const itens = shuffle(pool).slice(0, rint(3, 6)).map((x) => ({ sku: x.sku, ean: x.ean, eans: x.eans, desc: x.desc, end: ENDERECOS[x.sku], qtd: rint(1, 3) * 4, sep: 0, conf: 0 }))
       .sort((a, b) => a.end.localeCompare(b.end, "pt-BR", { numeric: true }));
+    const n = db.seq;
     const p = {
       id: "OP-" + db.seq++, op: true, cli: null, vendedor: null, rota: null, prio: prio ? "alta" : "normal", chegada, embarque: null, embFora: false, embDef: false,
       itens, etapa: "sep", sep: blank(), conf: blank(), lib: { ...blank(), ordem: null }, volumes: 0, nota: null, carga: null, hist: [],
     };
+    comObservacao(p, n);
     db.pedidos[p.id] = p;
     log(p, "Pedido recebido via integração (Sankhya) · tipo de operação: montagem", chegada);
     return p;
@@ -226,7 +254,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   // dados iniciais da montagem
   function seedMont() {
     rnd = mulberry32(3301);
-    db = { v: 4, setor: "mont", seq: 3216, loteSeq: 1, lotes: {}, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
+    db = { v: 5, setor: "mont", seq: 3216, loteSeq: 1, lotes: {}, pedidos: {}, cargas: {}, mont: [], sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, entregues: [], stats: {}, tick: 0 };
     SEPS.forEach((x) => { db.sep.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
     CONFS.forEach((x) => { db.conf.cols[x.id] = []; db.stats[x.id] = aqui(x.id) ? feitosHoje("mont") : 0; });
     const t = now(), early = () => t - rint(70, 160) * MIN;
@@ -303,7 +331,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
     if (MONT) return seedMont();
     rnd = mulberry32(2026);
     db = {
-      v: 4, seq: 10431, cargaSeq: 240, nfSeq: 236001, loteSeq: 1, pedidos: {}, cargas: {}, mont: [], lotes: {},
+      v: 5, seq: 10431, cargaSeq: 240, nfSeq: 236001, loteSeq: 1, pedidos: {}, cargas: {}, mont: [], lotes: {},
       sep: { inbox: [], cols: {} }, conf: { inbox: [], cols: {} }, lib: { inbox: [], cols: {} }, emb: { inbox: [], cols: {} }, stats: {}, tick: 0,
       ret: [], // pedidos aguardando faturados, esperando o cliente retirar
       intel: { sep: false, conf: false }, // distribuição inteligente (o coordenador liga e desliga)
@@ -457,7 +485,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(STORE));
-      if (d && d.v === 4 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; db.ret ||= []; db.intel ||= { sep: false, conf: false }; return; }
+      if (d && d.v === 5 && d.pedidos && (d.setor || "exp") === SETOR) { db = d; db.ret ||= []; db.intel ||= { sep: false, conf: false }; return; }
     } catch {}
     seed();
   }
@@ -938,7 +966,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       <div class="c-top">${selc ? `<span class="cb" data-sel="${p.id}" title="Selecionar">${s ? CHECK : ""}</span>` : ""}${cbL}<span class="rt op">MONTAGEM</span>${parteTag}${p.prio === "alta" ? `<span class="c-prio">PRIORIDADE</span>` : ""}${o.pos ? `<span class="c-pos">${o.pos}</span>` : ""}</div>
       <div class="c-main"><p class="c-id">${nomeP(p)}</p><span class="c-age">chegou ${fmtTime(p.chegada)}</span></div>
       <div class="c-nums">${nums}${age ? `<span class="c-age">${age}</span>` : ""}</div>
-      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}
+      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}${marcaDaObservacao(!!p.obsPedido)}
       ${selc ? `<button class="c-skip" data-skip="${p.id}">Pular conferência</button>` : ""}
       ${liveHtml}
     </article>`;
@@ -948,7 +976,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
       <p class="c-cli"><b>${p.cli.cod}</b>${esc(p.cli.nome)}</p>
       <p class="c-vend">${ICON_USER}Vend.: ${esc(p.vendedor)}</p>
       <div class="c-nums">${nums}${age ? `<span class="c-age">${age}</span>` : ""}</div>
-      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}
+      ${from ? `<p class="c-from">${from}</p>` : ""}${doca}${marcaDaObservacao(!!p.obsPedido)}
       ${liveHtml}
     </article>`;
   }
@@ -1701,6 +1729,7 @@ import { vaiSozinho, ordemDaDistribuicao, menorFila } from "./compartilhado/regr
         <button class="dr-x" id="drClose" aria-label="Fechar">×</button>
       </header>
       <div class="dr-body">
+        ${secaoDaObservacao({ texto: p.obsPedido, para: p.obsPara ?? null, ciencias: cienciasDaSimulacao(p) })}
         <div class="dr-grid">${p.op ? opGrid(p) : `
           <div class="dr-f"><small>Cliente</small><b>${p.cli.cod} · ${esc(p.cli.nome)}</b><span>${esc(p.cli.cidade)} · ${esc(p.cli.bairro)}</span></div>
           <div class="dr-f"><small>Vendedor</small><b>${esc(p.vendedor)}</b><span>Chegou ${fmtAge(p.chegada)} · ${fmtTime(p.chegada)}</span></div>

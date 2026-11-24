@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=75">
+  <link rel="stylesheet" href="styles.css?v=76">
 </head>
 <body>
 
@@ -138,6 +138,9 @@
         <p id="pickClient" class="pick-client"></p>
         <p class="sinc-estado" hidden></p>
       </div>
+      <button id="pickObsBtn" class="icon-btn" aria-label="Observação do pedido" hidden>
+        <svg viewBox="0 0 24 24"><path d="M5 4h14v12H9l-4 4z"/><path d="M9 9h6M9 12h4"/></svg>
+      </button>
       <button id="pickListBtn" class="icon-btn" aria-label="Lista de itens">
         <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
       </button>
@@ -377,7 +380,9 @@
       </div>
     </div>
     <p id="soCli" class="so-cli"></p>
-    <div class="so-box">
+    <!-- observação do pedido (v76): o texto do vendedor, que vem do Sankhya -->
+    <div id="soPed" hidden><small class="obp-rotulo">Observação do pedido</small><div id="soPedT"></div></div>
+    <div id="soVol" class="so-box">
       <small>Como os volumes foram embalados</small>
       <div id="soList" class="so-list"></div>
     </div>
@@ -427,6 +432,22 @@
     </div>
     <div id="sgItens" class="sheet-list"></div>
     <button id="sgOk" class="btn primary block">Ciente</button>
+  </div>
+
+  <!-- observação do pedido (v76): o texto do vendedor. Obrigatória (data-fixa: tocar fora não fecha) no início e no fim -->
+  <div id="sheetObsPedido" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <div>
+        <p id="obpTitulo" class="sheet-title">Leia a observação do pedido</p>
+        <p id="obpSub" class="muted"></p>
+      </div>
+      <span class="tag andamento">Observação</span>
+    </div>
+    <div id="obpTexto"></div>
+    <p class="muted obp-sub">Observação do vendedor · do pedido no Sankhya</p>
+    <button id="obpOk" class="btn primary block">Li e entendi</button>
+    <button id="obpNao" class="btn ghost block obp-nao" hidden>Não era para mim</button>
   </div>
 
   <div id="sheetList" class="sheet" hidden>
@@ -482,6 +503,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="app.js?v=75"></script>
+  <script type="module" src="app.js?v=76"></script>
 </body>
 </html>

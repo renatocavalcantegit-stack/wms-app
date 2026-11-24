@@ -29,6 +29,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 007 conferência: um registro por pedido (fila do conferente, volumes, observação) e o que foi contado
                             · 008 ocorrências do pedido (corte e cancelamento) e devoluções ao estoque (entradas pendentes)
                             · 009 entrega da devolução do pedido cancelado (a_entregar → pendente; quem e quando entregou)
+                            · 010 observação do pedido (o texto do vendedor no Sankhya e quem leu: observacao_ciencias)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -178,6 +179,7 @@ As ações são aplicadas na ordem em que foram **feitas** no aparelho (`feitaEm
 | `conferencia.finalizar` | `{ pedido, volumes, observacao, posto, contagens }` | `contagens` = tudo o que foi contado. O **servidor** decide: `conferido` ou `divergente` (falta, excesso ou produto fora). Expedição precisa de volumes (1 ou mais) e da observação; Montagem não |
 | `conferencia.volumes` | `{ pedido, volumes, observacao }` | corrigir os volumes de um pedido conferido |
 | `conferencia.reabrir` | `{ pedido }` | "Conferir novamente": volta para `andamento` com as contagens zeradas |
+| `observacao.ciente` | `{ pedido, momento, resposta }` | (v76) quem leu a observação do pedido: `momento` = `inicio` (resposta `li`) ou `fim` (`apliquei` ou `nao_era`). O papel vem do perfil (separador, conferente, embarque). Grava em `observacao_ciencias` no pedido original (a parte do dividido fica na coluna `parte`); respondeu de novo, vale a última. **Recusada** se o pedido não tem observação ou a resposta não combina com o momento |
 
 Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
 - `aplicada`: mudou o pedido.
@@ -261,6 +263,21 @@ conferido ou dispensado não volta. O posto que estava com um pedido dispensado 
 ("O COORDENADOR DISPENSOU A CONFERÊNCIA DO …") e volta para a fila.
 O coletor que mandou "separar novamente" de um pedido que já está sendo conferido recebe a recusa e volta para a lista.
 Para testar dois postos, a demonstração tem um segundo conferente (`conferente2`, PIN em `js/sessao.js`).
+
+## Observação do pedido (v76)
+
+O texto que o vendedor escreve no pedido do Sankhya chega em `pedidos.observacao_pedido` (migração `010`).
+`pedidos.observacao_para` diz para quem a leitura é obrigatória (`separador`, `conferente`, `embarque`): **vazio
+(NULL) = separador e conferente**, que é o que vale hoje; quando o analista de pedidos passar a marcar no Sankhya,
+o valor vem de lá. Quem decide é `compartilhado/regras/observacao.js`, a mesma regra da demonstração.
+
+- O coletor e o posto mostram a observação e pedem a resposta (início e fim). A resposta fica no aparelho e vai pela
+  fila (`observacao.ciente`), então funciona sem rede.
+- `GET /api/separacao`, `GET /api/conferencia` e `GET /api/pedidos/:id` devolvem `observacao_pedido`,
+  `observacao_para` e `ciencias` (quem respondeu, o quê e quando). O quadro da Separação traz `tem_observacao`; o
+  da Conferência, o texto e as respostas, para a gaveta do gestor.
+- "Não era para mim" não bloqueia nada: aparece como aviso na gaveta da Gestão.
+- O texto não muda depois que o pedido chega (não há edição no WMS).
 
 ## Ocorrências e devoluções (v75)
 

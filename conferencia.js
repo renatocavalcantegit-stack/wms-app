@@ -18,6 +18,9 @@ import { lerDevolucao, faltaTirar, faltaPostar, devolucaoPendente, MOTIVOS_OCORR
 import { Etiqueta } from "./etiqueta.js";
 import { lerQuantidade, quantidadePositiva, arredondarQtd as arr, formatarQtd as fq } from "./compartilhado/regras/quantidade.js";
 import { $, $$, esc } from "./js/util.js";
+import { temObservacao } from "./compartilhado/regras/observacao.js";
+import { precisaLer, registrarCiencia } from "./js/dados/observacao.js";
+import { caixaDoTexto, marcaDaObservacao } from "./js/ui-observacao.js";
 
 (() => {
   "use strict";
@@ -140,7 +143,7 @@ import { $, $$, esc } from "./js/util.js";
         : ehAguardando(o) ? `<span class="tag alta">Aguardando · cliente retira</span>`
         : prioridade(o) ? `<span class="tag alta">Prioridade</span>` : `<span class="tag">Na fila</span>`;
       return `<tr data-id="${o.id}">
-        <td class="pid">${o.id}</td><td>${esc(o.cliente)}</td><td class="muted">${o.cidade}</td>
+        <td class="pid">${o.id}</td><td>${esc(o.cliente)}${temObservacao(o.obsPedido) ? `<br>${marcaDaObservacao(true)}` : ""}</td><td class="muted">${o.cidade}</td>
         <td class="r">${o.itens.length}</td><td class="r strong">${sum(o.itens, (i) => i.sep)}</td>
         <td>${esc(o.operador || "—")}</td><td class="doca-cel">${docasDo(o)}</td><td>${tag}${o.conf.volumes && o.conf.fim && o.conf.status !== "cancelado" ? `<button class="lb-btn" data-print="${o.id}">Etiquetas</button>` : ""}</td></tr>`;
     }).join("");
@@ -265,7 +268,46 @@ import { $, $$, esc } from "./js/util.js";
       renderDevolucao();
       toast(`${o.id}: tem item a devolver ao estoque`);
     }
+    $("#aObs").hidden = !temObservacao(o.obsPedido);
+    if (o.conf.status === "andamento") exigirObservacao(o, "inicio"); // v76: antes de começar a bipar
   }
+
+  // ---------- observação do pedido (v76) ----------
+  // O texto do vendedor que vem do Sankhya. Obrigatória para o conferente (regra em compartilhado/regras/observacao.js):
+  //   início: ao abrir o pedido, "Li e entendi" · fim: antes de finalizar, "Li e apliquei" ou "Não era para mim".
+  // A resposta fica no aparelho (vale sem rede) e vai ao servidor pela fila. Tocar fora ou Esc não fecha.
+  let obp = null; // { o, momento, depois } da folha aberta (momento null = só ver)
+  const quemLe = () => ({ login: sess.login || user, papel: "conferente" });
+  function exigirObservacao(o, momento, depois = null) {
+    if (!precisaLer(o, { ...quemLe(), momento })) return false;
+    mostrarObservacao(o, momento, depois);
+    return true;
+  }
+  function mostrarObservacao(o, momento, depois = null) {
+    obp = { o, momento, depois };
+    $("#obpTitulo").textContent = momento === "fim" ? "Verifique novamente a observação" : "Leia a observação do pedido";
+    $("#obpSub").textContent = `${o.id} · ${o.cliente} · ${momento === "fim" ? "você aplicou o que ela pede? · antes de finalizar"
+      : momento === "inicio" ? "antes de começar a conferência" : "observação do vendedor"}`;
+    $("#obpTexto").innerHTML = caixaDoTexto(o.obsPedido);
+    $("#obpOk").innerHTML = `${momento === "fim" ? "Li e apliquei" : momento === "inicio" ? "Li e entendi" : "Fechar"} <kbd>Enter</kbd>`;
+    $("#obpNao").hidden = momento !== "fim";
+    openModal("mObsPedido");
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function responderObservacao(resposta) {
+    const x = obp; obp = null;
+    if (!x) return closeModal();
+    if (x.momento) {
+      registrarCiencia({ pedido: x.o.id, parte: null, ...quemLe(), nome: user, momento: x.momento, resposta });
+      registrar("observacao.ciente", { pedido: x.o.id, momento: x.momento, resposta });
+    }
+    closeModal();
+    if (x.depois) x.depois();
+  }
+  const obpObrigatoria = () => modal === "mObsPedido" && !!obp?.momento;
+  $("#obpOk").addEventListener("click", () => responderObservacao(obp?.momento === "fim" ? "apliquei" : "li"));
+  $("#obpNao").addEventListener("click", () => responderObservacao("nao_era"));
+  $("#aObs").addEventListener("click", () => { if (cur) mostrarObservacao(cur, null); });
 
   function renderItems(flashSku) {
     const o = cur, checkout = consultaDeCheckout();
@@ -602,6 +644,7 @@ import { $, $$, esc } from "./js/util.js";
     if (devolucaoPendente(cur.itens, cur.conf.postado)) { setMsg("Faça a devolução antes de finalizar (F9).", "err"); beep(false); return; }
     if (partesEmSeparacao(cur.partes).length) { setMsg(msgAguardandoPartes(cur.partes), "err"); beep(false); return; }
     if (sobras(cur).length) { setMsg("Retire o excesso do volume antes de finalizar (F9).", "err"); beep(false); return; }
+    if (exigirObservacao(cur, "fim", openFinish)) return; // v76: "Li e apliquei" / "Não era para mim"
     fin = { o: cur, fix: false, vol: 0 };
     const s = stats(cur);
     const rows = [];
@@ -813,7 +856,7 @@ import { $, $$, esc } from "./js/util.js";
   function openModal(id) { modal = id; $("#modalScrim").hidden = false; $$(".modal").forEach((m) => (m.hidden = m.id !== id)); }
   function closeModal() { modal = null; $("#modalScrim").hidden = true; $$(".modal").forEach((m) => (m.hidden = true)); focusScan(); }
   $$("[data-close]").forEach((b) => b.addEventListener("click", closeModal));
-  $("#modalScrim").addEventListener("click", () => { if (!(modal === "mSetor" && SEM_SETOR)) closeModal(); });
+  $("#modalScrim").addEventListener("click", () => { if (!(modal === "mSetor" && SEM_SETOR) && !obpObrigatoria()) closeModal(); });
 
   // usuário logado / sair
   $("#opBtn").addEventListener("click", () => { $("#opUser").textContent = user; $("#opSetor").textContent = SETORES[SETOR]; openModal("mOp"); });
@@ -857,6 +900,11 @@ import { $, $$, esc } from "./js/util.js";
       if (modal === "mSetor") {
         if (e.key === "1" || e.key === "2") { e.preventDefault(); pickSetor(e.key === "1" ? "exp" : "mont"); }
         else if (e.key === "Escape" && !SEM_SETOR) { e.preventDefault(); closeModal(); }
+        return;
+      }
+      if (modal === "mObsPedido") {
+        if (e.key === "Enter") { e.preventDefault(); if (e.target.id === "obpNao") responderObservacao("nao_era"); else $("#obpOk").click(); }
+        else if (e.key === "Escape") { e.preventDefault(); if (!obpObrigatoria()) { obp = null; closeModal(); } }
         return;
       }
       if (e.key === "Escape") {

@@ -12,6 +12,8 @@
 // As travas valem no servidor (server/src/consultas/quadro-conferencia.js), com a regra pura
 // compartilhado/regras/fila-do-conferente.js. Os dados vêm de js/dados/quadro.js.
 import { esc as escapar } from "./js/util.js";
+import { marcaDaObservacao, secaoDaObservacao } from "./js/ui-observacao.js";
+import { temObservacao } from "./compartilhado/regras/observacao.js";
 import { temServidor } from "./js/sessao.js";
 import { buscarQuadroDaConferencia, moverNaConferencia, pularConferencia, ouvirQuadro } from "./js/dados/quadro.js";
 import { situacaoNoQuadro } from "./compartilhado/regras/fila-do-separador.js";
@@ -157,7 +159,7 @@ function card(c, { col, pos = "", primeiro = false }) {
     <div class="c-nums"><span><b>${a.itens}</b> SKUs</span><span><b>${numero(a.unidades)}</b> un.</span>${idade}</div>
     ${!vivo && c.separador_nome ? `<p class="c-from">Separado por ${esc(c.separador_nome)}</p>` : ""}
     ${docas ? `<p class="c-doca">${c.partes?.length ? "Docas" : "Doca"} ${docas}</p>` : ""}
-    ${faixaDasPartes(c)}${faixaDaOcorrencia(c)}
+    ${faixaDasPartes(c)}${faixaDaOcorrencia(c)}${marcaDaObservacao(temObservacao(c.observacao_pedido))}
     ${marcavel ? `<button class="c-skip" data-gcpular="${esc(c.pedido)}">Pular conferência</button>` : ""}
     ${vivoHtml}
   </article>`;
@@ -396,6 +398,7 @@ function htmlDoPedido(c) {
       <button class="dr-x" data-gcfechar="1" aria-label="Fechar">×</button>
     </header>
     <div class="dr-body">
+      ${secaoDaObservacao({ texto: c.observacao_pedido, para: c.observacao_para, ciencias: c.ciencias })}
       <div class="dr-grid">${grade}</div>
       ${extras ? `<div class="dr-grid">${extras}</div>` : ""}
       <div class="dr-nums">

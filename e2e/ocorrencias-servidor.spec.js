@@ -6,7 +6,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { abrirPedidoNoColetor, separarItem, bipar } from "./ajuda.js";
+import { abrirPedidoNoColetor, separarItem, bipar, responderObservacao } from "./ajuda.js";
 
 const ENV = resolve(import.meta.dirname, "..", "server", ".env");
 test.skip(!existsSync(ENV), "sem server/.env: este teste precisa do banco");
@@ -79,6 +79,7 @@ test("corte com o pedido em conferência: o posto pede para tirar da caixa (F9) 
   await bia.locator('#queueBody tr[data-id="PV-10401"]').click();
   await bia.keyboard.press("Enter");
   await expect(bia.locator("#order")).toBeVisible();
+  await responderObservacao(bia); // v76: a observação do pedido, antes de começar
   await expect.poll(async () => (await pool.query("SELECT status FROM conferencias WHERE pedido = 'PV-10401'")).rows[0].status).toBe("andamento");
 
   const i = (await pool.query(

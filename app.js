@@ -20,6 +20,9 @@ import { lerPedidosDaConferencia, statusNaConferencia, retirarDaConferencia } fr
 import { baixarPorSeparacao, estornarSeparacao } from "./js/dados/movimentacao.js";
 import { confirmarNaSeparacao, marcarEntregue } from "./js/dados/ocorrencias.js";
 import { itensCortados } from "./compartilhado/regras/ocorrencias.js";
+import { temObservacao } from "./compartilhado/regras/observacao.js";
+import { precisaLer, registrarCiencia, apagarCiencias } from "./js/dados/observacao.js";
+import { caixaDoTexto, faixaDaObservacao } from "./js/ui-observacao.js";
 import { lerEstoque } from "./js/dados/estoque.js";
 import { ehCodigoDoProduto } from "./compartilhado/regras/produtos.js";
 import { $, $$, esc } from "./js/util.js";
@@ -221,7 +224,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   const comPedidoDoGestor = () => abertos().find((o) => o.ocorrenciaPendente && o.status !== "cancelado") || null;
   function mostrarPedidoDoGestor() {
     const o = comPedidoDoGestor();
-    if (!o) return false;
+    if (!o || lendoObservacao()) return false; // a observação obrigatória vem primeiro (o aviso aparece na próxima vez)
     const itens = itensCortados(o.itens).concat(o.itens.filter((i) => i.devolver > 0 && !itensCortados([i]).length));
     const devolver = itens.filter((i) => i.devolver > 0);
     $("#sgTitulo").textContent = `${nomeDo(o)} · o gestor alterou`;
@@ -237,6 +240,60 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     beep(false); vibrate([80, 50, 80]);
     return true;
   }
+  // ---------- observação do pedido (v76) ----------
+  // O texto do vendedor que vem do Sankhya. Obrigatória para o separador (regra em compartilhado/regras/observacao.js):
+  //   início: antes do primeiro item, "Li e entendi" · fim: antes de ler a doca, "Li e apliquei" ou "Não era para mim".
+  // Lote: um pedido depois do outro. A resposta fica no aparelho (vale sem rede) e vai ao servidor pela fila.
+  let obsFila = [], obsMomento = null, obsDepois = null;
+  const lendoObservacao = () => !$("#sheetObsPedido").hidden && !!$("#sheetObsPedido").dataset.fixa;
+  const quemLe = () => ({ login: sess?.login || user, papel: "separador" });
+  // pede a leitura de quem ainda não respondeu; depois, segue (depois()). Devolve true se abriu a folha.
+  function exigirObservacao(ps, momento, depois = null) {
+    obsFila = ps.filter((o) => o && o.status !== "cancelado" && precisaLer(o, { ...quemLe(), momento }));
+    obsMomento = momento; obsDepois = depois;
+    return proximaObservacao();
+  }
+  function proximaObservacao() {
+    const o = obsFila[0];
+    if (!o) { const d = obsDepois; obsDepois = null; obsMomento = null; if (d) d(); return false; }
+    mostrarObservacao(o, obsMomento);
+    return true;
+  }
+  // momento = "inicio" | "fim" (obrigatória) ou null (só ver, pelo botão do cabeçalho)
+  function mostrarObservacao(o, momento) {
+    $("#obpTitulo").textContent = momento === "fim" ? "Verifique novamente a observação" : "Leia a observação do pedido";
+    $("#obpSub").textContent = `${nomeDo(o)} · ${momento === "fim" ? "você aplicou o que ela pede? · antes de ler a doca"
+      : momento === "inicio" ? "antes do primeiro item" : o.cliente}`;
+    $("#obpTexto").innerHTML = caixaDoTexto(o.obsPedido);
+    $("#obpOk").textContent = momento === "fim" ? "Li e apliquei" : momento === "inicio" ? "Li e entendi" : "Fechar";
+    $("#obpNao").hidden = momento !== "fim";
+    const s = $("#sheetObsPedido");
+    s.dataset.id = o.id; s.dataset.momento = momento || ""; s.dataset.dono = "separacao";
+    if (momento) s.dataset.fixa = "1"; else delete s.dataset.fixa;
+    openSheet("sheetObsPedido");
+    if (momento) vibrate([60, 40, 60]);
+  }
+  function responderObservacao(resposta) {
+    const s = $("#sheetObsPedido"), momento = s.dataset.momento, o = pedido(s.dataset.id);
+    if (s.dataset.dono !== "separacao") return; // aberta pelo embarque (embarque.js responde)
+    if (momento && o) {
+      registrarCiencia({ pedido: o.parte?.pai || o.id, parte: o.parte ? o.id : null, ...quemLe(), nome: user, momento, resposta });
+      registrar("observacao.ciente", { pedido: o.id, momento, resposta });
+    }
+    delete s.dataset.fixa;
+    obsFila.shift();
+    closeSheets();
+    proximaObservacao();
+  }
+  $("#obpOk").addEventListener("click", () => responderObservacao($("#sheetObsPedido").dataset.momento === "fim" ? "apliquei" : "li"));
+  $("#obpNao").addEventListener("click", () => responderObservacao("nao_era"));
+  // botão do cabeçalho: ver a observação quando quiser (no lote, uma de cada vez)
+  const comObservacao = () => abertos().filter((o) => temObservacao(o.obsPedido));
+  $("#pickObsBtn").addEventListener("click", () => {
+    obsFila = comObservacao(); obsMomento = null; obsDepois = null;
+    proximaObservacao();
+  });
+
   // ---------- pedido cancelado: entregar ao estoque (v75) ----------
   // Ninguém bipa: o WMS já gerou a devolução com o que estava na caixa. O separador leva ao estoque e marca
   // "Entregue ao estoque": fica registrado quem entregou e quando, e só então o estoque vê a entrada.
@@ -432,7 +489,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
         ${sel ? `<span class="order-cb">${marcado ? CHECK : ""}</span>` : ""}
         <div class="grow"><p class="order-id">${esc(nomeDo(o))}</p><p class="order-client">${esc(o.cliente)}</p></div>${tag}
       </div>
-      ${extra}
+      ${extra}${faixaDaObservacao(o.obsPedido)}
       <div class="order-meta"><span><b>${o.itens.length}</b> itens</span><span><b>${units(o)}</b> un.</span>${rotaDoPedido(o) ? etiquetaDaRota(rotaDoPedido(o)) : `<span>${o.cidade}</span>`}<span>${o.hora}</span></div>
       ${o.status !== "pendente" ? `<div class="order-bar"><i style="width:${pct}%"></i></div>` : ""}
       ${doca}
@@ -452,6 +509,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
         <p class="order-client">${l.criadoPor.tipo === "coordenador" ? "Montado pelo coordenador" : "Montado por você"} · uma viagem só</p></div>${tag}
       </div>
       <div class="lote-peds">${ps.map((o) => `<span><b class="cx-pos">${l.posicoes[o.id]}</b>${esc(o.id)}</span>`).join("")}</div>
+      ${faixaDaObservacao(ps.map((o) => o.obsPedido).find(temObservacao))}
       <div class="order-meta"><span><b>${itens}</b> itens</span><span><b>${un}</b> un.</span>${[...new Map(ps.map(rotaDoPedido).filter(Boolean).map((r) => [r.id, r])).values()].map(etiquetaDaRota).join("")}</div>
       ${l.status === "andamento" ? `<div class="order-bar"><i style="width:${Math.round((feitos / itens) * 100)}%"></i></div>` : ""}
     </button>`;
@@ -578,7 +636,8 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     // todos os itens já resolvidos (saiu do app na hora de ler a doca): vai direto para a doca
     if (!o.itens.some((i) => i.status === "pendente")) { abrirDoca({ pedidos: [o.id], lote: null }); mostrarPedidoDoGestor(); return; }
     show("viewPick"); renderPick(true);
-    mostrarPedidoDoGestor();
+    // observação do pedido: antes do primeiro item (depois, o aviso do gestor, se houver)
+    exigirObservacao([o], "inicio", mostrarPedidoDoGestor);
   });
 
   function criarLoteEIniciar() {
@@ -609,6 +668,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     if (paradas().every(paradaConcluida)) return abrirDoca({ pedidos: [...l.pedidos], lote: l.id });
     if (paradaConcluida(paradas()[l.atual] || { linhas: [] })) proximaParada();
     show("viewPick"); renderPick(true);
+    exigirObservacao(pedidosDoLote(l), "inicio", mostrarPedidoDoGestor); // um pedido do lote depois do outro
   }
 
   // ---------- separação ----------
@@ -627,6 +687,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
   const mesmaCaixa = (a, b) => !!a && !!b && a.pedido === b.pedido && a.idx === b.idx;
 
   function renderPick(anim) {
+    $("#pickObsBtn").hidden = !comObservacao().length; // v76: ver a observação do pedido quando quiser
     if (lote) return renderParada(anim);
     const o = current, i = item();
     $("#pickOrder").textContent = nomeDo(o);
@@ -970,7 +1031,11 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
 
   // ---------- doca de expedição: onde o separador deixou a mercadoria ----------
   // Leitura só por QR ou ID digitado (não se escolhe na lista). A lista mostra quantos pedidos esperam em cada doca.
+  // antes de ler a doca: a observação de novo ("Li e apliquei" / "Não era para mim")
   function abrirDoca(alvo) {
+    exigirObservacao(alvo.pedidos.map(pedido), "fim", () => mostrarDoca(alvo));
+  }
+  function mostrarDoca(alvo) {
     docaAlvo = alvo;
     const ps = alvo.pedidos.map(pedido);
     $("#docaTitulo").textContent = alvo.lote ? `${alvo.lote} · ${ps.length} pedidos` : nomeDo(ps[0]);
@@ -1068,7 +1133,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       goHome(); toast("Atualizando a lista do servidor…");
       return;
     }
-    orders = pedidosDeDemonstracao(setor()); lotes = lotesDeDemonstracao(setor()); save(); closeSheets();
+    orders = pedidosDeDemonstracao(setor()); lotes = lotesDeDemonstracao(setor()); save(); apagarCiencias(); closeSheets();
     selecionando = false; selecionados.clear();
     document.dispatchEvent(new Event("wms:reset"));
     goHome(); toast("Dados de demonstração reiniciados");

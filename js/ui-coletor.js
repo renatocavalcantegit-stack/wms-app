@@ -122,7 +122,8 @@ export function closeSheets() {
   $("#scrim").hidden = true;
   setTimeout(focarLeitura, 60);
 }
-$("#scrim").addEventListener("click", closeSheets);
+// folha obrigatória (data-fixa, ex.: a observação do pedido): tocar no fundo escuro não fecha
+$("#scrim").addEventListener("click", () => { if (!document.querySelector(".sheet[data-fixa]:not([hidden])")) closeSheets(); });
 
 // ---------- câmera (BarcodeDetector, quando disponível) ----------
 let stream, detecting = false;

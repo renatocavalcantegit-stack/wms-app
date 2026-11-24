@@ -30,6 +30,7 @@ export async function quadroDaSeparacao(pool, setor) {
     `SELECT p.id, p.cliente, p.cidade, p.prioridade, p.chegada, p.status, p.separador, u.nome AS separador_nome,
             p.inicio, p.designado_para, p.ordem_fila, p.rota, p.aguardando, p.lote, p.posicao_lote,
             p.pedido_pai, p.parte_numero, p.partes_total, p.parte_ruas,
+            (coalesce(trim(p.observacao_pedido), '') <> '')              AS tem_observacao,
             count(i.*)::int                                              AS itens,
             count(i.*) FILTER (WHERE i.status <> 'pendente')::int        AS itens_feitos,
             coalesce(sum(i.qtd), 0)                                      AS unidades,

@@ -64,7 +64,7 @@ export async function semear(pool, { conferencia = false } = {}) {
 
   await emTransacao(pool, async (c) => {
     // começa do zero (a ordem não importa com CASCADE)
-    await c.query("TRUNCATE devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
+    await c.query("TRUNCATE observacao_ciencias, devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
 
     await inserirLista(c, "usuarios", ["login text", "nome text", "perfil text", "pin_hash text"],
       USERS.map((u) => ({ login: u.login, nome: u.nome, perfil: u.perfil, pin_hash: gerarHash(u.pin) })));
@@ -101,7 +101,8 @@ export async function semear(pool, { conferencia = false } = {}) {
       ["id text", "setor text", "cliente text", "cidade text", "prioridade text", "chegada timestamptz", "status text", "separador text",
         "inicio timestamptz", "fim timestamptz", "doca text", "lote text", "posicao_lote text",
         "pedido_pai text", "parte_numero integer", "partes_total integer", "parte_ruas text", "dividido_por text",
-        "rota text", "aguardando boolean", "designado_para text", "ordem_fila integer", "designado_em timestamptz", "designado_por text"],
+        "rota text", "aguardando boolean", "designado_para text", "ordem_fila integer", "designado_em timestamptz", "designado_por text",
+        "observacao_pedido text", "observacao_para text[]"],
       pedidos.map((o) => ({
         id: o.id, setor: o.setor, cliente: o.cliente, cidade: o.cidade, prioridade: o.prio, chegada: horaDeHoje(o.hora),
         status: o.status, separador: o.operador, inicio: dataOuNada(o.inicio), fim: dataOuNada(o.fim),
@@ -111,6 +112,7 @@ export async function semear(pool, { conferencia = false } = {}) {
         rota: rotaDoPedido(o), aguardando: !!o.aguardando,
         designado_para: FILAS_DE_DEMONSTRACAO[o.id]?.[0] || null, ordem_fila: FILAS_DE_DEMONSTRACAO[o.id]?.[1] || null,
         designado_em: FILAS_DE_DEMONSTRACAO[o.id] ? horaDeHoje(o.hora) : null, designado_por: FILAS_DE_DEMONSTRACAO[o.id] ? "coordenador" : null,
+        observacao_pedido: o.obsPedido || null, observacao_para: o.obsPara ?? null,
       })));
 
     // os itens já vêm na ordem da rota de separação; a posição na lista vira a sequência

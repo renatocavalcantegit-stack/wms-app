@@ -524,3 +524,22 @@ a.btn { text-decoration: none; }
 .order-rota { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ink-2); background: #F1F1F4; padding: 2px 8px 2px 6px; border-radius: 6px; white-space: nowrap; }
 .order-rota i { width: 8px; height: 8px; border-radius: 50%; background: var(--rc); }
 .order-meta { flex-wrap: wrap; row-gap: 6px; } /* com a rota, a linha quebra quando não cabe (lote com duas rotas no C6000) */
+
+/* ---------- observação do pedido (v76): o texto do vendedor que vem do Sankhya (js/ui-observacao.js) ---------- */
+.obp-texto { background: #FFF6CC; border-left: 5px solid #F2C200; border-radius: 12px; padding: 12px 14px; font-size: 15.5px; line-height: 1.5; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.obp-faixa { display: inline-block; margin: 2px 0 8px; background: #FFF6CC; color: #7A5B00; border-radius: 8px; padding: 4px 8px; font-size: 13px; font-weight: 700; }
+.obp-marca { display: inline-block; margin-top: 6px; background: #FFF6CC; color: #7A5B00; border-radius: 6px; padding: 2px 7px; font-size: 11.5px; font-weight: 700; }
+.obp-sub { margin: 8px 2px 14px; font-size: 12.5px; }
+.obp-nao { margin-top: 10px; }
+.obp-secao .obp-para { font-weight: 600; text-transform: none; letter-spacing: 0; }
+.obp-respostas { list-style: none; margin: 10px 0 0; padding: 0; }
+.obp-respostas li { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.obp-respostas li time { color: var(--ink-3); font-weight: 700; }
+.obp-respostas li.nao time { color: #B45309; }
+.obp-ninguem { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-3); }
+.obp-alerta { margin: 8px 0 0; background: var(--warn-soft); color: #8A4B00; border-radius: 10px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; }
+.obp-btn { display: inline-flex; align-items: center; gap: 6px; }
+.obp-rotulo { display: block; margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-3); }
+#soPed { margin-bottom: 10px; }
+/* folha da observação no coletor pequeno: o texto longo rola dentro da caixa, os botões ficam sempre à vista */
+#sheetObsPedido #obpTexto { min-height: 0; overflow-y: auto; flex: 0 1 auto; }

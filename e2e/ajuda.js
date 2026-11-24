@@ -49,10 +49,23 @@ export function saldo(db, codigoEndereco, produto) {
   return db.saldos.filter((s) => s.enderecoId === e.id && s.produto === produto).reduce((t, s) => t + s.qtd, 0);
 }
 
+// ---------- observação do pedido (v76) ----------
+// se a observação obrigatória abriu (coletor: folha; posto: janela), responde. No lote, vem uma depois da outra.
+// Devolve quantas respondeu.
+export async function responderObservacao(page, botao = "#obpOk") {
+  let n = 0;
+  while (n < 10 && (await page.locator("#sheetObsPedido:visible, #mObsPedido:visible").count())) {
+    await page.locator(`${botao}:visible`).click();
+    n++;
+  }
+  return n;
+}
+
 // ---------- coletor: Separação ----------
 export async function abrirPedidoNoColetor(page, id) {
   await page.locator(`button.order[data-id="${id}"]`).click();
   await page.locator("#startGo").click();
+  await responderObservacao(page);
 }
 // lê no campo do coletor (como o leitor faz: digita e dá Enter)
 export async function ler(page, codigo) {
@@ -76,6 +89,7 @@ export async function separarItem(page, item, qtd = item.qtd) {
 }
 // lê a doca de expedição no fim da separação
 export async function lerDoca(page, codigo = "R9002-P1-A100-AP101") {
+  await responderObservacao(page); // antes da doca: "Li e apliquei"
   await expect(page.locator("#viewDoca")).toBeVisible();
   await page.locator("#docaInput").fill(codigo);
   await page.locator("#docaInput").press("Enter");
@@ -96,6 +110,7 @@ export async function abrirNaConferencia(page, id) {
   await expect(page.locator("#order:visible, #mStart:visible")).toHaveCount(1);
   if (await page.locator("#mStart").isVisible()) await page.locator("#sGo").click();
   await expect(page.locator("#order")).toBeVisible();
+  await responderObservacao(page);
 }
 export async function bipar(page, codigo) {
   await page.locator("#scan").fill(codigo);
@@ -104,6 +119,7 @@ export async function bipar(page, codigo) {
 // finaliza: quantidade de volumes e observação (todos como "caixa")
 export async function finalizarConferencia(page, volumes = 1) {
   await page.locator("#btnFinish").click();
+  await responderObservacao(page); // antes de finalizar: "Li e apliquei"
   await page.locator("#fVol").fill(String(volumes));
   await page.locator("#fGo").click();
   for (let i = 0; i < volumes; i++) await page.locator('#oTipos .o-add[data-add]').first().click();

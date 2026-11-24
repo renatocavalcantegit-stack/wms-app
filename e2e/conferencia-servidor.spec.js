@@ -6,7 +6,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { bipar, finalizarConferencia, estoque } from "./ajuda.js";
+import { bipar, finalizarConferencia, estoque, responderObservacao } from "./ajuda.js";
 
 const ENV = resolve(import.meta.dirname, "..", "server", ".env");
 test.skip(!existsSync(ENV), "sem server/.env: este teste precisa do banco");
@@ -89,6 +89,7 @@ test("o posto mostra a fila do conferente, inicia pelo resumo e o servidor receb
   await ana.locator('#queueBody tr[data-id="PV-10401"]').click();
   await ana.keyboard.press("Enter");
   await expect(ana.locator("#order")).toBeVisible();
+  await responderObservacao(ana); // v76: a observação do pedido, antes de começar
   await expect.poll(async () => (await conferencia("PV-10401")).status).toBe("andamento");
   const o = await conferirTudo(ana, "PV-10401");
   await finalizarConferencia(ana, 2);
@@ -256,6 +257,7 @@ test("pedido dividido: confere a parte que chegou, não finaliza até a outra pa
   await expect(linha.locator(".doca-chip.cf-parte-espera")).toContainText("1/2 em separação");
   await linha.click();
   await ana.locator("#sGo").click();
+  await responderObservacao(ana);
 
   const pedido = () => ana.evaluate(async () =>
     (await import("/js/dados/conferencia.js")).carregarConferencia("exp", { servidor: true }).orders.find((x) => x.id === "PV-10426"));

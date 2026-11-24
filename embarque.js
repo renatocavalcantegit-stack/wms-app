@@ -4,6 +4,10 @@ import { obsLinhas } from "./compartilhado/regras/volumes.js";
 import { parseVolume } from "./compartilhado/regras/etiqueta-volume.js";
 import { lerPedidosDaConferencia } from "./js/dados/conferencia.js";
 import { $, $$, esc } from "./js/util.js";
+import { session } from "./js/sessao.js";
+import { temObservacao } from "./compartilhado/regras/observacao.js";
+import { precisaLer, registrarCiencia } from "./js/dados/observacao.js";
+import { caixaDoTexto } from "./js/ui-observacao.js";
 import { show, openSheet, closeSheets, toast, beep, vibrate, openCam, getUser, CHECK } from "./js/ui-coletor.js";
 
 export const Embarque = (() => {
@@ -21,8 +25,12 @@ export const Embarque = (() => {
     if (!Array.isArray(d) || !d.length) d = seedEmbarque();
     else {
       // dados salvos antes da observação dos volumes: completa com a do cenário de demonstração
-      const seed = new Map(seedEmbarque().flatMap((c) => c.pedidos).map((p) => [p.id, p.obs]));
-      d.forEach((c) => c.pedidos.forEach((p) => { if (p.obs === undefined) p.obs = seed.get(p.id) || null; }));
+      const seed = new Map(seedEmbarque().flatMap((c) => c.pedidos).map((p) => [p.id, p]));
+      d.forEach((c) => c.pedidos.forEach((p) => {
+        if (p.obs === undefined) p.obs = seed.get(p.id)?.obs || null;
+        // v76: a observação do pedido (texto do vendedor) e para quem ela é obrigatória
+        if (p.obsPedido === undefined) Object.assign(p, { obsPedido: seed.get(p.id)?.obsPedido || null, obsPara: seed.get(p.id)?.obsPara ?? null });
+      }));
     }
     importConferidos(d);
     return d;
@@ -36,7 +44,9 @@ export const Embarque = (() => {
     // observação dos volumes informada na conferência vale também para pedidos que já estão em carga
     // (a quantidade de volumes acompanha enquanto o pedido ainda não começou a ser bipado)
     const confObs = new Map(conf.filter((o) => o.conf && o.conf.obs).map((o) => [o.id, o.conf]));
+    const doPedido = new Map(conf.filter((o) => temObservacao(o.obsPedido)).map((o) => [o.id, o]));
     d.forEach((c) => c.pedidos.forEach((p) => {
+      const x = doPedido.get(p.id); if (x) Object.assign(p, { obsPedido: x.obsPedido, obsPara: x.obsPara ?? null });
       const k = confObs.get(p.id); if (!k) return;
       p.obs = k.obs;
       if (!p.lidos.length && k.volumes) p.volumes = k.volumes;
@@ -51,7 +61,8 @@ export const Embarque = (() => {
       av = { id: "CG-AVULSA", rota: "Avulsa", veiculo: "A definir", placa: "—", motorista: "—", doca: "01", saida: "—", pedidos: [], status: "aberta", inicio: null, fim: null, operador: null, log: [], obs: "" };
       d.unshift(av);
     }
-    novos.forEach((o) => av.pedidos.push({ id: o.id, cliente: o.cliente, cidade: o.cidade, volumes: o.conf.volumes || 1, lidos: [], obs: o.conf.obs || null }));
+    novos.forEach((o) => av.pedidos.push({ id: o.id, cliente: o.cliente, cidade: o.cidade, volumes: o.conf.volumes || 1, lidos: [], obs: o.conf.obs || null,
+      obsPedido: o.obsPedido || null, obsPara: o.obsPara ?? null }));
   }
 
   document.addEventListener("wms:reset", () => {
@@ -222,7 +233,46 @@ export const Embarque = (() => {
     }
     render({ id: p.id, vol: v.vol });
     if (lidos(cur) === totVol(cur)) setTimeout(() => toast("Todos os volumes embarcados — finalize a carga"), 400);
+    // v76: observação do pedido marcada para o embarque: ao bipar o 1º volume e ao bipar o último
+    const momentos = [p.lidos.length === 1 && "inicio", complete && "fim"].filter(Boolean);
+    exigirObservacao(p, momentos);
   }
+
+  // ---------- observação do pedido (v76) ----------
+  // Obrigatória no embarque só quando o analista de pedidos marcar no Sankhya (regra em compartilhado/regras/observacao.js).
+  // Usa a folha #sheetObsPedido do coletor (tocar fora não fecha). A resposta fica guardada no aparelho.
+  let obsPend = null; // { p, momentos: [...] }
+  const quemLe = () => ({ login: session()?.login || getUser(), papel: "embarque" });
+  function exigirObservacao(p, momentos) {
+    const falta = momentos.filter((m) => precisaLer(p, { ...quemLe(), momento: m }));
+    if (!falta.length) return false;
+    obsPend = { p, momentos: falta };
+    mostrarObservacaoObrigatoria();
+    return true;
+  }
+  function mostrarObservacaoObrigatoria() {
+    const { p, momentos: [momento] } = obsPend;
+    $("#obpTitulo").textContent = momento === "fim" ? "Verifique novamente a observação" : "Leia a observação do pedido";
+    $("#obpSub").textContent = `${p.id} · ${momento === "fim" ? "último volume · você aplicou o que ela pede?" : "1º volume embarcado"}`;
+    $("#obpTexto").innerHTML = caixaDoTexto(p.obsPedido);
+    $("#obpOk").textContent = momento === "fim" ? "Li e apliquei" : "Li e entendi";
+    $("#obpNao").hidden = momento !== "fim";
+    const s = $("#sheetObsPedido");
+    s.dataset.id = p.id; s.dataset.momento = momento; s.dataset.dono = "embarque"; s.dataset.fixa = "1";
+    openSheet("sheetObsPedido");
+    vibrate([60, 40, 60]);
+  }
+  function responderObservacao(resposta) {
+    const s = $("#sheetObsPedido");
+    if (s.dataset.dono !== "embarque" || !obsPend) return; // aberta pelo separador (app.js responde)
+    const { p, momentos } = obsPend, momento = momentos.shift();
+    registrarCiencia({ pedido: p.id, parte: null, ...quemLe(), nome: getUser(), momento, resposta });
+    delete s.dataset.fixa; delete s.dataset.dono;
+    closeSheets();
+    if (momentos.length) mostrarObservacaoObrigatoria(); else obsPend = null;
+  }
+  $("#obpOk").addEventListener("click", () => responderObservacao($("#sheetObsPedido").dataset.momento === "fim" ? "apliquei" : "li"));
+  $("#obpNao").addEventListener("click", () => responderObservacao("nao_era"));
 
   $("#loadForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -233,18 +283,22 @@ export const Embarque = (() => {
   // ---------- observação dos volumes (informada na conferência) ----------
   let obsBack = null;
   const ICON_OBS = '<svg viewBox="0 0 24 24"><path d="M5 4h14v12H9l-4 4z"/><path d="M9 9h6M9 12h4"/></svg>';
-  const obsBtn = (p) => p.obs ? `<button type="button" class="obs-btn ${p.obs.atencao ? "warn" : ""}" data-obs="${p.id}" aria-label="Observações do pedido ${p.id}">${ICON_OBS}Obs.</button>` : "";
+  const obsBtn = (p) => p.obs || temObservacao(p.obsPedido) ? `<button type="button" class="obs-btn ${p.obs?.atencao || temObservacao(p.obsPedido) ? "warn" : ""}" data-obs="${p.id}" aria-label="Observações do pedido ${p.id}">${ICON_OBS}Obs.</button>` : "";
   function openObs(id, back) {
     const c = cur && cur.pedidos.some((x) => x.id === id) ? cur : cargas.find((x) => x.pedidos.some((p) => p.id === id));
-    const p = c.pedidos.find((x) => x.id === id), o = p.obs;
+    const p = c.pedidos.find((x) => x.id === id), o = p.obs || { tipos: {} };
     obsBack = back;
     $("#soId").textContent = `${p.id} · ${p.volumes} volume${p.volumes > 1 ? "s" : ""}`;
     $("#soCli").textContent = `${p.cliente} · ${p.cidade}`;
+    // v76: a observação do pedido (do vendedor) vem antes da dos volumes (da conferência)
+    $("#soPed").hidden = !temObservacao(p.obsPedido);
+    $("#soPedT").innerHTML = temObservacao(p.obsPedido) ? caixaDoTexto(p.obsPedido) : "";
+    $("#soVol").hidden = !p.obs;
     $("#soList").innerHTML = obsLinhas(o).map(([n, nome]) => `<div class="so-row"><b>${n}</b><span>${esc(nome)}</span></div>`).join("");
     $("#soAt").hidden = !o.atencao;
     $("#soAtT").textContent = o.atencao || "";
     const em = o.em ? new Date(o.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
-    $("#soPor").textContent = `Conferido por ${o.por || "—"}${em ? ` às ${em}` : ""}`;
+    $("#soPor").textContent = p.obs ? `Conferido por ${o.por || "—"}${em ? ` às ${em}` : ""}` : "";
     openSheet("sheetObs");
   }
   document.addEventListener("click", (e) => {

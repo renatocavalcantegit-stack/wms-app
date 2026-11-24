@@ -79,14 +79,30 @@ const order = (id, cliente, cidade, prio, hora, itens) => ({
   doca: null, lote: null, pos: null, parte: null,
 });
 
+// observação do pedido (v76): o texto que o vendedor escreve no Sankhya. para = para quem a leitura é obrigatória,
+// marcado pelo analista de pedidos (futuro); sem marcação (null) vale para separador e conferente.
+// Ver compartilhado/regras/observacao.js. Não é a "observação dos volumes" da conferência.
+export const OBSERVACOES_DE_DEMONSTRACAO = {
+  "PV-10421": { texto: "Câmaras 26: o cliente quer 10 da Pirelli e 10 da Kenda, em pacotes separados com o nome da marca.\nCuidado com os pneus: não dobrar." },
+  "PV-10427": { texto: "Separar as 6 câmaras em dois pacotes de 3 (o cliente divide entre duas lojas).\nCliente pede entrega antes das 12h." },
+  "PV-10424": { texto: "Entregar na loja da Rua 24 de Maio, não na matriz. Descarregar pelos fundos.", para: ["embarque"] },
+  "PV-10426": { texto: "Pedido grande: os pneus vão amarrados em pares.\nCâmaras 26 da Kenda: não aceitar substituta." },
+  "PV-10401": { texto: "Embalar os pedais numa caixa separada, com o nome do cliente por fora." },
+  "OP-3212": { texto: "Montar as 10 bikes com selim confort. Reservar as peças na bancada 2." },
+};
+const comObservacao = (o) => {
+  const x = OBSERVACOES_DE_DEMONSTRACAO[o.id];
+  return x ? Object.assign(o, { obsPedido: x.texto, obsPara: x.para ?? null }) : o;
+};
+
 // docas de expedição (rua 9002) — mesmos IDs do cadastro de endereços do Estoque
 export const docaDeExpedicao = (n) => ({ id: 608007 + n, codigo: `R9002-P1-A100-AP${100 + n}` });
 
 // pedido grande da demonstração, já dividido pelo coordenador em 2 partes (blocos de ruas seguidas)
 function pedidoDividido() {
-  const grande = routeSort(order("PV-10426", "Rota Norte Distribuidora", "Caucaia · CE", "normal", "09:55",
+  const grande = comObservacao(routeSort(order("PV-10426", "Rota Norte Distribuidora", "Caucaia · CE", "normal", "09:55",
     [item("176", 40), item("122", 24), item("536", 12), item("17057", 20), item("16016", 30), item("1797", 60), item("13633", 10), item("19212", 18),
-      item("8745", 24), item("17726", 24), item("8545", 30), item("2825", 12)]));
+      item("8745", 24), item("17726", 24), item("8545", 30), item("2825", 12)])));
   const grupos = sugerirDivisao(grande.itens, 2);
   return grupos.map((idxs, k) => ({
     ...grande, id: `${grande.id}/${k + 1}`, itens: idxs.map((i) => ({ ...grande.itens[i] })),
@@ -108,7 +124,7 @@ export const seedSeparacao = () => {
     order("PV-10425", "Trilha Solar Comercial", "Eusébio · CE", "normal", "09:48", [item("8745", 10), item("17726", 12), item("8545", 20), item("2825", 6), item("19212", 6)]),
     order("PV-10427", "Praia Mansa Bikes", "Fortaleza · CE", "normal", "10:05", [item("176", 6), item("536", 2), item("3243", 2)]),
     order("PV-10428", "Vento Leste Comercial", "Fortaleza · CE", "normal", "10:12", [item("122", 10), item("176", 4), item("17057", 4)]),
-  ].map(routeSort);
+  ].map(routeSort).map(comObservacao);
   const [l] = seedLotes();
   lista.filter((o) => l.pedidos.includes(o.id)).forEach((o) => Object.assign(o, { lote: l.id, pos: l.posicoes[o.id] }));
   return [...lista, ...pedidoDividido()];
@@ -137,7 +153,7 @@ export const seedConferencia = () => {
     sep(order("PV-10402", "Paineira Cedro Comercial", "Fortaleza · CE", "normal", "07:10", [item("536", 4), item("283", 2), item("3243", 2), item("2843", 1)]), { "2843": 0 }),
     sep(order("PV-10403", "Brisa Cedro Comercial", "Sobral · CE", "normal", "07:28", [item("13633", 2), item("8745", 6), item("14857", 5)])),
     sep(aguardando(order("PV-10404", "Alameda Arco Comercial", "Quixadá · CE", "alta", "07:35", [item("883", 2), item("167", 6), item("4084", 3), item("19212", 6), item("17480", 4)])), { "167": 5 }),
-  ].map(routeSort);
+  ].map(routeSort).map(comObservacao);
 };
 
 // ---------- pedidos de montagem (ordem de produção) ----------
@@ -149,7 +165,7 @@ export const seedSeparacaoMont = () => [
   op("OP-3213", "normal", "08:02", [item("21844", 12), item("4084", 12), item("18726", 12), item("17057", 12)]),
   op("OP-3214", "normal", "08:45", [item("18913", 8), item("17988", 8), item("283", 8), item("3243", 8)]),
   op("OP-3215", "normal", "09:30", [item("13075", 6), item("13633", 12), item("16016", 12), item("21844", 6), item("16440", 6)]),
-].map(routeSort);
+].map(routeSort).map(comObservacao);
 export const seedConferenciaMont = () => {
   const sep = (o, faltas = {}) => {
     o.itens.forEach((i) => {
@@ -170,7 +186,7 @@ export const seedConferenciaMont = () => {
 export const seedEmbarque = () => {
   // obs: composição dos volumes informada na conferência (demonstração)
   const p = (id, cliente, cidade, volumes, tipos, atencao = "", outro = "") =>
-    ({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Diego", em: null } : null });
+    comObservacao({ id, cliente, cidade, volumes, lidos: [], obs: tipos ? { tipos, outro, atencao, por: "Diego", em: null } : null });
   const c = (id, rota, veiculo, placa, motorista, doca, saida, pedidos) => ({
     id, rota, veiculo, placa, motorista, doca, saida, pedidos, status: "aberta", inicio: null, fim: null, operador: null, log: [], obs: "",
   });

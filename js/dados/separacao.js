@@ -8,7 +8,8 @@ import { seedSeparacao, seedSeparacaoMont, seedLotes, tipoDoProduto } from "../d
 
 // v4: doca de expedição, lotes e pedidos divididos (a versão nova da chave descarta os pedidos antigos)
 // cada setor tem a sua fila: Expedição (pedidos de venda) ou Montagem (pedidos OP)
-const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v7" : "wms-bb-sep-v7");
+// v8: observação do pedido (v76)
+const chave = (setor) => (setor === "mont" ? "wms-bb-sep-mont-v8" : "wms-bb-sep-v8");
 const chaveLotes = (setor) => (setor === "mont" ? "wms-bb-lotes-mont-v4" : "wms-bb-lotes-v4");
 
 // pedidos de demonstração do setor (usados no primeiro acesso e em "reiniciar demonstração")
@@ -86,6 +87,8 @@ export function pedidoDoServidor(p) {
     ocorrenciaPendente: !!p.ocorrencia_pendente, cancelado: p.cancelado || null,
     // cancelado (v75): o que ele tem que entregar ao estoque { numero, itens: [{ sku, desc, qtd }] } (null: nada ou já entregou)
     entregar: p.entregar || null,
+    // observação do vendedor (v76): o texto, para quem é obrigatória (null = o padrão) e quem já leu
+    obsPedido: p.observacao_pedido || null, obsPara: p.observacao_para ?? null, ciencias: p.ciencias || [],
     parte: p.pedido_pai ? { pai: p.pedido_pai, n: p.parte_numero, de: p.partes_total, ruas: p.parte_ruas, por: p.dividido_por } : null,
     itens: p.itens.map((i) => ({
       sku: i.produto, ean: i.codigos_de_barras[0] || "", eans: i.codigos_de_barras, desc: i.descricao, un: i.un,

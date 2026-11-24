@@ -12,6 +12,7 @@
 // estão em compartilhado/regras/fila-do-separador.js. Os dados vêm de js/dados/quadro.js.
 // Ainda NÃO estão aqui (seguem só na demonstração): dividir pedido, sugerir lotes e a distribuição inteligente.
 import { esc as escapar } from "./js/util.js";
+import { marcaDaObservacao, secaoDaObservacao } from "./js/ui-observacao.js";
 import { temServidor } from "./js/sessao.js";
 import { buscarQuadro, moverNoQuadro, definirRota, criarLote, desfazerLote, buscarPedido, ouvirQuadro } from "./js/dados/quadro.js";
 import { unidadesDoQuadro, colunasDoQuadro, situacaoNoQuadro, andamentoDoItem } from "./compartilhado/regras/fila-do-separador.js";
@@ -144,6 +145,7 @@ function card(u, { col, pos = "", primeiro = false }) {
     <div class="c-main"><p class="c-id">${titulo}</p></div>
     ${corpo}
     <div class="c-nums"><span><b>${itens}</b> SKUs</span><span><b>${numero(un)}</b> un.</span>${idade}</div>
+    ${marcaDaObservacao(u.pedidos.some((x) => x.tem_observacao))}
     ${vivoHtml}
   </article>`;
 }
@@ -377,6 +379,7 @@ function htmlDoPedido(p) {
       <button class="dr-x" data-gqfechar="1" aria-label="Fechar">×</button>
     </header>
     <div class="dr-body">
+      ${secaoDaObservacao({ texto: p.observacao_pedido, para: p.observacao_para, ciencias: p.ciencias })}
       <div class="dr-grid">${grade}</div>
       ${extras ? `<div class="dr-grid">${extras}</div>` : ""}
       <div class="dr-nums">

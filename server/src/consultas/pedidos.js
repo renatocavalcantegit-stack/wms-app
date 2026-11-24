@@ -1,5 +1,6 @@
 // SQL dos pedidos da separação.
 import { aEntregarDosPedidos } from "./devolucoes.js";
+import { cienciasDosPedidos } from "./observacao.js";
 
 // Lista dos pedidos de um setor (exp ou mont), com o total de itens e de unidades.
 // `status` é opcional: sem ele, vêm todos.
@@ -34,6 +35,8 @@ export const COLUNAS_DO_ITEM = `
 export async function buscarPedido(pool, id) {
   const pedido = (await pool.query("SELECT * FROM pedidos WHERE id = $1", [id])).rows[0];
   if (!pedido) return null;
+  // v76: quem leu a observação do pedido (do pedido original, com as partes)
+  const ciencias = (await cienciasDosPedidos(pool, [pedido.pedido_pai || pedido.id])).get(pedido.pedido_pai || pedido.id) || [];
 
   const itens = await pool.query(
     `SELECT ${COLUNAS_DO_ITEM}
@@ -43,7 +46,7 @@ export async function buscarPedido(pool, id) {
       ORDER BY i.sequencia`,
     [id],
   );
-  return { ...pedido, itens: itens.rows };
+  return { ...pedido, itens: itens.rows, ciencias };
 }
 
 // O passo do item da vez (v63): grava em que item e em que passo o separador está, para a Gestão.
@@ -64,6 +67,7 @@ export async function registrarPasso(pool, login, { passo, itens }) {
 //   separador_nome  nome de quem está com o pedido
 //   doca_id         ID do endereço da doca (o coletor conta quantos pedidos esperam em cada doca)
 //   entregar       pedido cancelado: o que ele ainda tem que levar ao estoque { numero, itens } (v75)
+//   ciencias       quem já leu a observação do pedido (v76; o coletor não pede de novo a quem já respondeu)
 export async function pedidosDoColetor(pool, setor, login) {
   const pedidos = (await pool.query(
     `SELECT p.*, u.nome AS separador_nome,
@@ -92,8 +96,9 @@ export async function pedidosDoColetor(pool, setor, login) {
   const porPedido = Map.groupBy(itens, (i) => i.pedido_id);
   const cancelados = pedidos.filter((p) => p.status === "cancelado" && p.separador === login);
   const entregar = await aEntregarDosPedidos(pool, [...new Set(cancelados.map((p) => p.pedido_pai || p.id))], "separador", login);
+  const ciencias = await cienciasDosPedidos(pool, [...new Set(pedidos.map((p) => p.pedido_pai || p.id))]);
   return pedidos.map((p) => ({
-    ...p, itens: porPedido.get(p.id) || [],
+    ...p, itens: porPedido.get(p.id) || [], ciencias: ciencias.get(p.pedido_pai || p.id) || [],
     entregar: p.status === "cancelado" && p.separador === login ? entregar.get(p.pedido_pai || p.id) || null : null,
   }));
 }

@@ -4,6 +4,7 @@
 import { avaliarAcaoDaSeparacao } from "../../../compartilhado/regras/acoes-separacao.js";
 import { aplicarAcaoDaConferencia, entrarNaConferencia, sairDaConferencia, conferenciaDoPedido } from "./aplicar-conferencia.js";
 import { criarDevolucao, somarNaEntrega, marcarEntregue, anotarNaOcorrencia } from "./devolucoes.js";
+import { aplicarCiencia } from "./observacao.js";
 
 // quais perfis podem mandar cada grupo de ações
 const PERFIS_DA_SEPARACAO = ["sep"];
@@ -25,6 +26,7 @@ function montarSet(mudancas, colunas, primeiroParametro) {
 // conexao: a da transação do lote · usuario: { login, perfil } · acao: { tipo, dados, feitaEm }
 // Devolve { resultado, motivo }.
 export async function aplicarAcao(conexao, usuario, acao) {
+  if (acao.tipo === "observacao.ciente") return aplicarCiencia(conexao, usuario, acao); // v76: leu a observação do pedido
   if (acao.tipo.startsWith("conferencia.")) return aplicarAcaoDaConferencia(conexao, usuario, acao); // Fase 2
   if (!acao.tipo.startsWith("separacao.")) return { resultado: "desconhecida", motivo: `TIPO DE AÇÃO DESCONHECIDO: ${acao.tipo}` };
   if (!PERFIS_DA_SEPARACAO.includes(usuario.perfil)) return { resultado: "recusada", motivo: "PERFIL SEM PERMISSÃO PARA SEPARAR." };
