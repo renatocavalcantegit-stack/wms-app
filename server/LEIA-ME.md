@@ -119,6 +119,106 @@ dá para ligar em `chrome://flags` a opção "Insecure origins treated as secure
 Como o app sabe que tem servidor? Ele lê o `modo.json`. No GitHub Pages é o arquivo do repositório
 (`{ "servidor": false }`, modo demonstração); este servidor responde `{ "servidor": true }`.
 
+## Colocar em produção (PC dedicado da empresa)
+
+Checklist para o dia em que o servidor sai do `npm run dev` e passa a rodar o tempo todo em um PC da empresa.
+Cada item diz **o que fazer** e **por quê**. Marque `[x]` conforme for fazendo.
+
+O que torna tudo isso menos tenso: os coletores trabalham **sem rede** (fila de envio). Se o servidor reiniciar
+por alguns segundos ou cair por alguns minutos, a separação e a conferência continuam, e as ações chegam quando
+ele voltar. Ainda assim, o objetivo é que ele **volte sozinho**, sem ninguém precisar lembrar de ligar.
+
+### 1. O PC
+
+- [ ] **SSD** (não HD). Banco de dados vive de ler e gravar no disco; HD é o gargalo mais comum depois do Wi-Fi.
+- [ ] **16 GB de memória** (8 GB funciona). O PostgreSQL usa a memória livre como cache.
+- [ ] Processador: qualquer i5/Ryzen 5 dos últimos anos sobra para dezenas de coletores.
+- [ ] **Nobreak**. Queda de energia é a causa nº 1 de servidor fora do ar em empresa pequena.
+- [ ] Na BIOS, **ligar sozinho quando a energia voltar** (opção com nome parecido com "Restore on AC Power Loss" → *Power On*).
+- [ ] No Windows, **nunca suspender nem hibernar** (Configurações → Sistema → Energia: "Nunca").
+- [ ] **Windows Update fora do expediente** ("Horário ativo" cobrindo o turno do galpão), para não reiniciar no meio do dia.
+- [ ] **Cabo de rede** no servidor (não Wi-Fi) e **IP fixo** (os coletores procuram sempre o mesmo endereço).
+  O ideal é reservar o IP no roteador (reserva DHCP), para não haver dois aparelhos com o mesmo número.
+- [ ] PC **dedicado de verdade**: ninguém usa para navegar, e-mail ou planilha; fica em lugar com acesso restrito.
+
+### 2. O servidor liga sozinho (serviço do Windows)
+
+Hoje o servidor depende de uma janela aberta com `npm run dev`. Se alguém fechar a janela, fizer logoff ou o PC
+reiniciar, ele cai. Um **serviço do Windows** liga junto com o PC (antes de qualquer login) e é religado se o
+processo morrer. O PostgreSQL já roda assim; o Node precisa ser igual.
+
+- [ ] Instalar o **NSSM** (nssm.cc), uma ferramenta que transforma um comando em serviço.
+- [ ] Criar o serviço `wms` rodando `npm run iniciar` dentro de `server/` (o `iniciar`, não o `dev`: o `dev`
+  reinicia a cada arquivo salvo, o que só serve para programar).
+- [ ] Em *Exit actions*, **Restart** (religar se o processo cair). Em *I/O*, mandar a saída para um arquivo de log
+  (ex.: `C:\wms-logs\servidor.log`) com rotação ligada, para o arquivo não crescer para sempre.
+- [ ] Tipo de inicialização: **Automático**. Testar: reiniciar o PC sem fazer login e abrir `/api/saude` em outro aparelho.
+- [ ] Testar a queda: no Gerenciador de Tarefas, encerrar o processo `node.exe` e conferir que ele volta em segundos.
+
+Ao parar o serviço, o NSSM manda um Ctrl+C para o Node; o `src/iniciar.js` já trata isso e fecha as conexões
+com o banco antes de sair.
+
+**Quando reiniciar o Node?** Só para publicar uma versão nova. Um servidor Node não "cansa": ele roda meses sem
+parar. Se for preciso reiniciar com frequência para ele voltar ao normal (memória subindo sem parar, por exemplo),
+isso é um bug a investigar no log, não uma rotina.
+
+### 3. Backup (o item mais importante desta lista)
+
+Disco morre, Windows corrompe, vírus criptografa. Sem backup, o estoque e o histórico somem junto.
+
+- [ ] Um `pg_dump` **todo dia**, fora do expediente, pelo **Agendador de Tarefas** do Windows. Exemplo:
+
+```powershell
+& "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -U postgres -Fc -f "D:\backup-wms\wms-$(Get-Date -Format yyyy-MM-dd).dump" wms
+```
+
+  (`-Fc` é o formato compacto do próprio PostgreSQL. A senha fica no arquivo `pgpass.conf` do usuário que roda
+  a tarefa, nunca escrita no comando.)
+- [ ] **Cópia fora daquele PC**: outro computador, nuvem ou HD externo que não fica sempre conectado.
+  Backup no mesmo disco não protege contra disco queimado nem contra vírus.
+- [ ] Apagar os backups mais antigos que N dias (ex.: guardar 30), para o disco não encher.
+- [ ] **Testar a restauração** pelo menos uma vez, e depois de tempos em tempos: restaurar o arquivo no banco
+  `wms_teste` e abrir o app apontando para ele. Backup que nunca foi restaurado não é backup, é esperança.
+
+```powershell
+& "C:\Program Files\PostgreSQL\18\bin\pg_restore.exe" -U postgres --clean --if-exists -d wms_teste "D:\backup-wms\wms-AAAA-MM-DD.dump"
+```
+
+### 4. Segurança
+
+- [ ] **HTTPS** (seção acima, "Obrigatório antes da virada").
+- [ ] **Nada aberto para a internet.** O servidor só é alcançado pela rede interna. Não criar redirecionamento
+  de porta no roteador. (O `host: "0.0.0.0"` do `src/iniciar.js` quer dizer "toda a rede local", o que é certo
+  para os coletores; quem fecha a porta para fora é o roteador.)
+- [ ] **Firewall do Windows**: liberar só a porta do WMS, e só no perfil de rede "Privada"/do domínio.
+- [ ] **PostgreSQL só para o próprio PC**: no `postgresql.conf`, `listen_addresses = 'localhost'`. Só o Node conversa
+  com o banco, e ele está na mesma máquina. (Mudanças no `postgresql.conf` e no `pg_hba.conf`: fazer passo a passo,
+  com backup do arquivo antes.)
+- [ ] **Usuário do banco só para o WMS**: o `.env` de produção usa um usuário que lê e grava as tabelas do `wms`,
+  e não o `postgres` (que pode tudo, inclusive apagar bancos). Se um dia houver uma falha no app, o estrago fica limitado.
+  As migrações continuam rodando com o `postgres`.
+- [ ] **`.env` com senha forte**, fora do git (já está no `.gitignore`), e só no PC do servidor.
+- [ ] Atualizações do Windows e do Node em dia (versão LTS do Node), aplicadas fora do expediente.
+
+### 5. Se ficar lento: medir antes de mexer
+
+Para o volume de um galpão (dezenas de coletores, algumas dezenas de pedidos por segundo nos picos), o Fastify
+e o PostgreSQL têm folga de sobra. O Node atende vários coletores ao mesmo tempo porque, enquanto espera o banco
+responder a um, atende o próximo (o "event loop"); o banco recebe até 10 consultas ao mesmo tempo pelo pool
+(`src/banco.js`) e as outras esperam milissegundos na fila.
+
+Quando alguém disser "está lento", investigar nesta ordem:
+
+1. **Wi-Fi do galpão.** O log do servidor mostra o tempo de cada resposta (`responseTime`). Se o log diz 20 ms e
+   o coletor sente 3 segundos, o problema está no caminho (rádio, access point longe), não no servidor.
+2. **Uma consulta específica lenta.** Achar no log qual rota demora e rodar o SQL dela com `EXPLAIN ANALYZE` no
+   PostgreSQL. Se aparecer "Seq Scan" em tabela grande, falta um índice (que entra por uma migração nova).
+3. **O PC.** Gerenciador de Tarefas: disco em 100% (HD em vez de SSD?), memória cheia, outro programa pesado rodando.
+
+Problemas de **duas pessoas mexendo na mesma coisa ao mesmo tempo** não são de velocidade, são de correção, e quem
+resolve é o banco: as transações (`emTransacao` em `src/banco.js`) e as regras gravadas nas tabelas (`CHECK`,
+`UNIQUE`, `FOR UPDATE`). Regra de negócio que não pode ser quebrada mora no banco, não só no JavaScript.
+
 ## Testes
 
 ```bash
