@@ -66,7 +66,8 @@ export async function sincronizarAgora({ sessao, buscar = fetch, agora = () => n
     const quando = agora().toISOString();
     const novasRecusas = recusadas.map((r) => {
       const acao = lote.find((a) => a.id === r.id);
-      return { id: r.id, tipo: acao?.tipo, pedido: acao?.dados?.pedido, resultado: r.resultado, motivo: r.motivo, quando };
+      // nota (v78): "NF 48201" na conferência da nota no coletor do estoquista
+      return { id: r.id, tipo: acao?.tipo, pedido: acao?.dados?.pedido, nota: acao?.dados?.rotulo, resultado: r.resultado, motivo: r.motivo, quando };
     });
     recusadasAgora.push(...novasRecusas);
     gravarEstadoDaSincronizacao({

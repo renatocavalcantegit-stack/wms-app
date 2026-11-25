@@ -64,6 +64,9 @@ export function rotasDeSincronizacao(app, { pool, exigirLogin, tempoReal }) {
     if (request.body.passo) await registrarPasso(pool, request.usuario.login, request.body.passo).catch((e) => request.log.warn(e, "passo do item não gravado"));
     if (novas.length) tempoReal.avisar("acoes", { login: request.usuario.login, quantidade: novas.length });
     else tempoReal.avisar("contato", { login: request.usuario.login });
+    // v78: a conferência da nota no coletor mudou as notas de entrada (a aba Entrada da Gestão se atualiza)
+    const novasDaRecepcao = new Set(novas);
+    if (acoes.some((a) => novasDaRecepcao.has(a.id) && a.tipo.startsWith("recepcao."))) tempoReal.avisar("estoque", { notas: true });
     // o aparelho tira da fila tudo o que está em "novas" e em "repetidas": as duas já estão no servidor.
     // "recusadas" diz quais NÃO mudaram o pedido (conflito, recusada, desconhecida) e por quê.
     return { novas, repetidas, recusadas };

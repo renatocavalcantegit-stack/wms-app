@@ -1,20 +1,38 @@
 // WMS Beach Bike — coletor do Estoquista, menu RECEPÇÃO: conferência, armazenamento e consulta de recebimentos.
 // As regras ficam em compartilhado/regras/recebimento.js e os dados passam por js/dados/recebimento.js.
+// Com servidor (v78), a Conferência usa a cópia das notas em aberto (js/dados/recepcao.js) e a fila de envio:
+// confere sem rede e nunca lê o Estoque inteiro. Armazenamento e Consulta ainda não estão no servidor (entrega C).
 import { $, $$, esc } from "./js/util.js";
 import { closeSheets, toast } from "./js/ui-coletor.js";
 import { num, tipoTag, diaCurto, msg, confirmar, cartaoProduto } from "./js/ui-estoque.js";
 import { etiquetaVolumeHtml } from "./js/etiqueta-recebimento.js";
 import { lerEstoque, enderecoPorId, produtoPorCodigo, saldoNoEndereco, enderecosPadraoDoProduto } from "./js/dados/estoque.js";
 import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./js/dados/recebimento.js";
+import { lerRecepcao, conferirNaFila, finalizarNaFila } from "./js/dados/recepcao.js";
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
+import { MSG_FORA_DO_SERVIDOR } from "./js/ui-estoque.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
   statusDaNota, resumoDaNota, validarDoca, validarDocaDeArmazenamento, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
   STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA, rotuloDaNota,
 } from "./compartilhado/regras/recebimento.js";
 
-let db = lerEstoque();
+// com servidor: { sess, pedirEnvio } (ligarRecepcaoNoServidor). Sem servidor: a demonstração, no aparelho.
+let servidor = null;
+const lerDados = () => (servidor ? lerRecepcao() : lerEstoque());
+let db = null; // lido ao abrir (com servidor, o Estoque da demonstração nem é lido)
 const hoje = () => new Date().toLocaleDateString("sv");
+
+export function ligarRecepcaoNoServidor(sess, pedirEnvio) {
+  servidor = { sess, pedirEnvio };
+}
+// a cópia das notas foi baixada de novo: redesenha SÓ a lista de notas e a de produtos
+// (nunca o passo da quantidade ou da doca, para não apagar o que o estoquista está digitando)
+export function aoBaixarNotas() {
+  db = lerDados();
+  if (!$("#viewRecConf").hidden && !conf.produto) desenharConferencia();
+  if (!$("#viewEstHome").hidden) resumoDoMenu();
+}
 
 // ---------- pílulas de status (mesmas cores do documento) ----------
 const COR = { aguardando: "g", aberta: "y", conferida: "v", sem: "v", com: "y", pendente: "g", parcial: "y", armazenado: "b" };
@@ -31,15 +49,16 @@ const linhaDoca = (doca) => `<div class="rc-doca">${tipoTag("doca")}<span class=
 
 // números do menu (aguardando, em aberto, produtos na doca)
 export function resumoDoMenu() {
-  db = lerEstoque();
+  db = lerDados();
   const st = db.notas.map((n) => statusDaNota(n, db.conferencias).conferencia);
   $("#mnConf").textContent = `${st.filter((s) => s === "aguardando").length} aguardando · ${st.filter((s) => s === "aberta").length} em aberto`;
+  if (servidor) { $("#mnArm").textContent = MSG_FORA_DO_SERVIDOR; return; }
   const naDoca = new Set(pendentesPorData(db.conferencias).flatMap((d) => d.produtos.map((p) => p.produto))).size;
   $("#mnArm").textContent = naDoca ? `${naDoca} produto(s) na doca para armazenar` : "Nada pendente na doca";
 }
 
 export function abrirRecepcao(tela) {
-  db = lerEstoque();
+  db = lerDados();
   if (tela === "viewRecConf") iniciarConferencia();
   if (tela === "viewRecArm") iniciarArmazenamento();
   if (tela === "viewRecCons") iniciarConsulta();
@@ -47,7 +66,7 @@ export function abrirRecepcao(tela) {
 
 // outro coletor (ou o WEB) mudou algo: a tela aberta se redesenha com o dado novo
 export function atualizarRecepcao() {
-  db = lerEstoque();
+  db = lerDados();
   if (!$("#viewRecConf").hidden) desenharConferencia();
   if (!$("#viewRecArm").hidden) desenharArmazenamento();
   if (!$("#viewRecCons").hidden) desenharConsulta();
@@ -93,8 +112,8 @@ function voltarConferencia() {
 
 function desenharConferencia() {
   const nota = conf.notaId ? notaPorId(db, conf.notaId) : null;
-  // a nota foi finalizada em outro coletor enquanto esta tela estava aberta
-  if (nota && nota.finalizada) { iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err"); }
+  // a nota foi finalizada em outro coletor enquanto esta tela estava aberta (com servidor, ela some da cópia)
+  if (conf.notaId && (!nota || nota.finalizada)) { iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err"); }
   $("#rcFoot").hidden = !nota;
   // no passo da quantidade o campo de leitura some (o leitor não pode digitar dentro da quantidade)
   $("#rcForm").hidden = !!(conf.produto && !conf.qtd);
@@ -119,7 +138,7 @@ function desenharNotas() {
     const feito = r.reduce((t, i) => t + i.conferido, 0), total = r.reduce((t, i) => t + i.qtdNota, 0);
     return `<button class="line" data-nota="${n.id}"><span class="line-desc"><b>${esc(rotuloDaNota(n))}</b> · ${esc(n.fornecedor.nome)}
       <small>${diaCurto(n.data)} · ${n.itens.length} produto${n.itens.length === 1 ? "" : "s"} · ${num(feito)}/${num(total)} conferidos</small></span>${pilula(st, STATUS_CONFERENCIA[st])}</button>`;
-  }).join("") || `<p class="empty">Nenhuma nota para conferir.</p>`}</div>`;
+  }).join("") || `<p class="empty">${servidor && !db.baixadoEm ? "As notas ainda não foram baixadas do servidor. Conecte ao Wi-Fi." : "Nenhuma nota para conferir."}</p>`}</div>`;
 }
 
 // passo 2: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota).
@@ -184,7 +203,7 @@ function desenharEscolhaDaDoca(nota) {
 
 $("#rcForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  db = lerEstoque();
+  db = lerDados();
   const lido = $("#rcInput").value.trim(); if (!lido) return;
   $("#rcInput").value = "";
   if (!conf.notaId) return escolherNota(notaPorNumero(db, lido));
@@ -215,9 +234,12 @@ function escolherProduto(codigo, embalagem) {
 function lerDoca(endereco) {
   const erro = validarDoca(endereco, notaPorId(db, conf.notaId));
   if (erro) return msg($("#rcMsg"), erro, "err");
-  const r = conferir({ notaId: conf.notaId, produto: conf.produto, qtd: conf.qtd, volumes: conf.volumes, docaId: endereco.id });
+  const dados = { notaId: conf.notaId, produto: conf.produto, qtd: conf.qtd, volumes: conf.volumes, docaId: endereco.id };
+  // com servidor: entra na fila e vai quando houver rede (as etiquetas saem na hora do mesmo jeito)
+  const r = servidor ? conferirNaFila(servidor.sess, dados) : conferir(dados);
   if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
-  db = lerEstoque();
+  servidor?.pedirEnvio();
+  db = lerDados();
   const nota = notaPorId(db, conf.notaId), produto = produtoPorCodigo(db, conf.produto);
   msg($("#rcMsg"), `+${num(conf.qtd)} ${produto.codigo} na ${endereco.codigo} · ${r.volumes.length} etiqueta(s)`, "ok");
   limparProduto();
@@ -228,7 +250,7 @@ function lerDoca(endereco) {
 
 $("#rcRes").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  db = lerEstoque();
+  db = lerDados();
   if (b.dataset.nota) return escolherNota(notaPorId(db, +b.dataset.nota));
   if (b.dataset.rcalterar !== undefined) { conf.qtd = null; conf.volumes = null; msg($("#rcMsg"), ""); return desenharConferencia(); }
   if (b.dataset.rccancelar !== undefined) { limparProduto(); msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
@@ -238,7 +260,7 @@ $("#rcRes").addEventListener("input", (e) => { if (e.target.form?.id === "rcQtdF
 $("#rcRes").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target;
-  db = lerEstoque();
+  db = lerDados();
   const qtd = quantidadeEmUnidades(caixaBipada(), f.qtd.value || 0);
   const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: f.volumes.value }, db.conferencias);
   if (erro) return msg($("#rcMsg"), erro, "err");
@@ -249,15 +271,15 @@ $("#rcRes").addEventListener("submit", (e) => {
 
 $("#rcTrocar").addEventListener("click", () => { iniciarConferencia(); $("#rcInput").focus(); });
 $("#rcFinalizar").addEventListener("click", () => {
-  db = lerEstoque();
+  db = lerDados();
   const nota = notaPorId(db, conf.notaId);
   const faltas = resumoDaNota(nota, db.conferencias).filter((i) => i.conferido < i.qtdNota);
   const aviso = faltas.length ? "A NOTA SERÁ FINALIZADA COM DIVERGÊNCIA E NÃO PODERÁ SER REABERTA." : "DESEJA FINALIZAR A NOTA? ELA NÃO PODERÁ SER REABERTA.";
   const sub = faltas.map((i) => `${esc(i.produto)}: faltam ${num(-i.divergencia)}`).join("<br>") || `${esc(rotuloDaNota(nota))} · tudo conferido`;
   confirmar("Finalizar nota", aviso, sub, () => {
-    finalizarNota(nota.id);
+    if (servidor) { finalizarNaFila(servidor.sess, nota.id); servidor.pedirEnvio(); } else finalizarNota(nota.id);
     toast(`${rotuloDaNota(nota)} finalizada` + (faltas.length ? " com divergência" : ""));
-    db = lerEstoque(); iniciarConferencia();
+    db = lerDados(); iniciarConferencia();
   });
 });
 
@@ -341,7 +363,7 @@ function usarDestino(destino) {
   const qtd = $("#raQtd").value;
   const r = armazenar({ produto: arm.produto, docaId: arm.docaId, qtd, destinoId: destino ? destino.id : null });
   if (!r.ok) return msg($("#raMsg"), r.msg, "err");
-  db = lerEstoque();
+  db = lerDados();
   msg($("#raMsg"), `${num(qtd)} armazenado(s) em ${destino.codigo}`, "ok");
   // sobrou deste produto nesta doca: continua nele; senão, volta a pedir o próximo produto da mesma doca
   if (pendenteNaDoca(db.conferencias, arm.produto, arm.docaId) > 0) return desenharArmazenamento();
@@ -354,7 +376,7 @@ function usarDestino(destino) {
 
 $("#raForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  db = lerEstoque();
+  db = lerDados();
   const lido = $("#raInput").value.trim(); if (!lido) return;
   $("#raInput").value = "";
   if (!arm.docaId) return usarDoca(acharEndereco(db.enderecos, lido));
@@ -407,5 +429,5 @@ $("#rqForm").addEventListener("submit", (e) => {
 });
 $("#rqRes").addEventListener("click", (e) => {
   const b = e.target.closest("[data-rqnota]"); if (!b) return;
-  db = lerEstoque(); consulta.notaId = +b.dataset.rqnota; desenharConsulta();
+  db = lerDados(); consulta.notaId = +b.dataset.rqnota; desenharConsulta();
 });

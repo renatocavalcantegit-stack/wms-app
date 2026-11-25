@@ -15,7 +15,7 @@ import {
 } from "./compartilhado/regras/movimentacao.js";
 import { MSG_ENDERECO_INATIVO, MSG_ENDERECO_NAO_ENCONTRADO } from "./compartilhado/regras/enderecos.js";
 
-let db = lerEstoque();
+let db = null; // lido ao abrir (com servidor, o Estoque da demonstração nem é lido)
 const usuario = () => session()?.login || "";
 const linhaEndereco = (e, extra = "") => `<div class="rc-doca">${tipoTag(e.tipo)}<span class="line-addr">${e.codigo}</span>${extra}</div>`;
 const pilulaPrioridade = (t) => `<span class="rc-st ${t.prioridade === "urgente" ? "r" : "g"}">${PRIORIDADES[t.prioridade]}</span>`;

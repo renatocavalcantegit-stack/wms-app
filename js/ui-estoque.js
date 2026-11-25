@@ -4,6 +4,8 @@ import { openSheet, closeSheets, beep, vibrate } from "./ui-coletor.js";
 import { TIPOS_ENDERECO } from "../compartilhado/regras/enderecos.js";
 
 export const num = (n) => Number(n).toLocaleString("pt-BR");
+// com servidor (v78), só a Conferência da Recepção já está no servidor; o resto vem nas próximas entregas
+export const MSG_FORA_DO_SERVIDOR = "Ainda não está no servidor";
 export const tipoTag = (t) => `<span class="es-tipo ${t}">${TIPOS_ENDERECO[t]}</span>`;
 // 2026-11-16 → 16/11
 export const diaCurto = (iso) => iso.split("-").reverse().slice(0, 2).join("/");

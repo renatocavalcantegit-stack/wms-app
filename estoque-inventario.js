@@ -18,7 +18,7 @@ import {
   TIPOS_INVENTARIO, contagemDoEndereco, itemEncerrado, validarProdutoNaContagem, validarQuantidadeContada, MSG_ENDERECO_FORA_DA_RUA,
 } from "./compartilhado/regras/inventario.js";
 
-let db = lerEstoque();
+let db = null; // lido ao abrir (com servidor, o Estoque da demonstração nem é lido)
 const usuario = () => session()?.login || "";
 // estado da tela: inventário escolhido, rua (completo), endereço lido e produto bipado esperando a quantidade
 const iv = { invId: null, rua: null, enderecoId: null, produto: null };

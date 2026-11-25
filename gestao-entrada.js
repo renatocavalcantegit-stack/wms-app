@@ -68,7 +68,8 @@ async function carregarDetalhe(id) {
 
 // A nota aberta, no formato que o detalhe e os modais usam (o mesmo nas duas fontes):
 // { nota, conferencias, produto(codigo) → { codigo, descricao, un }, doca(id) → código, volumes(produto) → [...],
-//   novo(codigo) → o produto foi cadastrado por esta nota? (v77: o produto novo nasce da nota do ERP) }
+//   novo(codigo) → o produto foi cadastrado por esta nota? (v77: o produto novo nasce da nota do ERP),
+//   recusas → o que o coletor mandou e o servidor não aplicou (v78; só com servidor), comServidor }
 function fonteDaDemo(db, nota) {
   return {
     nota, conferencias: db.conferencias,
@@ -76,6 +77,7 @@ function fonteDaDemo(db, nota) {
     doca: (id) => enderecoPorId(db, id)?.codigo,
     volumes: (p) => volumesDoItem(db, nota.id, p),
     novo: (c) => produtoPorCodigo(db, c)?.cadastradoPorNota === nota.id,
+    recusas: [], comServidor: false,
   };
 }
 function fonteDoServidor(d) {
@@ -87,6 +89,7 @@ function fonteDoServidor(d) {
     doca: (id) => docas.get(id),
     volumes: (p) => d.volumes.filter((v) => v.produto === p),
     novo: (c) => produtos.get(c)?.cadastrado_por_nota === d.nota.id,
+    recusas: d.recusas || [], comServidor: true,
   };
 }
 const fonteAberta = (db) => {
@@ -98,6 +101,7 @@ const fonteAberta = (db) => {
 
 const num = (n) => Number(n).toLocaleString("pt-BR");
 const dataBr = (iso) => iso.split("-").reverse().join("/");
+const dataHora = (iso) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 // cores dos status (mesmas do coletor): cinza = aguardando/pendente, amarelo = em andamento/divergência,
 // verde = conferida/sem divergência, azul = armazenado
 const COR = { aguardando: "g", aberta: "y", conferida: "v", sem: "v", com: "y", pendente: "g", parcial: "y", armazenado: "b" };
@@ -234,6 +238,7 @@ function detalhe(fonte) {
     </div>
   </div>
   ${(nota.avisos || []).map((a) => `<p class="ge-msg">${esc(a)}</p>`).join("")}
+  ${fonte.recusas.map((r) => `<p class="ge-msg">${r.tipo === "recepcao.finalizar" ? "Finalização" : "Conferência"} recusada pelo servidor · ${esc(r.quem)} · ${dataHora(r.quando)}${r.produto ? ` · ${esc(r.produto)} +${num(r.qtd)}` : ""}: ${esc(r.motivo)}</p>`).join("")}
   <div class="ge-card">
     <table class="ge-tab">
       <thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="r">Nota</th><th class="r">Conferido</th><th class="r">Divergência</th><th class="r">Armazenado</th><th class="r">Volumes</th><th></th></tr></thead>
@@ -310,9 +315,11 @@ function modalConferido(fonte, produto) {
   tela.abrirModal(`<h2>${esc(produto)} · conferido</h2>
     <div class="ge-tres"><div><small>Nota</small><b>${num(i.qtdNota)}</b></div><div><small>Conferido</small><b>${num(i.conferido)}</b></div>
       <div><small>Divergência</small><b>${divergenciaHtml(nota, i.divergencia)}</b></div></div>
-    <table class="ge-tab ge-mini-tab"><thead><tr><th>Dia</th><th>Doca</th><th class="r">Qtd</th><th class="r">Volumes</th></tr></thead>
-      <tbody>${confs.map((c) => `<tr><td>${dataBr(c.dia)}</td><td><span class="gaddr">${fonte.doca(c.docaId) || "—"}</span></td><td class="r">${num(c.qtd)}</td><td class="r">${c.volumes.length}</td></tr>`).join("")}</tbody></table>
+    <table class="ge-tab ge-mini-tab"><thead><tr><th>Dia</th><th>Doca</th>${fonte.comServidor ? "<th>Conferiu</th>" : ""}<th class="r">Qtd</th><th class="r">Volumes</th></tr></thead>
+      <tbody>${confs.map((c) => `<tr><td>${dataBr(c.dia)}</td><td><span class="gaddr">${fonte.doca(c.docaId) || "—"}</span></td>${fonte.comServidor ? `<td>${esc(c.usuario || "—")}</td>` : ""}<td class="r">${num(c.qtd)}</td><td class="r">${c.volumes.length}</td></tr>`).join("")}</tbody></table>
     <div class="m-act"><button class="btn primary" data-fechar>Fechar</button></div>`);
+  // com servidor a tabela tem a coluna "Conferiu": o modal largo (volta ao normal sozinho ao fechar)
+  if (fonte.comServidor) document.querySelector("#modal").classList.add("wide");
 }
 
 // Volumes: só os códigos e o botão de reimprimir (a reimpressão é só pelo WEB)

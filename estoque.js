@@ -5,8 +5,11 @@
 import { session, logout, PERFIS } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
 import { show, openSheet, closeSheets, toast, openCam } from "./js/ui-coletor.js";
-import { num, tipoTag, msg, confirmar, cartaoProduto, escolherProduto } from "./js/ui-estoque.js";
-import { abrirRecepcao, atualizarRecepcao, resumoDoMenu } from "./estoque-recepcao.js";
+import { num, tipoTag, msg, confirmar, cartaoProduto, escolherProduto, MSG_FORA_DO_SERVIDOR } from "./js/ui-estoque.js";
+import { abrirRecepcao, atualizarRecepcao, resumoDoMenu, ligarRecepcaoNoServidor, aoBaixarNotas } from "./estoque-recepcao.js";
+import { baixarNotas, descartarRecusadas, aoMudarRecepcao, BAIXAR_A_CADA_MS } from "./js/dados/recepcao.js";
+import { totalPendente, lerEstadoDaSincronizacao, gravarEstadoDaSincronizacao, aoMudarFila } from "./js/dados/fila.js";
+import { iniciarSincronizacao } from "./js/sincronizacao.js";
 import { abrirMovimentacao, atualizarMovimentacao, resumoMovimentacao } from "./estoque-movimentacao.js";
 import { abrirInventario, atualizarInventario, resumoInventario } from "./estoque-inventario.js";
 import { etiquetaHtml, rolosHtml } from "./js/etiqueta-produto.js";
@@ -22,7 +25,9 @@ import {
 } from "./compartilhado/regras/enderecos.js";
 
 const sess = session();
-let db = lerEstoque();
+let db = null; // lido ao abrir cada tela (com servidor, o Estoque da demonstração nem é lido)
+// com servidor (v78): a sessão tem o token. Só a Conferência da Recepção já está no servidor.
+const comServidor = !!sess?.token;
 
 // =====================================================================
 // MENU
@@ -32,8 +37,8 @@ function home() {
   const dt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   $("#helloDate").textContent = dt.charAt(0).toUpperCase() + dt.slice(1);
   resumoDoMenu();
-  resumoMovimentacao();
-  resumoInventario();
+  if (comServidor) { $("#mnAbast").textContent = MSG_FORA_DO_SERVIDOR; $("#mnInv").textContent = MSG_FORA_DO_SERVIDOR; renderSinc(); }
+  else { resumoMovimentacao(); resumoInventario(); }
   show("viewEstHome");
 }
 $$(".es-op").forEach((b) => b.addEventListener("click", () => {
@@ -45,7 +50,8 @@ $$("[data-voltar]").forEach((b) => b.addEventListener("click", () => { closeShee
 document.addEventListener("voltar-menu", home);
 
 function abrir(tela) {
-  db = lerEstoque();
+  if (comServidor && tela !== "viewRecConf") return toast(`${MSG_FORA_DO_SERVIDOR}. Por enquanto, só a Conferência de notas.`);
+  db = comServidor ? null : lerEstoque();
   if (tela === "viewConsulta") { $("#cInput").value = ""; $("#cRes").innerHTML = ""; msg($("#cMsg"), ""); }
   if (tela === "viewEmbalagem") { produtoEmb = null; $("#eInput").value = ""; $("#eRes").innerHTML = ""; msg($("#eMsg"), ""); }
   if (tela === "viewEnderecar") iniciarEnderecar();
@@ -274,8 +280,59 @@ $("#btnMenu").addEventListener("click", () => {
 $("#menuLogout").addEventListener("click", () => { logout(); location.replace("./"); });
 $("#menuReset").addEventListener("click", () => { reiniciarDemonstracao(); closeSheets(); toast("Demonstração reiniciada"); home(); });
 
+// =====================================================================
+// com servidor (v78): envio da fila e cópia das notas em aberto
+// =====================================================================
+// A Conferência grava na fila e segue; o js/sincronizacao.js manda a cada 5 s e quando a rede volta.
+// As notas em aberto são baixadas ao abrir, a cada 30 s e logo depois de cada envio.
+const fmtMin = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
+let baixando = false;
+async function baixar() {
+  if (baixando) return;
+  baixando = true;
+  try { if ((await baixarNotas(sess)).ok) aoBaixarNotas(); } finally { baixando = false; }
+}
+function aposEnvio(r) {
+  if (r.recusadas.length) {
+    descartarRecusadas(r.recusadas.map((x) => x.id));
+    r.recusadas.forEach((x) => toast(`${x.nota || "Ação"}: ${x.motivo}`));
+    aoBaixarNotas();
+  }
+  renderSinc();
+  if (r.enviadas) baixar();
+}
+// a linha de estado do menu: tudo enviado, enviando, sem rede há X min, sessão vencida
+function renderSinc() {
+  if (!comServidor) return;
+  const n = totalPendente(sess.login), est = lerEstadoDaSincronizacao();
+  let texto, tipo = "ok";
+  if (est.sessaoVencida) { texto = `Sessão vencida · saia e entre de novo para enviar ${n} ação(ões)`; tipo = "err"; }
+  else if (n && est.semRedeDesde) { texto = `Sem rede há ${fmtMin(Date.now() - Date.parse(est.semRedeDesde))} · ${n} a enviar`; tipo = "warn"; }
+  else if (n) { texto = `Enviando ${n} ação(ões)…`; tipo = "warn"; }
+  else texto = est.ultimaSincronizacao
+    ? `Tudo enviado · ${new Date(est.ultimaSincronizacao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+    : "Conectado ao servidor";
+  $$(".sinc-estado").forEach((el) => { el.hidden = false; el.dataset.tipo = tipo; el.textContent = texto; });
+  const rec = est.recusadas;
+  $("#sincRecusas").hidden = !rec.length;
+  if (rec.length) $("#sincRecusasT").textContent = `${rec.length} conferência(s) não aplicada(s) no servidor. Última: ${rec.at(-1).nota || ""} · ${rec.at(-1).motivo}`;
+}
+if (comServidor) {
+  ligarRecepcaoNoServidor(sess, iniciarSincronizacao({ sessao: () => session(), aoMudar: aposEnvio }));
+  $("#sincRecusasOk").addEventListener("click", () => {
+    gravarEstadoDaSincronizacao({ ...lerEstadoDaSincronizacao(), recusadas: [] });
+    renderSinc();
+  });
+  aoMudarFila(renderSinc);
+  aoMudarRecepcao(aoBaixarNotas);
+  setInterval(baixar, BAIXAR_A_CADA_MS);
+  window.addEventListener("online", baixar);
+  baixar();
+}
+
 // se o gestor mudar algo no WEB (ex.: excluir embalagem), a tela aberta se atualiza
 aoMudarEstoque(() => {
+  if (comServidor) return; // com servidor, o Estoque da demonstração não é usado
   db = lerEstoque();
   if (!$("#viewEmbalagem").hidden && produtoEmb) mostrarEmbalagens(produtoEmb);
   if (!$("#viewEnderecar").hidden && endSel) desenharEndereco();

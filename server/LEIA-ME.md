@@ -32,6 +32,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 010 observação do pedido (o texto do vendedor no Sankhya e quem leu: observacao_ciencias)
                             · 011 notas de entrada (notas, recebimentos, volumes e o histórico de movimentos do estoque)
                             · 012 produto novo pela nota (de qual nota o produto veio, avisos da nota, número das embalagens)
+                            · 013 conferência da nota no coletor (a ação da fila de cada recebimento, índices)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -257,9 +258,10 @@ npm test
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
 | `POST /api/painel/nao-aplicadas/:id/vista` | coordenador | marca a ação não aplicada como vista (sai da lista); 404 se não existe ou já foi vista |
 | `GET /api/estoque/notas` | gestor de estoque | `?nf=&fornecedor=&de=&ate=&conferencia=&divergencia=&armazenamento=&pagina=1&porPagina=20` → `{ notas, total, pagina, porPagina, contagens }`: a lista da aba Entrada, **filtrada e paginada no banco** (`porPagina` = 10, 20, 30 ou 50); `contagens` são os indicadores do topo |
-| `GET /api/estoque/notas/:id` | gestor de estoque | `{ nota, conferencias, volumes, produtos, docas }`: o detalhe da nota (para a tela e a reimpressão das etiquetas). **404** não existe |
+| `GET /api/estoque/notas/:id` | gestor de estoque | `{ nota, conferencias, volumes, produtos, docas, recusas }`: o detalhe da nota (para a tela e a reimpressão das etiquetas). Cada conferência traz `usuario` (quem conferiu); `recusas` = o que o coletor mandou e o servidor não aplicou (v78). **404** não existe |
 | `POST /api/estoque/notas/:id/cancelar-pendente` | gestor de estoque | `{ produto }` → `{ status }`: o pendente de armazenar vira cancelado (o saldo continua na doca); grava quem e quando. **409** se não havia pendente |
 | `POST /api/estoque/notas/importar` | gestor de estoque | "Buscar notas do ERP" → `{ importadas, bloqueadas }`. **Simulado** até o Sankhya ser ligado (as notas de exemplo da demonstração); a nota repetida é bloqueada. Cada importada traz `produtosNovos` (cadastrados pela nota) e `avisos` |
+| `GET /api/recepcao/notas` | estoquista | (v78) `{ notas, conferencias, produtos, embalagens, docas }`: o que o coletor baixa para conferir sem rede. Só as notas **em aberto** (até 300, as mais recentes), os produtos e as embalagens dos itens delas e as docas (de recebimento e de devolução). Cada conferência traz `acaoId` (a ação da fila que a criou) |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
 | `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/, vendor/...) |
 
@@ -285,6 +287,8 @@ As ações são aplicadas na ordem em que foram **feitas** no aparelho (`feitaEm
 | `conferencia.finalizar` | `{ pedido, volumes, observacao, posto, contagens }` | `contagens` = tudo o que foi contado. O **servidor** decide: `conferido` ou `divergente` (falta, excesso ou produto fora). Expedição precisa de volumes (1 ou mais) e da observação; Montagem não |
 | `conferencia.volumes` | `{ pedido, volumes, observacao }` | corrigir os volumes de um pedido conferido |
 | `conferencia.reabrir` | `{ pedido }` | "Conferir novamente": volta para `andamento` com as contagens zeradas |
+| `recepcao.conferir` | `{ nota, rotulo, produto, qtd, doca, volumes, dia }` | (v78) uma confirmação da conferência da nota no coletor do estoquista. `volumes` = os códigos que o coletor já imprimiu. Soma ao conferido, grava o recebimento e os volumes, **põe o saldo na doca e grava o movimento `recebimento`** na mesma transação e recalcula os status da nota. **Recusada** (inteira) se a nota não existe ou foi finalizada, o produto não é da nota, o endereço não é doca, a quantidade passa do pendente (outro coletor conferiu antes) ou um código de volume já existe |
+| `recepcao.finalizar` | `{ nota, rotulo }` | (v78) "Finalizar nota": não recebe mais conferências e não reabre; grava quem e quando. Repetida, não muda nada. Nota de devolução: a devolução passa a `recebida` |
 | `observacao.ciente` | `{ pedido, momento, resposta }` | (v76) quem leu a observação do pedido: `momento` = `inicio` (resposta `li`) ou `fim` (`apliquei` ou `nao_era`). O papel vem do perfil (separador, conferente, embarque). Grava em `observacao_ciencias` no pedido original (a parte do dividido fica na coluna `parte`); respondeu de novo, vale a última. **Recusada** se o pedido não tem observação ou a resposta não combina com o momento |
 
 Resultado de cada ação (coluna `resultado` em `acoes_recebidas`):
@@ -395,7 +399,25 @@ no servidor: na Gestão de Estoque, essas abas mostram o aviso "Ainda não está
   esse código e o aviso vai para `notas_entrada.avisos` (aparece no detalhe). Produto novo sem descrição ou unidade
   bloqueia a nota. Regra `cadastrosDasNotas` em `compartilhado/regras/recebimento.js`.
 - **Coletor**: com servidor, a separação não faz mais a baixa no estoque guardado no aparelho (a baixa no servidor
-  fica para depois, decisão de 25/11/2026). A recepção no coletor continua na demonstração até a entrega B.
+  fica para depois, decisão de 25/11/2026). A recepção no coletor passou para o servidor na entrega B (abaixo).
+
+## Estoque no servidor · entrega B: conferência da nota no coletor (v78)
+
+- **Sem esperar a rede**: o coletor baixa as notas em aberto (`GET /api/recepcao/notas`) para a chave
+  `wms-bb-recepcao-v1` (poucos KB) ao abrir, a cada 30 s e depois de cada envio. Cada confirmação vira a ação
+  `recepcao.conferir` e o "Finalizar nota" vira `recepcao.finalizar`, pela fila de sempre (`/api/sincronizar`).
+  Quem aplica é `consultas/recepcao.js`, com as regras de `compartilhado/regras/recebimento.js`.
+- **Cópia local**: até o servidor mostrar a confirmação, ela fica numa lista local que soma ao conferido da tela
+  (`js/dados/recepcao.js`). Sai quando aparece no que o coletor baixa (`recebimentos.acao_id`, migração `013`) ou
+  quando o servidor recusa.
+- **Código do volume**: o coletor gera — os 6 primeiros caracteres do código do aparelho + a sequência dele
+  (`V3FA2C-0001`, regra `codigoDoVolumeDoAparelho`). O servidor ainda recusa um código repetido, por garantia.
+- **Dois coletores passaram do pendente** (decisão de 25/11/2026): a confirmação que chega por último é recusada
+  **inteira**. O coletor mostra o aviso ("descarte as etiquetas") e o detalhe da nota na Gestão mostra a recusa.
+- **Saldo e histórico**: o saldo da doca e o movimento `recebimento` são gravados na mesma transação;
+  `saldosForaDoHistorico` continua devolvendo `[]` nos testes.
+- Com servidor, os outros menus do coletor do estoquista (Armazenamento, Consulta, Cadastro, Movimentação,
+  Inventário) mostram "Ainda não está no servidor". Armazenamento e consulta de saldo vêm na entrega C.
 
 ## Observação do pedido (v76)
 

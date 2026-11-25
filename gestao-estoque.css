@@ -113,8 +113,7 @@ body.ge { background: #F1F1F4; min-height: 100vh; }
 .ge-tres div { background: var(--bg); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; }
 .ge-tres small { font-size: 11px; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
 .ge-tres b { font-family: Montserrat, Inter, sans-serif; font-weight: 800; font-size: 20px; }
-.ge-mini-tab { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; border-collapse: separate; border-spacing: 0; }
-.ge-vols { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.ge-mini-tab { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; border-collapse: separate; border-spacing: 0; }.ge-vols { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
 .ge-vols small { color: var(--ink-3); font-weight: 600; margin-left: 4px; }
 
 /* aba Movimentação */

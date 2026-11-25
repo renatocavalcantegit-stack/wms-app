@@ -122,6 +122,22 @@ export function validarConferencia(nota, { produto, qtd, volumes }, conferencias
 // código do volume impresso na etiqueta (único no WMS inteiro): 1 → V000001
 export const codigoDoVolume = (n) => "V" + String(n).padStart(6, "0");
 
+// ---------- código do volume com servidor (v78, decisão de 25/11/2026: "código do aparelho + sequência") ----------
+// Com vários coletores conferindo sem rede, a sequência do servidor não serve (dois aparelhos gerariam o mesmo número).
+// Cada aparelho gera o seu: os 6 primeiros caracteres do código do aparelho + a sequência dele. Ex.: V3FA2C-0001.
+// Único sem precisar de rede; o servidor ainda recusa um código repetido (MSG_VOLUME_REPETIDO), por garantia.
+export const codigoDoVolumeDoAparelho = (aparelho, n) =>
+  `V${String(aparelho).replace(/[^0-9a-z]/gi, "").slice(0, 6).toUpperCase()}-${String(n).padStart(4, "0")}`;
+export const msgVolumeRepetido = (codigo) => `CÓDIGO DE VOLUME ${codigo} JÁ EXISTE. A CONFIRMAÇÃO NÃO ENTROU: DESCARTE AS ETIQUETAS.`;
+export const MSG_VOLUMES_INVALIDOS = "CÓDIGOS DOS VOLUMES INVÁLIDOS.";
+// os códigos que o coletor mandou: texto curto, sem repetir dentro da mesma confirmação
+export function validarCodigosDosVolumes(codigos) {
+  if (!Array.isArray(codigos) || !codigos.length) return MSG_VOLUMES_INVALIDOS;
+  if (codigos.some((c) => typeof c !== "string" || !/^[A-Z0-9-]{1,40}$/.test(c))) return MSG_VOLUMES_INVALIDOS;
+  const repetido = codigos.find((c, i) => codigos.indexOf(c) !== i);
+  return repetido ? msgVolumeRepetido(repetido) : null;
+}
+
 // ---------- armazenamento (coletor) ----------
 // produtos pendentes de armazenar, por data da conferência e agrupados por produto
 // (mesmo vindos de notas diferentes): [{ dia, produtos: [{ produto, pendente }] }], datas mais antigas primeiro

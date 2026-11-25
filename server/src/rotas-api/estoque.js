@@ -6,7 +6,11 @@
 // POST /api/estoque/notas/importar                 — "Buscar notas do ERP" (simulado até o Sankhya ser ligado)
 //
 // Só o gestor de estoque. Cada mudança avisa as telas pelo canal de tempo real (evento "estoque").
+//
+// GET  /api/recepcao/notas                         — (v78) o coletor do estoquista baixa as notas em aberto para
+//                                                     conferir sem rede. A conferência volta pela fila (/api/sincronizar).
 import { listarNotas, detalheDaNota, cancelarPendente, importarNotasDoErp, ErroDaNota, POR_PAGINA } from "../consultas/notas-entrada.js";
+import { notasParaOColetor } from "../consultas/recepcao.js";
 
 const PERFIS_DO_ESTOQUE = ["gest"];
 const texto = { type: "string", maxLength: 60 };
@@ -62,4 +66,10 @@ export function rotasDoEstoque(app, { pool, exigirLogin, tempoReal }) {
     () => cancelarPendente(pool, { notaId: request.params.id, produto: request.body.produto, login: request.usuario.login }), true));
 
   app.post("/api/estoque/notas/importar", protegida, (request, reply) => executar(reply, () => importarNotasDoErp(pool), true));
+
+  // ---------- coletor do estoquista ----------
+  async function exigirEstoquista(request, reply) {
+    if (request.usuario.perfil !== "estq") return reply.code(403).send({ erro: "Só o estoquista confere notas no coletor." });
+  }
+  app.get("/api/recepcao/notas", { preHandler: [exigirLogin, exigirEstoquista] }, () => notasParaOColetor(pool));
 }

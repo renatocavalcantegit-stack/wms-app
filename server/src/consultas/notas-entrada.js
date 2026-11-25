@@ -20,27 +20,30 @@ export const POR_PAGINA = [10, 20, 30, 50];
 // ---------- a nota no formato das regras (o mesmo da demonstração) ----------
 // nota: { id, numero, tipo, fornecedor: { codigo, nome }, data: "AAAA-MM-DD", finalizada, pedido, itens: [{ produto, qtd }] }
 // conferencias: [{ id, notaId, produto, qtd, docaId, dia, armazenado, cancelado, volumes: [códigos] }]
-const COLUNAS_DA_NOTA = `n.id, n.numero, n.tipo, n.fornecedor_codigo, n.fornecedor_nome, to_char(n.data, 'YYYY-MM-DD') AS data,
+export const COLUNAS_DA_NOTA = `n.id, n.numero, n.tipo, n.fornecedor_codigo, n.fornecedor_nome, to_char(n.data, 'YYYY-MM-DD') AS data,
   n.finalizada, n.pedido, n.status_conferencia, n.status_divergencia, n.status_armazenamento, n.avisos`;
-const notaDaLinha = (r, itens = []) => ({
+export const notaDaLinha = (r, itens = []) => ({
   id: r.id, numero: r.numero, tipo: r.tipo, fornecedor: { codigo: r.fornecedor_codigo, nome: r.fornecedor_nome },
   data: r.data, finalizada: r.finalizada, pedido: r.pedido, itens, avisos: r.avisos,
   status: { conferencia: r.status_conferencia, divergencia: r.status_divergencia, armazenamento: r.status_armazenamento },
 });
 
-async function lerNota(conexao, id, { travar = false } = {}) {
+export async function lerNota(conexao, id, { travar = false } = {}) {
   const r = (await conexao.query(`SELECT ${COLUNAS_DA_NOTA} FROM notas_entrada n WHERE n.id = $1 ${travar ? "FOR UPDATE" : ""}`, [id])).rows[0];
   if (!r) return null;
   const itens = (await conexao.query("SELECT produto, qtd FROM notas_entrada_itens WHERE nota_id = $1 ORDER BY produto", [id])).rows;
   return notaDaLinha(r, itens);
 }
-async function lerConferencias(conexao, notaId) {
+export const lerConferencias = (conexao, notaId) => lerConferenciasDasNotas(conexao, [notaId]);
+// v78: acaoId = a ação da fila do coletor que criou o recebimento · usuario = o nome de quem conferiu
+export async function lerConferenciasDasNotas(conexao, notaIds) {
   const { rows } = await conexao.query(
     `SELECT r.id, r.nota_id AS "notaId", r.produto, r.qtd, r.doca_id AS "docaId", to_char(r.dia, 'YYYY-MM-DD') AS dia,
-            r.armazenado, r.cancelado,
+            r.armazenado, r.cancelado, r.acao_id AS "acaoId", coalesce(u.nome, r.usuario) AS usuario,
             coalesce((SELECT array_agg(v.codigo ORDER BY v.seq) FROM volumes_recebimento v WHERE v.recebimento_id = r.id), '{}') AS volumes
-       FROM recebimentos r WHERE r.nota_id = $1 ORDER BY r.id`,
-    [notaId],
+       FROM recebimentos r LEFT JOIN usuarios u ON u.login = r.usuario
+      WHERE r.nota_id = ANY($1) ORDER BY r.id`,
+    [notaIds],
   );
   return rows;
 }
@@ -140,7 +143,15 @@ export async function detalheDaNota(pool, id) {
     "SELECT id, codigo FROM enderecos WHERE id IN (SELECT doca_id FROM recebimentos WHERE nota_id = $1)",
     [id],
   )).rows;
-  return { nota, conferencias, volumes, produtos, docas };
+  // v78: o que o coletor mandou e o servidor NÃO aplicou (ex.: dois coletores passaram do pendente)
+  const recusas = (await pool.query(
+    `SELECT a.tipo, coalesce(u.nome, a.login) AS quem, a.feita_em AS quando, a.motivo, a.dados->>'produto' AS produto, a.dados->>'qtd' AS qtd
+       FROM acoes_recebidas a LEFT JOIN usuarios u ON u.login = a.login
+      WHERE a.tipo LIKE 'recepcao.%' AND a.dados->>'nota' = $1::text AND a.resultado <> 'aplicada'
+      ORDER BY a.feita_em`,
+    [id],
+  )).rows;
+  return { nota, conferencias, volumes, produtos, docas, recusas };
 }
 
 // ---------- cancelar pendente ----------
