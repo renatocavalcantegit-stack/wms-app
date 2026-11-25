@@ -7,7 +7,7 @@ import { lerEstoque, gravarEstoque, enderecoPorId, somarSaldo, saldoNoEndereco, 
 import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantidade.js";
 import {
   validarDoca, validarConferencia, validarArmazenamento, distribuirArmazenamento, pendenteNaDoca, pendenteDaConferencia,
-  codigoDoVolume, separarNotasImportadas, TIPO_DEVOLUCAO, numeroDaDevolucao,
+  codigoDoVolume, separarNotasImportadas, TIPO_DEVOLUCAO, numeroDaDevolucao, cadastrosDasNotas, notaSemCadastro,
 } from "../../compartilhado/regras/recebimento.js";
 
 // dia de hoje no formato AAAA-MM-DD (é a "data de armazenagem" da conferência)
@@ -145,12 +145,33 @@ export function quemEntregou(numero) {
 export const devolucaoAEntregar = (numero) => (lerEstoque().aEntregar || []).find((d) => d.numero === numero) || null;
 
 // ---------- notas do ERP (simulado) ----------
+// O produto que a nota traz e o WMS não tem é cadastrado junto (v77): regra cadastrosDasNotas.
+// Devolve { importadas: [nota + produtosNovos + avisos], bloqueadas: [{ nota, msg }] }
 export function importarNotasDoErp() {
   const db = lerEstoque();
   const r = separarNotasImportadas(db.notas, importacaoDeNotas());
-  for (const n of r.importadas) db.notas.push({ ...n, id: db.proximoId.nota++ });
+  const produtos = new Set(db.produtos.map((p) => p.codigo));
+  const donos = new Map(db.embalagens.filter((e) => e.codigo).map((e) => [e.codigo, e.produto]));
+  // o próximo id de embalagem continua depois do maior que já existe
+  let proximaEmbalagem = db.embalagens.reduce((m, e) => Math.max(m, e.id + 1), db.proximoId.embalagem || 1);
+  const importadas = [], bloqueadas = [...r.bloqueadas];
+  for (const c of cadastrosDasNotas(r.importadas, { existe: (x) => produtos.has(x), donoDoCodigo: (x) => donos.get(x) || null })) {
+    if (c.bloqueio) { bloqueadas.push({ nota: c.nota, msg: c.bloqueio }); continue; }
+    const nota = { ...notaSemCadastro(c.nota), id: db.proximoId.nota++, avisos: c.avisos };
+    for (const { embalagens, ...p } of c.produtos) {
+      db.produtos.push({ ...p, cadastradoPorNota: nota.id, cadastradoEm: new Date().toISOString() });
+      produtos.add(p.codigo);
+      for (const e of embalagens) {
+        db.embalagens.push({ id: proximaEmbalagem++, produto: p.codigo, ...e });
+        if (e.codigo) donos.set(e.codigo, p.codigo);
+      }
+    }
+    db.notas.push(nota);
+    importadas.push({ ...nota, produtosNovos: c.produtos.map((p) => p.codigo) });
+  }
+  db.proximoId.embalagem = proximaEmbalagem;
   gravarEstoque(db);
-  return r;
+  return { importadas, bloqueadas };
 }
 
 // =====================================================================

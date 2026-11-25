@@ -108,6 +108,8 @@ export async function semear(pool, { conferencia = false } = {}) {
 
     await inserirLista(c, "embalagens", ["id integer", "produto text", "codigo text", "descricao text", "qtd integer"],
       estoque.embalagens.map((e) => ({ id: e.id, produto: e.produto, codigo: e.codigo || null, descricao: e.descricao, qtd: e.qtd })));
+    // as embalagens novas (produto novo pela nota, v77) continuam depois das da demonstração
+    await c.query("SELECT setval('embalagens_id_seq', (SELECT coalesce(max(id), 0) + 1 FROM embalagens), false)");
 
     // endereço substituído aponta para outro endereço: grava todos primeiro e liga depois
     await inserirLista(c, "enderecos",

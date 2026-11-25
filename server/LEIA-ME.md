@@ -31,6 +31,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 009 entrega da devolução do pedido cancelado (a_entregar → pendente; quem e quando entregou)
                             · 010 observação do pedido (o texto do vendedor no Sankhya e quem leu: observacao_ciencias)
                             · 011 notas de entrada (notas, recebimentos, volumes e o histórico de movimentos do estoque)
+                            · 012 produto novo pela nota (de qual nota o produto veio, avisos da nota, número das embalagens)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -258,7 +259,7 @@ npm test
 | `GET /api/estoque/notas` | gestor de estoque | `?nf=&fornecedor=&de=&ate=&conferencia=&divergencia=&armazenamento=&pagina=1&porPagina=20` → `{ notas, total, pagina, porPagina, contagens }`: a lista da aba Entrada, **filtrada e paginada no banco** (`porPagina` = 10, 20, 30 ou 50); `contagens` são os indicadores do topo |
 | `GET /api/estoque/notas/:id` | gestor de estoque | `{ nota, conferencias, volumes, produtos, docas }`: o detalhe da nota (para a tela e a reimpressão das etiquetas). **404** não existe |
 | `POST /api/estoque/notas/:id/cancelar-pendente` | gestor de estoque | `{ produto }` → `{ status }`: o pendente de armazenar vira cancelado (o saldo continua na doca); grava quem e quando. **409** se não havia pendente |
-| `POST /api/estoque/notas/importar` | gestor de estoque | "Buscar notas do ERP" → `{ importadas, bloqueadas }`. **Simulado** até o Sankhya ser ligado (as notas de exemplo da demonstração); a nota repetida é bloqueada |
+| `POST /api/estoque/notas/importar` | gestor de estoque | "Buscar notas do ERP" → `{ importadas, bloqueadas }`. **Simulado** até o Sankhya ser ligado (as notas de exemplo da demonstração); a nota repetida é bloqueada. Cada importada traz `produtosNovos` (cadastrados pela nota) e `avisos` |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
 | `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/, vendor/...) |
 
@@ -387,6 +388,12 @@ no servidor: na Gestão de Estoque, essas abas mostram o aviso "Ainda não está
   transação**. O saldo que existia quando o histórico começou entra como `saldo_inicial` (a migração `011` e o
   `npm run semear` fazem isso). `saldosForaDoHistorico(pool)` (`consultas/notas-entrada.js`) confere se cada saldo é
   igual à soma dos movimentos e devolve as diferenças; os testes rodam essa conferência.
+- **Produto novo nasce da nota (migração `012`)**: a nota do ERP traz, em cada item, o cadastro do produto
+  (`cadastro`: descrição, unidade, embalagens com código de barras, grupo, pesos...). Na importação, o produto que o
+  WMS não tem é cadastrado na mesma transação (`produtos.cadastrado_por_nota` e `cadastrado_em`), com **checkout
+  ligado**; o que já existe **não muda**. Código de barras que já é de outro produto: a nota entra, o produto fica sem
+  esse código e o aviso vai para `notas_entrada.avisos` (aparece no detalhe). Produto novo sem descrição ou unidade
+  bloqueia a nota. Regra `cadastrosDasNotas` em `compartilhado/regras/recebimento.js`.
 - **Coletor**: com servidor, a separação não faz mais a baixa no estoque guardado no aparelho (a baixa no servidor
   fica para depois, decisão de 25/11/2026). A recepção no coletor continua na demonstração até a entrega B.
 

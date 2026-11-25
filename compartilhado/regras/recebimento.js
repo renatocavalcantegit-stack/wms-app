@@ -180,3 +180,61 @@ export function separarNotasImportadas(existentes, recebidas) {
   }
   return { importadas, bloqueadas };
 }
+
+// ---------- produto novo que chega pela nota (v77, decisão de 25/11/2026) ----------
+// O produto novo nasce da nota do ERP: quando a nota traz um produto que o WMS não tem, a importação cadastra o
+// produto junto, com os dados que vêm do ERP em cada item (item.cadastro: descrição, unidade, embalagens com o
+// código de barras...). O produto que já existe NÃO muda (atualizar cadastro é da sincronização de produtos).
+//   - nasce com checkout ligado (conferência bipando unidade por unidade); o gestor desliga depois, se quiser;
+//   - código de barras que já pertence a outro produto: a nota entra, o produto é cadastrado SEM aquele código e
+//     fica um aviso na nota, para corrigir no Sankhya (o recebimento não para);
+//   - produto novo sem os dados (descrição ou unidade): a nota é bloqueada (não dá para cadastrar).
+export const msgProdutoSemDados = (codigo) => `PRODUTO ${codigo} NÃO ESTÁ CADASTRADO E A NOTA NÃO TROUXE OS DADOS DELE.`;
+export const avisoCodigoRepetido = (codigo, produto, dono) =>
+  `Código de barras ${codigo} do produto novo ${produto} já pertence ao produto ${dono}: o produto foi cadastrado sem esse código. Corrija no Sankhya.`;
+export const avisoEmbalagemInvalida = (produto, descricao) =>
+  `Embalagem "${descricao || "sem descrição"}" do produto novo ${produto} veio sem descrição ou quantidade inteira: ficou de fora. Corrija no Sankhya.`;
+
+const textoLimpo = (v) => String(v ?? "").trim();
+
+// notas = as que vão entrar (já sem as repetidas), na ordem · existe(codigo) → o WMS já tem o produto?
+// donoDoCodigo(codigoDeBarras) → código do produto que já usa esse código de barras, ou null.
+// Devolve uma entrada por nota: { nota, produtos, avisos, bloqueio }
+//   produtos = os cadastros a criar: { codigo, descricao, un, checkout: true, ..., embalagens: [{ codigo, descricao, qtd }] }
+//   bloqueio = motivo para a nota não entrar (null = entra). Nota bloqueada não cadastra nada.
+export function cadastrosDasNotas(notas, { existe, donoDoCodigo }) {
+  const criados = new Map(); // produto → já cadastrado por uma nota anterior desta mesma busca
+  const codigosNovos = new Map(); // código de barras → produto novo desta busca que ficou com ele
+  return notas.map((nota) => {
+    const produtos = [], avisos = [], meus = new Map();
+    for (const item of nota.itens) {
+      if (existe(item.produto) || criados.has(item.produto) || produtos.some((p) => p.codigo === item.produto)) continue;
+      const c = item.cadastro || {};
+      if (!textoLimpo(c.descricao) || !textoLimpo(c.un)) return { nota, produtos: [], avisos: [], bloqueio: msgProdutoSemDados(item.produto) };
+      const embalagens = [];
+      for (const e of c.embalagens || []) {
+        const descricao = textoLimpo(e.descricao), qtd = Number(e.qtd), codigo = textoLimpo(e.codigo) || null;
+        if (!descricao || !Number.isInteger(qtd) || qtd < 1) { avisos.push(avisoEmbalagemInvalida(item.produto, descricao)); continue; }
+        const dono = codigo && (donoDoCodigo(codigo) || codigosNovos.get(codigo) || meus.get(codigo));
+        if (dono) { avisos.push(avisoCodigoRepetido(codigo, item.produto, dono)); embalagens.push({ codigo: null, descricao, qtd }); continue; }
+        if (codigo) meus.set(codigo, item.produto);
+        embalagens.push({ codigo, descricao, qtd });
+      }
+      produtos.push({
+        codigo: item.produto, descricao: textoLimpo(c.descricao), un: textoLimpo(c.un).toUpperCase(), checkout: true,
+        fornecedor: c.fornecedor ?? nota.fornecedor?.codigo ?? null, grupo: c.grupo ?? null, subgrupo: c.subgrupo ?? null,
+        estoqueMin: c.estoqueMin ?? null, estoqueMax: c.estoqueMax ?? null,
+        controlaValidade: !!c.controlaValidade, controlaLote: !!c.controlaLote, controlaSerie: !!c.controlaSerie,
+        pesoBruto: c.pesoBruto ?? null, pesoLiquido: c.pesoLiquido ?? null, shelflife: c.shelflife ?? null,
+        embalagens,
+      });
+    }
+    // a nota entra: o que ela cadastrou passa a valer para as próximas notas desta busca
+    for (const p of produtos) criados.set(p.codigo, nota.numero);
+    for (const [codigo, produto] of meus) codigosNovos.set(codigo, produto);
+    return { nota, produtos, avisos, bloqueio: null };
+  });
+}
+
+// a nota como fica guardada: os itens só com produto e quantidade (o cadastro do ERP já foi usado)
+export const notaSemCadastro = (nota) => ({ ...nota, itens: nota.itens.map(({ produto, qtd }) => ({ produto, qtd })) });

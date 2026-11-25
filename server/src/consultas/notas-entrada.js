@@ -6,7 +6,7 @@
 // em notas_entrada (recalculados pela regra statusDaNota a cada mudança, na mesma transação), então a lista
 // nunca precisa ler todas as notas com os itens para saber o status.
 import { emTransacao } from "../banco.js";
-import { statusDaNota, separarNotasImportadas, TIPO_DEVOLUCAO } from "../../../compartilhado/regras/recebimento.js";
+import { statusDaNota, separarNotasImportadas, TIPO_DEVOLUCAO, cadastrosDasNotas, notaSemCadastro } from "../../../compartilhado/regras/recebimento.js";
 import { importacaoDeNotas } from "../../../js/demo-dados.js";
 
 // a regra recusou (nota não existe, nada pendente...): a mensagem vai para a tela
@@ -21,10 +21,10 @@ export const POR_PAGINA = [10, 20, 30, 50];
 // nota: { id, numero, tipo, fornecedor: { codigo, nome }, data: "AAAA-MM-DD", finalizada, pedido, itens: [{ produto, qtd }] }
 // conferencias: [{ id, notaId, produto, qtd, docaId, dia, armazenado, cancelado, volumes: [códigos] }]
 const COLUNAS_DA_NOTA = `n.id, n.numero, n.tipo, n.fornecedor_codigo, n.fornecedor_nome, to_char(n.data, 'YYYY-MM-DD') AS data,
-  n.finalizada, n.pedido, n.status_conferencia, n.status_divergencia, n.status_armazenamento`;
+  n.finalizada, n.pedido, n.status_conferencia, n.status_divergencia, n.status_armazenamento, n.avisos`;
 const notaDaLinha = (r, itens = []) => ({
   id: r.id, numero: r.numero, tipo: r.tipo, fornecedor: { codigo: r.fornecedor_codigo, nome: r.fornecedor_nome },
-  data: r.data, finalizada: r.finalizada, pedido: r.pedido, itens,
+  data: r.data, finalizada: r.finalizada, pedido: r.pedido, itens, avisos: r.avisos,
   status: { conferencia: r.status_conferencia, divergencia: r.status_divergencia, armazenamento: r.status_armazenamento },
 });
 
@@ -133,7 +133,7 @@ export async function detalheDaNota(pool, id) {
     [id],
   )).rows;
   const produtos = (await pool.query(
-    "SELECT codigo, descricao, un FROM produtos WHERE codigo IN (SELECT produto FROM notas_entrada_itens WHERE nota_id = $1)",
+    "SELECT codigo, descricao, un, cadastrado_por_nota FROM produtos WHERE codigo IN (SELECT produto FROM notas_entrada_itens WHERE nota_id = $1)",
     [id],
   )).rows;
   const docas = (await pool.query(
@@ -163,7 +163,8 @@ export async function cancelarPendente(pool, { notaId, produto, login }) {
 // ---------- buscar notas do ERP ----------
 // Até o Sankhya ser ligado, a busca é SIMULADA: traz as notas de exemplo da demonstração (decisão de 25/11/2026).
 // Nota que já existe (mesmo número e fornecedor) é bloqueada, sem duplicar (regra separarNotasImportadas).
-export const MSG_PRODUTO_SEM_CADASTRO = (codigo) => `PRODUTO ${codigo} NÃO ESTÁ CADASTRADO NO WMS.`;
+// O produto que a nota traz e o WMS não tem é cadastrado junto, na mesma transação (regra cadastrosDasNotas):
+// checkout ligado, código de barras de outro produto fica de fora com aviso na nota. O que já existe não muda.
 export async function importarNotasDoErp(pool, recebidas = importacaoDeNotas()) {
   return emTransacao(pool, async (c) => {
     // duas buscas ao mesmo tempo não importam a mesma nota duas vezes
@@ -173,27 +174,47 @@ export async function importarNotasDoErp(pool, recebidas = importacaoDeNotas()) 
       [recebidas.map((n) => n.numero)],
     )).rows.map((r) => ({ numero: r.numero, fornecedor: { codigo: r.fornecedor_codigo } }));
     const r = separarNotasImportadas(existentes, recebidas);
+    // só o que esta busca precisa saber: quais produtos já existem e de quem são os códigos de barras que vieram
     const cadastrados = new Set((await c.query(
       "SELECT codigo FROM produtos WHERE codigo = ANY($1)", [r.importadas.flatMap((n) => n.itens.map((i) => i.produto))],
     )).rows.map((x) => x.codigo));
+    const codigos = r.importadas.flatMap((n) => n.itens.flatMap((i) => (i.cadastro?.embalagens || []).map((e) => String(e.codigo ?? "").trim()))).filter(Boolean);
+    const donos = new Map((await c.query("SELECT codigo, produto FROM embalagens WHERE codigo = ANY($1)", [codigos])).rows.map((x) => [x.codigo, x.produto]));
+
     const importadas = [], bloqueadas = [...r.bloqueadas];
-    for (const n of r.importadas) {
-      const falta = n.itens.find((i) => !cadastrados.has(i.produto));
-      if (falta) { bloqueadas.push({ nota: n, msg: MSG_PRODUTO_SEM_CADASTRO(falta.produto) }); continue; }
+    for (const cad of cadastrosDasNotas(r.importadas, { existe: (x) => cadastrados.has(x), donoDoCodigo: (x) => donos.get(x) || null })) {
+      if (cad.bloqueio) { bloqueadas.push({ nota: cad.nota, msg: cad.bloqueio }); continue; }
+      const n = notaSemCadastro(cad.nota);
       const { id } = (await c.query(
-        `INSERT INTO notas_entrada (numero, tipo, fornecedor_codigo, fornecedor_nome, data)
-         VALUES ($1, 'Compra', $2, $3, $4::date) RETURNING id`,
-        [n.numero, n.fornecedor.codigo, n.fornecedor.nome, n.data],
+        `INSERT INTO notas_entrada (numero, tipo, fornecedor_codigo, fornecedor_nome, data, avisos)
+         VALUES ($1, 'Compra', $2, $3, $4::date, $5) RETURNING id`,
+        [n.numero, n.fornecedor.codigo, n.fornecedor.nome, n.data, cad.avisos],
       )).rows[0];
+      for (const p of cad.produtos) await cadastrarProduto(c, p, id);
       await c.query(
         `INSERT INTO notas_entrada_itens (nota_id, produto, qtd)
          SELECT $1, x.produto, x.qtd FROM jsonb_to_recordset($2::jsonb) AS x(produto text, qtd numeric)`,
         [id, JSON.stringify(n.itens)],
       );
-      importadas.push({ ...n, id });
+      for (const p of cad.produtos) cadastrados.add(p.codigo);
+      importadas.push({ ...n, id, avisos: cad.avisos, produtosNovos: cad.produtos.map((p) => p.codigo) });
     }
     return { importadas, bloqueadas };
   });
+}
+
+// o produto novo que veio na nota, com as embalagens (dentro da transação da importação)
+async function cadastrarProduto(c, p, notaId) {
+  await c.query(
+    `INSERT INTO produtos (codigo, descricao, un, checkout, fornecedor, grupo, subgrupo, estoque_min, estoque_max,
+       controla_validade, controla_lote, controla_serie, peso_bruto, peso_liquido, shelflife, cadastrado_por_nota, cadastrado_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())`,
+    [p.codigo, p.descricao, p.un, p.checkout, p.fornecedor, p.grupo, p.subgrupo, p.estoqueMin, p.estoqueMax,
+      p.controlaValidade, p.controlaLote, p.controlaSerie, p.pesoBruto, p.pesoLiquido, p.shelflife, notaId],
+  );
+  for (const e of p.embalagens) {
+    await c.query("INSERT INTO embalagens (produto, codigo, descricao, qtd) VALUES ($1, $2, $3, $4)", [p.codigo, e.codigo, e.descricao, e.qtd]);
+  }
 }
 
 // ---------- saldo × histórico ----------

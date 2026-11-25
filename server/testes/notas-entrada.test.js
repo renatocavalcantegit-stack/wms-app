@@ -80,12 +80,33 @@ test("cancelar pendente: sai da lista de armazenamento e o saldo continua na doc
 
 test("buscar notas do ERP (simulado): importa as novas e bloqueia a repetida", async () => {
   const r = (await chamar("gestorestoque", "/api/estoque/notas/importar", {})).json();
-  assert.deepEqual(r.importadas.map((n) => n.numero), ["48230", "48231"]);
+  assert.deepEqual(r.importadas.map((n) => n.numero), ["48230", "48231", "48232", "48233"]);
   assert.deepEqual(r.bloqueadas.map((b) => [b.nota.numero, b.msg]), [["48177", MSG_NOTA_JA_IMPORTADA]]);
   const de_novo = (await chamar("gestorestoque", "/api/estoque/notas/importar", {})).json();
   assert.equal(de_novo.importadas.length, 0);
-  assert.equal(de_novo.bloqueadas.length, 3);
-  assert.equal((await lista()).total, 8);
+  assert.equal(de_novo.bloqueadas.length, 5);
+  assert.equal((await lista()).total, 10);
+});
+
+test("produto novo pela nota: cadastrado com as embalagens; código de barras de outro produto vira aviso", async () => {
+  const id = await idDaNota("48232");
+  const p = (await pool.query("SELECT descricao, un, checkout, cadastrado_por_nota, cadastrado_em FROM produtos WHERE codigo = '99001'")).rows[0];
+  assert.equal(p.descricao, "BICICLETA ARO 29 BEACH TRAIL 21V");
+  assert.equal(p.checkout, true);
+  assert.equal(p.cadastrado_por_nota, id);
+  assert.ok(p.cadastrado_em);
+  const emb = async (produto) => (await pool.query("SELECT codigo, qtd FROM embalagens WHERE produto = $1 ORDER BY qtd", [produto])).rows.map((e) => [e.codigo, e.qtd]);
+  assert.deepEqual(await emb("99001"), [["7899990000011", 1], ["17899990000018", 2]]);
+  assert.deepEqual(await emb("99002"), [[null, 1], ["17899990000025", 10]]);
+  // o pneu 536 (que já existia) não mudou
+  assert.deepEqual(await emb("536"), [["4717294987981", 1], ["14717294987988", 10]]);
+  const d = (await chamar("gestorestoque", `/api/estoque/notas/${await idDaNota("48233")}`)).json();
+  assert.equal(d.nota.avisos.length, 1);
+  assert.match(d.nota.avisos[0], /4717294987981.*536/);
+  assert.equal(d.produtos.find((x) => x.codigo === "99002").cadastrado_por_nota, d.nota.id);
+  // o produto novo já é encontrado pelo código de barras (a consulta do coletor)
+  const achado = (await chamar("gestorestoque", "/api/produtos/7899990000011")).json();
+  assert.equal(achado.codigo, "99001");
 });
 
 test("devolução entregue ao estoque vira nota; a que espera a entrega, só depois de entregue", async () => {

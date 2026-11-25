@@ -281,9 +281,10 @@ function dia(deslocamento) {
   d.setDate(d.getDate() + deslocamento);
   return d.toLocaleDateString("sv");
 }
+// cada item: [produto, qtd] ou [produto, qtd, cadastro] (o cadastro do ERP, para o produto que o WMS ainda não tem)
 const notaDoErp = (numero, codFornecedor, diasAtras, itens) =>
   ({ numero, fornecedor: fornecedor(codFornecedor), data: dia(-diasAtras), tipo: "Compra", finalizada: false,
-    itens: itens.map(([produto, qtd]) => ({ produto, qtd })) });
+    itens: itens.map(([produto, qtd, cadastro]) => (cadastro ? { produto, qtd, cadastro } : { produto, qtd })) });
 
 // notas em todos os estados: aguardando, em aberto, conferida com e sem divergência, armazenamento parcial e completo.
 // O que está "na doca esperando armazenar" também entra no saldo da doca.
@@ -495,11 +496,22 @@ export function estoqueDeDemonstracao() {
   };
 }
 
-// o que o "ERP" manda na próxima busca de notas: duas novas e uma que já existe (para mostrar o bloqueio)
+// o que o "ERP" manda na próxima busca de notas: duas novas, uma que já existe (para mostrar o bloqueio) e,
+// desde a v77, duas com PRODUTO NOVO (o WMS cadastra pela nota): a 48233 traz um código de barras que já é do
+// pneu 536, para mostrar o aviso (o produto entra sem esse código).
 export const importacaoDeNotas = () => [
   notaDoErp("48230", 8561, 0, [["13633", 60], ["19958", 20]]),
   notaDoErp("48231", 8710, 0, [["8745", 48], ["17726", 48], ["8545", 30]]),
   notaDoErp("48177", 8603, 0, [["17480", 24], ["14857", 36], ["2843", 6]]),
+  notaDoErp("48232", 8558, 0, [
+    ["99001", 12, { descricao: "BICICLETA ARO 29 BEACH TRAIL 21V", un: "UN", grupo: "BIKE", pesoBruto: 15.2,
+      embalagens: [{ descricao: "Unidade", codigo: "7899990000011", qtd: 1 }, { descricao: "Caixa com 2", codigo: "17899990000018", qtd: 2 }] }],
+    ["536", 20],
+  ]),
+  notaDoErp("48233", 8710, 0, [
+    ["99002", 30, { descricao: "CAMARA 29 X 2.10 BICO GROSSO", un: "UN", grupo: "BIKE", pesoBruto: 0.21,
+      embalagens: [{ descricao: "Unidade", codigo: "4717294987981", qtd: 1 }, { descricao: "Fardo com 10", codigo: "17899990000025", qtd: 10 }] }],
+  ]),
 ];
 
 // o que o "ERP" manda na próxima importação simulada: produtos novos e um que já existe (para mostrar o bloqueio)

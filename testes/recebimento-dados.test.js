@@ -2,7 +2,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { limparArmazenamento } from "./armazenamento-falso.js";
-import { lerEstoque, saldoNoEndereco } from "../js/dados/estoque.js";
+import { lerEstoque, saldoNoEndereco, produtoPorCodigo, embalagensDoProduto } from "../js/dados/estoque.js";
 import {
   conferir, finalizarNota, armazenar, cancelarPendente, importarNotasDoErp, notaPorNumero, volumesDoItem,
 } from "../js/dados/recebimento.js";
@@ -71,7 +71,25 @@ test("cancelar pendente (WEB): sai da lista de pendentes, mas o saldo continua n
 
 test("buscar notas do ERP: as novas entram; a repetida é bloqueada", () => {
   const r = importarNotasDoErp();
-  assert.deepEqual(r.importadas.map((n) => n.numero), ["48230", "48231"]);
+  assert.deepEqual(r.importadas.map((n) => n.numero), ["48230", "48231", "48232", "48233"]);
   assert.deepEqual(r.bloqueadas.map((b) => b.msg), [MSG_NOTA_JA_IMPORTADA]);
   assert.equal(statusDaNota(notaPorNumero(db(), "48230"), db().conferencias).conferencia, "aguardando");
+});
+
+test("buscar notas do ERP (v77): o produto novo é cadastrado pela nota; código de barras repetido vira aviso", () => {
+  const r = importarNotasDoErp();
+  assert.deepEqual(r.importadas.find((n) => n.numero === "48232").produtosNovos, ["99001"]);
+  const d = db(), nota = notaPorNumero(d, "48232");
+  const p = produtoPorCodigo(d, "99001");
+  assert.equal(p.descricao, "BICICLETA ARO 29 BEACH TRAIL 21V");
+  assert.equal(p.checkout, true);
+  assert.equal(p.cadastradoPorNota, nota.id);
+  assert.deepEqual(embalagensDoProduto(d, "99001").map((e) => [e.codigo, e.qtd]), [["7899990000011", 1], ["17899990000018", 2]]);
+  assert.deepEqual(nota.itens, [{ produto: "99001", qtd: 12 }, { produto: "536", qtd: 20 }], "a nota guarda só produto e quantidade");
+  // a 48233 traz o código de barras do pneu 536: o produto novo entra sem ele e a nota leva o aviso
+  assert.deepEqual(embalagensDoProduto(d, "99002").map((e) => [e.codigo, e.qtd]), [[null, 1], ["17899990000025", 10]]);
+  assert.equal(notaPorNumero(d, "48233").avisos.length, 1);
+  assert.match(notaPorNumero(d, "48233").avisos[0], /4717294987981.*536/);
+  // ids das embalagens novas não repetem os que já existiam
+  assert.equal(new Set(d.embalagens.map((e) => e.id)).size, d.embalagens.length);
 });

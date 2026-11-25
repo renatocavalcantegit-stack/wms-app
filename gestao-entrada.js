@@ -67,13 +67,15 @@ async function carregarDetalhe(id) {
 }
 
 // A nota aberta, no formato que o detalhe e os modais usam (o mesmo nas duas fontes):
-// { nota, conferencias, produto(codigo) → { codigo, descricao, un }, doca(id) → código, volumes(produto) → [...] }
+// { nota, conferencias, produto(codigo) → { codigo, descricao, un }, doca(id) → código, volumes(produto) → [...],
+//   novo(codigo) → o produto foi cadastrado por esta nota? (v77: o produto novo nasce da nota do ERP) }
 function fonteDaDemo(db, nota) {
   return {
     nota, conferencias: db.conferencias,
     produto: (c) => produtoPorCodigo(db, c) || { codigo: c, descricao: "", un: "" },
     doca: (id) => enderecoPorId(db, id)?.codigo,
     volumes: (p) => volumesDoItem(db, nota.id, p),
+    novo: (c) => produtoPorCodigo(db, c)?.cadastradoPorNota === nota.id,
   };
 }
 function fonteDoServidor(d) {
@@ -84,6 +86,7 @@ function fonteDoServidor(d) {
     produto: (c) => produtos.get(c) || { codigo: c, descricao: "", un: "" },
     doca: (id) => docas.get(id),
     volumes: (p) => d.volumes.filter((v) => v.produto === p),
+    novo: (c) => produtos.get(c)?.cadastrado_por_nota === d.nota.id,
   };
 }
 const fonteAberta = (db) => {
@@ -230,13 +233,14 @@ function detalhe(fonte) {
       <div><small>Armazenamento</small>${p.armazenamento}</div>
     </div>
   </div>
+  ${(nota.avisos || []).map((a) => `<p class="ge-msg">${esc(a)}</p>`).join("")}
   <div class="ge-card">
     <table class="ge-tab">
       <thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="r">Nota</th><th class="r">Conferido</th><th class="r">Divergência</th><th class="r">Armazenado</th><th class="r">Volumes</th><th></th></tr></thead>
       <tbody>${itens.map((i) => {
         const prod = fonte.produto(i.produto);
         return `<tr>
-          <td class="mono">${esc(i.produto)}</td><td>${esc(prod.descricao)}</td><td>${esc(prod.un)}</td>
+          <td class="mono">${esc(i.produto)}</td><td>${esc(prod.descricao)}${fonte.novo(i.produto) ? ` <span class="ge-st b" title="Cadastrado por esta nota">Produto novo</span>` : ""}</td><td>${esc(prod.un)}</td>
           <td class="r">${num(i.qtdNota)}</td>
           <td class="r">${i.conferido ? `<button class="ge-link ge-num" data-conferido="${esc(i.produto)}">${num(i.conferido)}</button>` : "0"}</td>
           <td class="r">${divergenciaHtml(nota, i.divergencia)}</td>
@@ -291,7 +295,9 @@ async function buscarNotasDoErp() {
   tela.abrirModal(`<h2>Notas do ERP</h2>
     ${servidor ? `<p class="ge-sub">Simulação: até o Sankhya ser ligado, a busca traz notas de exemplo.</p>` : ""}
     <p>${r.importadas.length ? `<b>${r.importadas.length}</b> nota(s) importada(s):` : "Nenhuma nota nova."}</p>
-    ${r.importadas.map((n) => `<p class="ge-imp ok">NF ${esc(n.numero)} · ${esc(n.fornecedor.nome)} · ${n.itens.length} produto(s)</p>`).join("")}
+    ${r.importadas.map((n) => `<p class="ge-imp ok">NF ${esc(n.numero)} · ${esc(n.fornecedor.nome)} · ${n.itens.length} produto(s)${n.produtosNovos?.length
+      ? ` · <b>${n.produtosNovos.length} produto(s) novo(s) cadastrado(s)</b>: ${n.produtosNovos.map(esc).join(", ")}` : ""}</p>
+      ${(n.avisos || []).map((a) => `<p class="ge-imp err">${esc(a)}</p>`).join("")}`).join("")}
     ${r.bloqueadas.map((b) => `<p class="ge-imp err">NF ${esc(b.nota.numero)} · ${esc(b.nota.fornecedor.nome)} · <b>${esc(b.msg)}</b></p>`).join("")}
     <div class="m-act"><button class="btn primary" data-fechar>Fechar</button></div>`);
 }
