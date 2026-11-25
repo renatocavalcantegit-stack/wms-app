@@ -71,6 +71,8 @@ body.ge { background: #F1F1F4; min-height: 100vh; }
 .ge-lote-info.ok { color: var(--ink); }
 .ge-lote-info.err { color: var(--red); background: var(--red-soft); font-weight: 600; }
 .ge-form { display: flex; flex-direction: column; gap: 12px; }
+/* v77: com servidor, as abas que ainda não estão no servidor avisam que mostram a demonstração */
+.ge-fora-servidor { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: #FEF3C7; color: #78350F; font-size: 14px; }
 .ge-msg { font-weight: 700; color: var(--red) !important; background: var(--red-soft); border-radius: 10px; padding: 10px 12px; }
 .ge-imp { font-size: 13px !important; padding: 8px 10px; border-radius: 9px; }
 .ge-imp.ok { background: var(--ok-soft); color: var(--ok) !important; }

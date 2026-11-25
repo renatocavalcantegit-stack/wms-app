@@ -6,6 +6,7 @@ import { gerarHash } from "../src/senha.js";
 import { USERS } from "../../js/sessao.js";
 import { estoqueDeDemonstracao, seedSeparacao, seedSeparacaoMont, seedConferencia, seedConferenciaMont } from "../../js/demo-dados.js";
 import { cadastroDoCliente } from "../../js/dados/clientes.js";
+import { statusDaNota } from "../../compartilhado/regras/recebimento.js";
 
 // Fila de cada separador no começo da demonstração (Fase 1e). O que não está aqui fica na caixa de entrada
 // do coordenador: o PV-10423 (aguardando), o PV-10427 e o PV-10428 (que chega sem rota), e duas OPs.
@@ -46,6 +47,31 @@ function horaDeHoje(hhmm) {
 }
 const dataOuNada = (ms) => (ms ? new Date(ms).toISOString() : null);
 
+// Notas de entrada da demonstração (v77), em todos os estados: aguardando, em aberto, conferida com e sem divergência,
+// armazenamento parcial e completo. As conferências viram recebimentos com os volumes; o que está na doca esperando
+// armazenar já está no saldo (e no saldo inicial). Os três status são os da regra statusDaNota.
+async function semearNotas(c, estoque) {
+  await inserirLista(c, "notas_entrada",
+    ["id integer", "numero text", "tipo text", "fornecedor_codigo integer", "fornecedor_nome text", "data date", "finalizada boolean",
+      "status_conferencia text", "status_divergencia text", "status_armazenamento text"],
+    estoque.notas.map((n) => {
+      const s = statusDaNota(n, estoque.conferencias);
+      return { id: n.id, numero: n.numero, tipo: n.tipo, fornecedor_codigo: n.fornecedor.codigo ?? null, fornecedor_nome: n.fornecedor.nome,
+        data: n.data, finalizada: n.finalizada, status_conferencia: s.conferencia, status_divergencia: s.divergencia, status_armazenamento: s.armazenamento };
+    }));
+  await inserirLista(c, "notas_entrada_itens", ["nota_id integer", "produto text", "qtd numeric"],
+    estoque.notas.flatMap((n) => n.itens.map((i) => ({ nota_id: n.id, produto: i.produto, qtd: i.qtd }))));
+  await inserirLista(c, "recebimentos",
+    ["id integer", "nota_id integer", "produto text", "qtd numeric", "doca_id integer", "dia date", "armazenado numeric", "cancelado numeric"],
+    estoque.conferencias.map((x) => ({ id: x.id, nota_id: x.notaId, produto: x.produto, qtd: x.qtd, doca_id: x.docaId, dia: x.dia,
+      armazenado: x.armazenado, cancelado: x.cancelado })));
+  await inserirLista(c, "volumes_recebimento", ["codigo text", "recebimento_id integer", "seq integer", "total integer"],
+    estoque.volumes.map((v) => ({ codigo: v.codigo, recebimento_id: v.conferenciaId, seq: v.seq, total: v.total })));
+  // os próximos números continuam depois dos da demonstração
+  await c.query("SELECT setval('notas_entrada_id_seq', (SELECT coalesce(max(id), 0) + 1 FROM notas_entrada), false)");
+  await c.query("SELECT setval('recebimentos_id_seq', (SELECT coalesce(max(id), 0) + 1 FROM recebimentos), false)");
+}
+
 // conferencia = true: também os pedidos já separados, na caixa e nas filas da conferência (os testes usam).
 // Pelo terminal (npm run semear), sem eles: o teste operacional começa na Separação e o pedido chega
 // na conferência pelo caminho de verdade (o separador termina → caixa "Separados" da Gestão).
@@ -64,7 +90,7 @@ export async function semear(pool, { conferencia = false } = {}) {
 
   await emTransacao(pool, async (c) => {
     // começa do zero (a ordem não importa com CASCADE)
-    await c.query("TRUNCATE observacao_ciencias, devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
+    await c.query("TRUNCATE movimentos, volumes_recebimento, recebimentos, notas_entrada_itens, notas_entrada, observacao_ciencias, devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
 
     await inserirLista(c, "usuarios", ["login text", "nome text", "perfil text", "pin_hash text"],
       USERS.map((u) => ({ login: u.login, nome: u.nome, perfil: u.perfil, pin_hash: gerarHash(u.pin) })));
@@ -96,6 +122,11 @@ export async function semear(pool, { conferencia = false } = {}) {
 
     await inserirLista(c, "associacoes", ["produto text", "endereco_id integer"],
       estoque.associacoes.map((a) => ({ produto: a.produto, endereco_id: a.enderecoId })));
+
+    // Estoque no servidor (v77): o saldo de hoje é o começo do histórico (um movimento "saldo_inicial" por saldo)
+    await inserirLista(c, "movimentos", ["tipo text", "produto text", "qtd numeric", "destino_id integer"],
+      estoque.saldos.map((s) => ({ tipo: "saldo_inicial", produto: s.produto, qtd: s.qtd, destino_id: s.enderecoId })));
+    await semearNotas(c, estoque);
 
     await inserirLista(c, "pedidos",
       ["id text", "setor text", "cliente text", "cidade text", "prioridade text", "chegada timestamptz", "status text", "separador text",
@@ -135,7 +166,7 @@ export async function semear(pool, { conferencia = false } = {}) {
   return {
     usuarios: USERS.length, produtos: estoque.produtos.length, embalagens: estoque.embalagens.length,
     enderecos: estoque.enderecos.length, saldos: estoque.saldos.length, associacoes: estoque.associacoes.length, pedidos: pedidos.length,
-    conferencias: separados.length,
+    conferencias: separados.length, notas: estoque.notas.length,
   };
 }
 

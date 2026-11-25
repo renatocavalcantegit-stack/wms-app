@@ -1,6 +1,7 @@
 // WMS Beach Bike — utilitários de tela do app do coletor: Separação e Embarque (index.html) e Estoque (estoque.html).
 import { $, $$ } from "./util.js";
 import { session } from "./sessao.js";
+import { aoEncherMemoria, MSG_MEMORIA_CHEIA } from "./dados/armazenamento.js";
 
 export const vibrate = (p) => navigator.vibrate && navigator.vibrate(p);
 export const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
@@ -15,6 +16,9 @@ export function toast(msg) {
   t.textContent = msg; t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2200);
 }
+
+// memória do aparelho cheia (v77): a tela segue, mas a pessoa precisa saber (js/dados/armazenamento.js)
+aoEncherMemoria(() => toast(MSG_MEMORIA_CHEIA));
 
 // feedback sonoro curto (bipe)
 let actx;

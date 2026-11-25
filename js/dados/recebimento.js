@@ -152,3 +152,42 @@ export function importarNotasDoErp() {
   gravarEstoque(db);
   return r;
 }
+
+// =====================================================================
+// com servidor (Estoque no servidor, entrega A · v77): a aba Entrada da Gestão de Estoque
+// =====================================================================
+// As notas ficam no servidor (server/src/consultas/notas-entrada.js); a Gestão não guarda nada delas no aparelho.
+// A lista vem filtrada e paginada pelo servidor (nunca todas as notas de uma vez).
+// Cada função devolve { ok: true, ... } ou { ok: false, erro } (erro já é a frase para mostrar ao gestor).
+const ERRO_DE_REDE = "Sem conexão com o servidor. Confira a rede e tente de novo.";
+async function chamarServidor(sessao, url, corpo, buscar = fetch) {
+  let r;
+  try {
+    r = await buscar(url, {
+      method: corpo ? "POST" : "GET", cache: "no-store",
+      headers: { authorization: `Bearer ${sessao.token}`, ...(corpo ? { "content-type": "application/json" } : {}) },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+    });
+  } catch { return { ok: false, erro: ERRO_DE_REDE, semRede: true }; }
+  const dados = await r.json().catch(() => ({}));
+  if (r.status === 401) return { ok: false, erro: "Sessão encerrada: saia e entre de novo.", sessaoVencida: true };
+  if (!r.ok) return { ok: false, erro: dados.erro || "O servidor respondeu com erro." };
+  return { ok: true, ...dados };
+}
+
+// filtros = { nf, fornecedor, de, ate, conferencia, divergencia, armazenamento } · devolve { notas, total, pagina, porPagina, contagens }
+export function buscarNotasNoServidor(sessao, filtros, pagina, porPagina, buscar) {
+  const q = new URLSearchParams({ ...filtros, pagina, porPagina });
+  return chamarServidor(sessao, `api/estoque/notas?${q}`, null, buscar);
+}
+// devolve { nota, conferencias, volumes, produtos: [{ codigo, descricao, un }], docas: [{ id, codigo }] }
+export const buscarNotaNoServidor = (sessao, id, buscar) => chamarServidor(sessao, `api/estoque/notas/${encodeURIComponent(id)}`, null, buscar);
+export const cancelarPendenteNoServidor = (sessao, id, produto, buscar) =>
+  chamarServidor(sessao, `api/estoque/notas/${encodeURIComponent(id)}/cancelar-pendente`, { produto }, buscar);
+export const importarNotasNoServidor = (sessao, buscar) => chamarServidor(sessao, "api/estoque/notas/importar", {}, buscar);
+// avisa quando outra tela mudou as notas (canal de tempo real do servidor, evento "estoque")
+export function ouvirNotas(sessao, aoAvisar) {
+  const fonte = new EventSource(`api/tempo-real?token=${encodeURIComponent(sessao.token)}`);
+  fonte.addEventListener("estoque", () => aoAvisar());
+  return () => fonte.close();
+}

@@ -1,7 +1,7 @@
 // WMS Beach Bike — Gestão de Estoque (WEB): cadastro de endereços, produtos/embalagens e endereçamento.
 // A aba Entrada (notas do recebimento) fica em gestao-entrada.js e a Movimentação (abastecimento) em gestao-movimentacao.js.
 // As regras ficam em compartilhado/regras/ e os dados passam por js/dados/estoque.js.
-import { session, logout, PERFIS } from "./js/sessao.js";
+import { session, logout, PERFIS, temServidor } from "./js/sessao.js";
 import { $, $$, esc } from "./js/util.js";
 import { qrSvg } from "./js/qr.js";
 import {
@@ -15,7 +15,7 @@ import {
   gerarLote, contarLote, andaresDoLote, aptosDoAndar,
 } from "./compartilhado/regras/enderecos.js";
 import { buscarProdutos, validarEmbalagem, MSG_EXCLUIR_EMBALAGEM } from "./compartilhado/regras/embalagens.js";
-import { FILTROS_ENTRADA, iniciarEntrada, telaEntrada, cliqueEntrada, cliqueModalEntrada, sairDaEntrada } from "./gestao-entrada.js";
+import { FILTROS_ENTRADA, iniciarEntrada, telaEntrada, cliqueEntrada, cliqueModalEntrada, sairDaEntrada, ligarEntradaNoServidor } from "./gestao-entrada.js";
 import {
   FILTROS_MOVIMENTACAO, iniciarMovimentacao, telaMovimentacao, cliqueMovimentacao, cliqueModalMovimentacao, enviarModalMovimentacao,
 } from "./gestao-movimentacao.js";
@@ -58,17 +58,21 @@ function paginar(lista, chave) {
   const total = lista.length, paginas = Math.max(1, Math.ceil(total / porPagina));
   pagina[chave] = Math.min(pagina[chave], paginas);
   const ini = (pagina[chave] - 1) * porPagina;
-  const itens = lista.slice(ini, ini + porPagina);
-  const rodape = `<div class="ge-pag">
-    <span>${total ? `Mostrando ${ini + 1}–${ini + itens.length} de ${num(total)}` : "Nenhum registro"}</span>
+  return { itens: lista.slice(ini, ini + porPagina), rodape: rodape(total, chave) };
+}
+// o mesmo rodapé quando quem pagina é o servidor (a tela só sabe o total)
+function rodape(total, chave) {
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  const ini = (pagina[chave] - 1) * porPagina, naPagina = Math.max(0, Math.min(porPagina, total - ini));
+  return `<div class="ge-pag">
+    <span>${total ? `Mostrando ${ini + 1}–${ini + naPagina} de ${num(total)}` : "Nenhum registro"}</span>
     <label>Por página <select data-porpagina>${[10, 20, 30, 50].map((n) => `<option ${n === porPagina ? "selected" : ""}>${n}</option>`).join("")}</select></label>
     <span class="ge-pag-nav">
       <button class="btn ghost" data-pag="-1" ${pagina[chave] === 1 ? "disabled" : ""}>Anterior</button>
       <b>${pagina[chave]} / ${paginas}</b>
-      <button class="btn ghost" data-pag="1" ${pagina[chave] === paginas ? "disabled" : ""}>Próxima</button>
+      <button class="btn ghost" data-pag="1" ${pagina[chave] >= paginas ? "disabled" : ""}>Próxima</button>
     </span>
   </div>`;
-  return { itens, rodape };
 }
 
 // =====================================================================
@@ -402,7 +406,19 @@ function telaEnderecamento() {
 // =====================================================================
 const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento, entrada: () => telaEntrada(db, filtros.entrada),
   movimentacao: () => telaMovimentacao(db, filtros.movimentacao), inventario: () => telaInventario(db, filtros.inventario) };
-iniciarEntrada({ paginar, render, abrirModal, fecharModal, toast });
+iniciarEntrada({
+  paginar, rodape, render, abrirModal, fecharModal, toast,
+  paginaDe: (chave) => ({ pagina: pagina[chave], porPagina }),
+  corrigirPagina: (chave, p) => { pagina[chave] = p; },
+});
+
+// Com servidor (v77): a aba Entrada usa as notas do banco. As outras abas ainda não estão no servidor
+// (decisão de 25/11/2026: o Estoque vai para o servidor por etapas) e mostram o aviso abaixo.
+let comServidor = false;
+const ABAS_NO_SERVIDOR = ["entrada"];
+const avisoForaDoServidor = () => (comServidor && !ABAS_NO_SERVIDOR.includes(aba)
+  ? `<p class="ge-fora-servidor"><b>Ainda não está no servidor.</b> Esta aba mostra a demonstração guardada neste computador; o que mudar aqui não vale para os coletores.</p>`
+  : "");
 iniciarMovimentacao({ paginar, render, abrirModal, fecharModal, toast, voltarPagina: () => (pagina.movimentacao = 1) });
 iniciarInventario({ paginar, render, abrirModal, fecharModal, toast, voltarPagina: () => (pagina.inventario = 1), db: () => db });
 
@@ -412,7 +428,7 @@ function render() {
   // guarda o foco do campo de busca para não perder o que está sendo digitado
   const foco = document.activeElement?.dataset?.f;
   const pos = document.activeElement?.selectionStart;
-  $("#tela").innerHTML = TELAS[aba]();
+  $("#tela").innerHTML = avisoForaDoServidor() + TELAS[aba]();
   if (foco) { const el = $(`#tela [data-f="${foco}"]`); if (el) { el.focus(); if (pos != null && el.setSelectionRange) el.setSelectionRange(pos, pos); } }
   if (produtoAberto) abrirProduto(produtoAberto);
 }
@@ -564,3 +580,9 @@ $("#modal").addEventListener("click", (ev) => {
 // tempo real: o que o coletor gravar aparece aqui na hora
 aoMudarEstoque(render);
 render();
+if (sess?.token) temServidor().then((ligou) => {
+  if (!ligou) return;
+  comServidor = true;
+  ligarEntradaNoServidor(sess);
+  render();
+});

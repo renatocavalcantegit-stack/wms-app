@@ -30,6 +30,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 008 ocorrências do pedido (corte e cancelamento) e devoluções ao estoque (entradas pendentes)
                             · 009 entrega da devolução do pedido cancelado (a_entregar → pendente; quem e quando entregou)
                             · 010 observação do pedido (o texto do vendedor no Sankhya e quem leu: observacao_ciencias)
+                            · 011 notas de entrada (notas, recebimentos, volumes e o histórico de movimentos do estoque)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -238,7 +239,7 @@ npm test
 | `GET /api/separacao?setor=exp` | sim | a lista do coletor: `{ agora, pedidos }`, **só a fila de quem pediu** (na ordem do quadro), o que ele está separando e o que concluiu hoje, cada um com os itens, `separador_nome`, `doca_id` e `ordem_fila` |
 | `GET /api/conferencia?setor=exp` | sim | a lista do posto: `{ agora, pedidos }`, **só a fila do conferente** (na ordem do quadro), o que ele está conferindo e o que conferiu hoje; cada pedido com cliente, rota, separador, doca (ou as partes, cada uma com a doca), os itens separados e as contagens |
 | `POST /api/sincronizar` | sim | `{ acoes: [{ id, tipo, dados, feitaEm }], pendentes? }` → `{ novas, repetidas, recusadas }`. Com `acoes: []` é o batimento: só grava o último contato. `pendentes`: quanto o aparelho tem na fila (a tela de Dispositivos mostra). `passo?` = `{ passo: 1 ou 2, itens: [{ pedido, sequencia }] }`: o item da vez com o endereço lido (1) ou o produto bipado (2); só para a Gestão acompanhar, não é ação |
-| `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor), `painel` (uma ação foi marcada como vista), `quadro` (o quadro mudou) e `dispositivos` (um aparelho entrou ou saiu) |
+| `GET /api/tempo-real?token=...` | sim | canal SSE; eventos `acoes` (chegaram ações), `contato` (batimento de um coletor), `painel` (uma ação foi marcada como vista), `quadro` (o quadro mudou), `estoque` (uma nota de entrada mudou) e `dispositivos` (um aparelho entrou ou saiu) |
 | `GET /api/quadro/separacao?setor=exp` | coordenador do setor | `{ agora, pedidos, separadores }`: o que ainda não foi separado (caixa de entrada e filas, com o andamento) e todos os separadores, com o contato e quantos separaram hoje |
 | `POST /api/quadro/mover` | coordenador do setor | `{ setor, unidade, para, ordem }`: muda o pedido (ou o lote inteiro) de fila. `para` = login, `null` = caixa de entrada; `ordem` = a coluna de destino depois de soltar. **409** em separação ou sem rota |
 | `POST /api/quadro/rota` | coordenador do setor | `{ setor, pedido, rota }`: define a rota do pedido que chegou sem rota |
@@ -254,6 +255,10 @@ npm test
 | `POST /api/dispositivos/:id/desconectar` | coordenador | encerra a sessão do aparelho (coletor perdido ou quebrado) |
 | `GET /api/painel/separacao?setor=exp` | coordenador | `{ agora, pedidos, separadores, naoAplicadas }` para a aba Ao vivo |
 | `POST /api/painel/nao-aplicadas/:id/vista` | coordenador | marca a ação não aplicada como vista (sai da lista); 404 se não existe ou já foi vista |
+| `GET /api/estoque/notas` | gestor de estoque | `?nf=&fornecedor=&de=&ate=&conferencia=&divergencia=&armazenamento=&pagina=1&porPagina=20` → `{ notas, total, pagina, porPagina, contagens }`: a lista da aba Entrada, **filtrada e paginada no banco** (`porPagina` = 10, 20, 30 ou 50); `contagens` são os indicadores do topo |
+| `GET /api/estoque/notas/:id` | gestor de estoque | `{ nota, conferencias, volumes, produtos, docas }`: o detalhe da nota (para a tela e a reimpressão das etiquetas). **404** não existe |
+| `POST /api/estoque/notas/:id/cancelar-pendente` | gestor de estoque | `{ produto }` → `{ status }`: o pendente de armazenar vira cancelado (o saldo continua na doca); grava quem e quando. **409** se não havia pendente |
+| `POST /api/estoque/notas/importar` | gestor de estoque | "Buscar notas do ERP" → `{ importadas, bloqueadas }`. **Simulado** até o Sankhya ser ligado (as notas de exemplo da demonstração); a nota repetida é bloqueada |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
 | `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/, vendor/...) |
 
@@ -363,6 +368,27 @@ conferido ou dispensado não volta. O posto que estava com um pedido dispensado 
 ("O COORDENADOR DISPENSOU A CONFERÊNCIA DO …") e volta para a fila.
 O coletor que mandou "separar novamente" de um pedido que já está sendo conferido recebe a recusa e volta para a lista.
 Para testar dois postos, a demonstração tem um segundo conferente (`conferente2`, PIN em `js/sessao.js`).
+
+## Estoque no servidor · entrega A: notas de entrada (v77)
+
+Plano aprovado em 25/11/2026, por etapas: **A** notas de entrada (esta), **B** conferência no coletor pela fila,
+**C** armazenamento e consulta de saldo (com Wi-Fi). Movimentação, inventário e cadastro de endereços ainda não estão
+no servidor: na Gestão de Estoque, essas abas mostram o aviso "Ainda não está no servidor".
+
+- **Tabelas (migração `011`)**: `notas_entrada` e `notas_entrada_itens` (Compra do ERP ou Devolução), `recebimentos`
+  (cada confirmação do coletor: soma ao conferido e põe o saldo na doca), `volumes_recebimento` (as etiquetas) e
+  `movimentos` (o extrato do estoque).
+- **Devolução vira nota**: quando a devolução fica `pendente` (entregue ao estoque), `consultas/devolucoes.js` cria a
+  nota do tipo Devolução na mesma transação. Entregar duas vezes não duplica (`devolucao_id` é único).
+- **Lista rápida com muitas notas**: os três status da nota (conferência, divergência, armazenamento) ficam gravados
+  em `notas_entrada` e são recalculados pela regra `statusDaNota` (`compartilhado/regras/recebimento.js`) a cada
+  mudança. Assim a lista filtra e pagina no banco, sem ler todas as notas.
+- **Histórico de movimentos (guardado para sempre)**: toda mudança de saldo grava um movimento **na mesma
+  transação**. O saldo que existia quando o histórico começou entra como `saldo_inicial` (a migração `011` e o
+  `npm run semear` fazem isso). `saldosForaDoHistorico(pool)` (`consultas/notas-entrada.js`) confere se cada saldo é
+  igual à soma dos movimentos e devolve as diferenças; os testes rodam essa conferência.
+- **Coletor**: com servidor, a separação não faz mais a baixa no estoque guardado no aparelho (a baixa no servidor
+  fica para depois, decisão de 25/11/2026). A recepção no coletor continua na demonstração até a entrega B.
 
 ## Observação do pedido (v76)
 

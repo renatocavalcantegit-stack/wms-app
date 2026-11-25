@@ -3,9 +3,14 @@
 // Quem cria: a ocorrência do gestor (consultas/ocorrencias.js) e as ações do separador e do conferente
 // (consultas/aplicar-acoes.js e aplicar-conferencia.js), sempre dentro da transação de quem chamou.
 //
+// Estoque no servidor (migração 011, v77): quando a devolução fica "pendente" ela vira uma NOTA DE ENTRADA do tipo
+// Devolução (consultas/notas-entrada.js), que aparece na aba Entrada da Gestão de Estoque.
+//
 // Pedido cancelado (migração 009): ninguém bipa. A devolução nasce "a_entregar", com o responsável (quem está
 // com a caixa); quando ele marca "Entregue ao estoque" (ações separacao.entregar / conferencia.entregar) ela
 // vira "pendente" e só então aparece para o estoque. Fica registrado quem entregou (entregue_por) e quando.
+
+import { abrirNotaDaDevolucao } from "./notas-entrada.js";
 
 // conexao: a da transação · itens = [{ produto, qtd }] (o mesmo produto pode vir mais de uma vez: soma)
 // Devolve o número da entrada ("PV-10421", a segunda do mesmo pedido "PV-10421-2") ou null se não havia nada.
@@ -26,6 +31,7 @@ export async function criarDevolucao(conexao, { pedido, setor, origem, entregueP
   for (const [produto, qtd] of soma) {
     await conexao.query("INSERT INTO devolucao_itens (devolucao_id, produto, qtd) VALUES ($1, $2, $3)", [id, produto, qtd]);
   }
+  if (!aEntregar) await abrirNotaDaDevolucao(conexao, id); // já entregue: entra na aba Entrada do estoque
   return numero;
 }
 
@@ -69,9 +75,10 @@ export async function somarNaEntrega(conexao, { pedido, origem, responsavel, ite
 export async function marcarEntregue(conexao, { pedido, origem, login, soDele = false }) {
   const { rows } = await conexao.query(
     `UPDATE devolucoes SET status = 'pendente', entregue_por = $3, entregue_em = now()
-      WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' AND (NOT $4::boolean OR responsavel = $3) RETURNING numero`,
+      WHERE pedido = $1 AND origem = $2 AND status = 'a_entregar' AND (NOT $4::boolean OR responsavel = $3) RETURNING id, numero`,
     [pedido, origem, login, soDele],
   );
+  for (const r of rows) await abrirNotaDaDevolucao(conexao, r.id); // entregue: entra na aba Entrada do estoque
   return rows.map((r) => r.numero);
 }
 

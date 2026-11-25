@@ -620,7 +620,7 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
       const idNaConferencia = o.parte ? o.parte.pai : o.id;
       const erro = podeSepararNovamente(statusNaConferencia(setor(), idNaConferencia));
       if (erro) { closeSheets(); toast(erro); beep(false); return; }
-      estornarSeparacao({ pedido: o.id, usuario: sess?.login });
+      if (!sess?.token) estornarSeparacao({ pedido: o.id, usuario: sess?.login }); // só na demonstração (ver baixar)
       registrar("separacao.reabrir", { pedido: o.id });
       retirarDaConferencia(setor(), idNaConferencia);
       o.itens.forEach((i) => Object.assign(i, { sep: 0, status: i.qtd === 0 ? "cortado" : "pendente", motivo: "", devolver: 0 }));
@@ -892,8 +892,12 @@ import { lerQuantidade, quantidadeValida, arredondarQtd, formatarQtd as fq } fro
     next();
   }
 
-  // o que foi separado sai do saldo do picking no Estoque (e, se ficar no mínimo, nasce a tarefa de abastecimento)
+  // o que foi separado sai do saldo do picking no Estoque (e, se ficar no mínimo, nasce a tarefa de abastecimento).
+  // Só na demonstração (v77): com servidor, o saldo de verdade está no servidor e a baixa na separação ainda não
+  // entrou lá (decisão de 25/11/2026). Fazer a baixa aqui reescreveria o Estoque inteiro do aparelho a cada item,
+  // à toa, e acumularia movimentos até encher a memória do coletor.
   function baixar(pedidoId, i) {
+    if (sess?.token) return;
     if (i.sep > 0) baixarPorSeparacao({ endereco: i.end, produto: i.sku, qtd: i.sep, usuario: sess?.login, pedido: pedidoId });
   }
   $("#btnConfirm").addEventListener("click", confirmItem);

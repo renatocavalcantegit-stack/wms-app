@@ -11,10 +11,12 @@ import { validarEmbalagem, separarImportacao } from "../../compartilhado/regras/
 import { tarefasNoEndereco } from "../../compartilhado/regras/movimentacao.js";
 import { exigeCheckout } from "../../compartilhado/regras/produtos.js";
 import { arredondarQtd, somarQtd } from "../../compartilhado/regras/quantidade.js";
+import { CHAVE_ESTOQUE, gravarNoAparelho } from "./armazenamento.js";
 
 // v11: doca de devolução e divergências de saldo da separação; v10: código bom de célula suja é mantido (ex.: câmara 176); v9: códigos de barras reais (embalagens) e granel = sem código; v8: endereços, produtos e saldos reais do WMS (planilha do Sankhya); v7: conferência por checkout no produto; v6: docas de expedição; v5: Inventário físico; v4: Movimentação (tarefas de abastecimento e mínimo/máximo); v3 trouxe os produtos reais, v2 o Recebimento.
 // Mudar a chave troca a demonstração antiga pela nova.
-const CHAVE = "wms-bb-estoque-v11";
+// (a chave mora em armazenamento.js: a fila de envio pode apagá-la para abrir espaço, com servidor)
+const CHAVE = CHAVE_ESTOQUE;
 
 // tudo o que está guardado; no primeiro acesso (ou se o dado estiver corrompido), começa com a demonstração
 export function lerEstoque() {
@@ -25,8 +27,9 @@ export function lerEstoque() {
   return estoqueDeDemonstracao();
 }
 
+// memória do aparelho cheia: não trava a tela (o aviso aparece pelo armazenamento.js) e devolve false
 function gravar(db) {
-  localStorage.setItem(CHAVE, JSON.stringify(db));
+  return gravarNoAparelho(CHAVE, JSON.stringify(db));
 }
 // as outras camadas de dados do Estoque (ex.: recebimento) gravam pelo mesmo caminho
 export const gravarEstoque = gravar;

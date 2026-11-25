@@ -7,6 +7,8 @@
 // (algumas centenas de ações no pior caso) e o localStorage grava na hora, sem código assíncrono.
 // Se a fila crescer muito um dia, só este arquivo muda.
 
+import { gravarNoAparelho, CHAVE_ESTOQUE } from "./armazenamento.js";
+
 const CHAVE_FILA = "wms-bb-fila-v1";
 const CHAVE_ESTADO = "wms-bb-sinc-v1";
 
@@ -14,7 +16,9 @@ const ler = (chave, padrao) => {
   try { return JSON.parse(localStorage.getItem(chave)) ?? padrao; } catch { return padrao; }
 };
 const lerFila = () => { const f = ler(CHAVE_FILA, []); return Array.isArray(f) ? f : []; };
-const gravarFila = (fila) => localStorage.setItem(CHAVE_FILA, JSON.stringify(fila));
+// A fila é o que NÃO pode se perder. Se a memória do aparelho encher, abre espaço apagando a cópia do Estoque da
+// demonstração: a fila só existe com servidor, e aí essa cópia não vale nada (o estoque de verdade está no servidor).
+const gravarFila = (fila) => gravarNoAparelho(CHAVE_FILA, JSON.stringify(fila), { descartaveis: [CHAVE_ESTOQUE] });
 
 // ID único de cada ação (UUID versão 4), criado no aparelho. O servidor usa para não aplicar a mesma ação duas vezes.
 // crypto.randomUUID() só existe em https; crypto.getRandomValues() existe também em http (rede interna).
