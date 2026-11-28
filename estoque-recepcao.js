@@ -1,14 +1,15 @@
 // WMS Beach Bike — coletor do Estoquista, menu RECEPÇÃO: conferência, armazenamento e consulta de recebimentos.
 // As regras ficam em compartilhado/regras/recebimento.js e os dados passam por js/dados/recebimento.js.
 // Com servidor (v78), a Conferência usa a cópia das notas em aberto (js/dados/recepcao.js) e a fila de envio:
+// (v79: confere vários produtos e endereça na doca quando quiser, pela lista js/dados/recepcao-lista.js)
 // confere sem rede e nunca lê o Estoque inteiro. Armazenamento e Consulta ainda não estão no servidor (entrega C).
 import { $, $$, esc } from "./js/util.js";
 import { closeSheets, toast } from "./js/ui-coletor.js";
 import { num, tipoTag, diaCurto, msg, confirmar, cartaoProduto } from "./js/ui-estoque.js";
-import { etiquetaVolumeHtml } from "./js/etiqueta-recebimento.js";
 import { lerEstoque, enderecoPorId, produtoPorCodigo, saldoNoEndereco, enderecosPadraoDoProduto } from "./js/dados/estoque.js";
 import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./js/dados/recebimento.js";
 import { lerRecepcao, conferirNaFila, finalizarNaFila } from "./js/dados/recepcao.js";
+import { lerListaDaDoca, porNaLista, tirarDaLista, esvaziarLista, listaComoConferencias } from "./js/dados/recepcao-lista.js";
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { MSG_FORA_DO_SERVIDOR } from "./js/ui-estoque.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
@@ -82,46 +83,60 @@ $$("[data-rcvoltar]").forEach((b) => b.addEventListener("click", () => {
   document.dispatchEvent(new Event("voltar-menu"));
 }));
 
-// impressão das etiquetas dos volumes (80 × 60 mm, uma por página)
-function imprimirVolumes(volumes, nota, produto) {
-  $("#printArea").innerHTML = volumes.map((v) => etiquetaVolumeHtml(v, nota, produto)).join("");
-  window.print();
-}
-
 // =====================================================================
-// CONFERÊNCIA: 1) nota  2) bipa o produto  3) quantidade e volumes  4) QR da doca (confirma na hora)
-// Primeiro se confere o produto; depois ele é associado à doca onde foi descarregado.
+// CONFERÊNCIA (v79): 1) nota  2) bipa o produto  3) quantidade → entra na lista "aguardando doca" e volta ao 2
+// A qualquer momento, "Endereçar" pede o QR da doca: tudo o que está na lista entra nela de uma vez.
+// Por produto não há volume nem etiqueta (a conferência por volume vem na entrega B).
 // Produto e doca entram só por leitura (bipe ou digitação), nunca tocando na lista.
 // =====================================================================
-const conf = { notaId: null, produto: null, embalagem: null, qtd: null, volumes: null };
-const limparProduto = () => Object.assign(conf, { produto: null, embalagem: null, qtd: null, volumes: null });
+const conf = { notaId: null, produto: null, embalagem: null, enderecando: false };
+const limparProduto = () => Object.assign(conf, { produto: null, embalagem: null });
+const MSG_LISTA_PENDENTE = "HÁ PRODUTOS CONFERIDOS AGUARDANDO A DOCA. ENDEREÇE OU TIRE DA LISTA ANTES.";
+
+// a lista "aguardando doca" desta nota, e as conferências da tela somadas a ela (para o conferido e o pendente)
+const listaDaNota = () => { const d = lerListaDaDoca(); return d.notaId === conf.notaId ? d : { notaId: conf.notaId, itens: [] }; };
+const conferenciasComLista = () => [...db.conferencias, ...listaComoConferencias(listaDaNota())];
 
 function iniciarConferencia() {
-  conf.notaId = null; limparProduto();
+  conf.notaId = null; conf.enderecando = false; limparProduto();
   msg($("#rcMsg"), ""); $("#rcInput").value = "";
+  // ficou lista de antes (o app fechou no meio): reabre a nota dela
+  const guardada = lerListaDaDoca();
+  if (guardada.itens.length) {
+    const nota = notaPorId(db, guardada.notaId);
+    if (nota && !nota.finalizada) { conf.notaId = nota.id; msg($("#rcMsg"), `${guardada.itens.length} produto(s) aguardando a doca`, "ok"); }
+    else { esvaziarLista(); msg($("#rcMsg"), "A nota da lista foi finalizada: os produtos aguardando a doca foram descartados.", "err"); }
+  }
   desenharConferencia();
 }
 
-// voltar um passo: doca → quantidade → produto → lista de notas
+// voltar um passo: doca → produtos · quantidade → produtos · produtos → lista de notas (se a lista estiver vazia)
 function voltarConferencia() {
   msg($("#rcMsg"), "");
-  if (conf.qtd) { conf.qtd = null; conf.volumes = null; return desenharConferencia(); }
+  if (conf.enderecando) { conf.enderecando = false; return desenharConferencia(); }
   if (conf.produto) { limparProduto(); return desenharConferencia(); }
+  if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
   iniciarConferencia();
 }
 
 function desenharConferencia() {
   const nota = conf.notaId ? notaPorId(db, conf.notaId) : null;
   // a nota foi finalizada em outro coletor enquanto esta tela estava aberta (com servidor, ela some da cópia)
-  if (conf.notaId && (!nota || nota.finalizada)) { iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err"); }
+  if (conf.notaId && (!nota || nota.finalizada)) {
+    if (lerListaDaDoca().notaId === conf.notaId) esvaziarLista();
+    conf.notaId = null; iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err");
+  }
   $("#rcFoot").hidden = !nota;
   // no passo da quantidade o campo de leitura some (o leitor não pode digitar dentro da quantidade)
-  $("#rcForm").hidden = !!(conf.produto && !conf.qtd);
+  $("#rcForm").hidden = !!conf.produto;
   if (!nota) return desenharNotas();
   $("#rcTopo").innerHTML = cartaoNota(nota);
-  if (!conf.produto) return desenharItens(nota);
-  if (!conf.qtd) return desenharQuantidade(nota);
-  desenharEscolhaDaDoca(nota);
+  const n = listaDaNota().itens.length;
+  $("#rcEnderecar").disabled = !n || conf.enderecando || !!conf.produto;
+  $("#rcEnderecar").textContent = n ? `Endereçar (${n})` : "Endereçar";
+  if (conf.produto) return desenharQuantidade(nota);
+  if (conf.enderecando) return desenharEnderecar();
+  desenharItens(nota);
 }
 
 // passo 1: notas que ainda podem ser conferidas (em aberto primeiro)
@@ -141,12 +156,24 @@ function desenharNotas() {
   }).join("") || `<p class="empty">${servidor && !db.baixadoEm ? "As notas ainda não foram baixadas do servidor. Conecte ao Wi-Fi." : "Nenhuma nota para conferir."}</p>`}</div>`;
 }
 
-// passo 2: os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota).
-// A lista é só para acompanhar: o produto entra bipando a embalagem ou digitando o código.
+// a lista "aguardando doca" (com a lixeira em cada item, se der para tirar)
+function htmlDaLista(lista, { tirar }) {
+  if (!lista.itens.length) return "";
+  return `<div class="rc-lista"><p class="rc-lista-h">${tirar ? "Conferidos · aguardando doca" : "Vai para a doca"} (${lista.itens.length})</p>${lista.itens.map((i) => {
+    const p = produtoPorCodigo(db, i.produto);
+    return `<div class="line rc-lista-item"><span class="line-desc">${esc(p?.descricao || i.produto)}<small>${esc(i.produto)}</small></span>
+      <span class="line-q">${num(i.qtd)}<small> un</small></span>${tirar ? `<button type="button" class="rc-tirar" data-rctirar="${esc(i.id)}" aria-label="Tirar da lista">✕</button>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+
+// passo 2: a lista aguardando doca e os produtos da nota com o que já foi conferido (não é cega: mostra a
+// quantidade da nota). A lista de produtos é só para acompanhar: o produto entra bipando ou digitando o código.
 function desenharItens(nota) {
   $("#rcPasso").textContent = "2 · Bipe o produto";
   $("#rcInput").placeholder = "Bipe o produto ou digite o código";
-  $("#rcRes").innerHTML = `<p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, db.conferencias).map((i) => {
+  const conferencias = conferenciasComLista();
+  $("#rcRes").innerHTML = `${htmlDaLista(listaDaNota(), { tirar: true })}
+    <p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, conferencias).map((i) => {
     const p = produtoPorCodigo(db, i.produto);
     const completo = i.conferido >= i.qtdNota;
     return `<div class="line rc-item ${completo ? "ok" : ""}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span>
@@ -157,23 +184,22 @@ function desenharItens(nota) {
 const caixaBipada = () => (conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null);
 const numerosDoItem = (nota) => {
   const item = nota.itens.find((i) => i.produto === conf.produto);
-  const pendente = pendenteDeConferir(nota, conf.produto, db.conferencias);
+  const pendente = pendenteDeConferir(nota, conf.produto, conferenciasComLista());
   return `<div class="rc-nums"><div><small>Na nota</small><b>${num(item.qtd)}</b></div><div><small>Conferido</small><b>${num(item.qtd - pendente)}</b></div><div><small>Pendente</small><b>${num(pendente)}</b></div></div>`;
 };
 
-// passo 3: quantidade (em caixas, se bipou uma caixa) e em quantos volumes está
+// passo 3: quantidade (em caixas, se bipou uma caixa). Confirmar põe na lista e volta a bipar.
 function desenharQuantidade(nota) {
   const p = produtoPorCodigo(db, conf.produto);
   const caixa = caixaBipada();
-  $("#rcPasso").textContent = "3 · Quantidade e volumes";
+  $("#rcPasso").textContent = "3 · Quantidade";
   $("#rcRes").innerHTML = `${cartaoProduto(p, conf.embalagem ? `<p class="es-pronto">Bipou: ${esc(conf.embalagem.descricao)}</p>` : "")}
     ${numerosDoItem(nota)}
     <form id="rcQtdForm" class="es-form">
       <label class="field"><span>${caixa ? `${esc(caixa.descricao)} · quantas?` : "Quantidade conferida (un)"}</span>
         <input name="qtd" type="number" inputmode="decimal" min="0" step="any" value="${caixa ? 1 : ""}" required></label>
       <p class="rc-total" id="rcTotal"></p>
-      <label class="field"><span>Em quantos volumes?</span><input name="volumes" type="number" inputmode="numeric" min="1" value="1" required></label>
-      <div class="es-duo"><button type="button" class="btn ghost" data-rccancelar>Cancelar</button><button class="btn primary" id="rcConfirmar">Continuar</button></div>
+      <div class="es-duo"><button type="button" class="btn ghost" data-rccancelar>Cancelar</button><button class="btn primary" id="rcConfirmar">Confirmar</button></div>
     </form>`;
   atualizarTotal();
   setTimeout(() => $("#rcQtdForm")?.qtd.select(), 50);
@@ -185,19 +211,16 @@ function atualizarTotal() {
   const caixa = caixaBipada();
   const total = quantidadeEmUnidades(caixa, f.qtd.value || 0);
   $("#rcTotal").textContent = caixa ? `${num(f.qtd.value || 0)} × ${num(caixa.qtd)} = ${num(total)} un` : "";
-  $("#rcConfirmar").textContent = total > 0 ? `Continuar · ${num(total)} un` : "Continuar";
+  $("#rcConfirmar").textContent = total > 0 ? `Confirmar · ${num(total)} un` : "Confirmar";
 }
 
-// passo 4: a doca onde a mercadoria foi descarregada. Ao ler a doca, a conferência é confirmada na hora
-// (o saldo entra nela e as etiquetas dos volumes saem).
-function desenharEscolhaDaDoca(nota) {
-  const p = produtoPorCodigo(db, conf.produto);
-  $("#rcPasso").textContent = "4 · Leia o QR da doca";
+// Endereçar: lê o QR da doca; tudo o que está na lista entra nela
+function desenharEnderecar() {
+  $("#rcPasso").textContent = "Endereçar · leia o QR da doca";
   $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
-  $("#rcRes").innerHTML = `${cartaoProduto(p)}
-    <div class="rc-nota rc-conferindo"><span>Conferindo</span><b>+${num(conf.qtd)} un</b><small>${num(conf.volumes)} volume(s) · etiquetas saem ao ler a doca</small></div>
-    <div class="es-duo"><button type="button" class="btn ghost" data-rcalterar>Alterar quantidade</button><button type="button" class="btn ghost" data-rccancelar>Cancelar</button></div>
-    <p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta.</p>`;
+  $("#rcRes").innerHTML = `${htmlDaLista(listaDaNota(), { tirar: false })}
+    <p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta. Os produtos da lista entram nela.</p>
+    <button type="button" class="btn ghost" data-rcvoltarconf>Voltar a conferir</button>`;
   setTimeout(() => $("#rcInput").focus(), 50);
 }
 
@@ -207,7 +230,7 @@ $("#rcForm").addEventListener("submit", (e) => {
   const lido = $("#rcInput").value.trim(); if (!lido) return;
   $("#rcInput").value = "";
   if (!conf.notaId) return escolherNota(notaPorNumero(db, lido));
-  if (conf.qtd) return lerDoca(acharEndereco(db.enderecos, lido));
+  if (conf.enderecando) return lerDoca(acharEndereco(db.enderecos, lido));
   const achado = acharPorCodigoLido(db.produtos, db.embalagens, lido);
   if (!achado) return msg($("#rcMsg"), "Produto não encontrado.", "err");
   escolherProduto(achado.produto.codigo, achado.embalagem);
@@ -224,27 +247,31 @@ function escolherNota(nota) {
 function escolherProduto(codigo, embalagem) {
   const nota = notaPorId(db, conf.notaId);
   if (!nota.itens.some((i) => i.produto === codigo)) return msg($("#rcMsg"), MSG_PRODUTO_FORA_DA_NOTA, "err");
-  if (pendenteDeConferir(nota, codigo, db.conferencias) <= 0) return msg($("#rcMsg"), "PRODUTO JÁ CONFERIDO POR COMPLETO NESTA NOTA.", "err");
+  if (pendenteDeConferir(nota, codigo, conferenciasComLista()) <= 0) return msg($("#rcMsg"), "PRODUTO JÁ CONFERIDO POR COMPLETO NESTA NOTA.", "err");
   conf.produto = codigo; conf.embalagem = embalagem;
   msg($("#rcMsg"), "Produto identificado", "ok");
   desenharConferencia();
 }
 
-// lê a doca e confirma a conferência (o saldo entra na doca e os volumes são impressos)
+// lê a doca: cada produto da lista vira uma confirmação (o saldo entra na doca). Com servidor, cada uma entra
+// na fila e vai quando houver rede. Um produto que não passa (ex.: outro coletor conferiu antes) fica na lista.
 function lerDoca(endereco) {
   const erro = validarDoca(endereco, notaPorId(db, conf.notaId));
   if (erro) return msg($("#rcMsg"), erro, "err");
-  const dados = { notaId: conf.notaId, produto: conf.produto, qtd: conf.qtd, volumes: conf.volumes, docaId: endereco.id };
-  // com servidor: entra na fila e vai quando houver rede (as etiquetas saem na hora do mesmo jeito)
-  const r = servidor ? conferirNaFila(servidor.sess, dados) : conferir(dados);
-  if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
-  servidor?.pedirEnvio();
+  const lista = listaDaNota();
+  const entraram = [], recusas = [];
+  for (const item of lista.itens) {
+    const dados = { notaId: conf.notaId, produto: item.produto, qtd: item.qtd, volumes: 0, docaId: endereco.id };
+    const r = servidor ? conferirNaFila(servidor.sess, dados) : conferir(dados);
+    if (r.ok) entraram.push(item.id); else recusas.push(`${item.produto}: ${r.msg}`);
+  }
+  tirarDaLista(entraram);
+  if (entraram.length) servidor?.pedirEnvio();
   db = lerDados();
-  const nota = notaPorId(db, conf.notaId), produto = produtoPorCodigo(db, conf.produto);
-  msg($("#rcMsg"), `+${num(conf.qtd)} ${produto.codigo} na ${endereco.codigo} · ${r.volumes.length} etiqueta(s)`, "ok");
-  limparProduto();
+  conf.enderecando = false;
   desenharConferencia();
-  imprimirVolumes(r.volumes, nota, produto);
+  if (recusas.length) return msg($("#rcMsg"), `${entraram.length} produto(s) na ${endereco.codigo}. FICARAM NA LISTA: ${recusas.join(" · ")}`, "err");
+  msg($("#rcMsg"), `${entraram.length} produto(s) na ${endereco.codigo}`, "ok");
   $("#rcInput").focus();
 }
 
@@ -252,26 +279,39 @@ $("#rcRes").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   db = lerDados();
   if (b.dataset.nota) return escolherNota(notaPorId(db, +b.dataset.nota));
-  if (b.dataset.rcalterar !== undefined) { conf.qtd = null; conf.volumes = null; msg($("#rcMsg"), ""); return desenharConferencia(); }
+  if (b.dataset.rctirar) { tirarDaLista(b.dataset.rctirar); msg($("#rcMsg"), "Tirado da lista"); desenharConferencia(); return $("#rcInput").focus(); }
+  if (b.dataset.rcvoltarconf !== undefined) { conf.enderecando = false; msg($("#rcMsg"), ""); desenharConferencia(); return $("#rcInput").focus(); }
   if (b.dataset.rccancelar !== undefined) { limparProduto(); msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
 });
 $("#rcRes").addEventListener("input", (e) => { if (e.target.form?.id === "rcQtdForm") atualizarTotal(); });
-// "Continuar": valida a quantidade (sem passar do pendente da nota) e vai para a leitura da doca
+// "Confirmar": valida a quantidade (sem passar do pendente da nota, contando a lista) e põe na lista
 $("#rcRes").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target;
   db = lerDados();
   const qtd = quantidadeEmUnidades(caixaBipada(), f.qtd.value || 0);
-  const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: f.volumes.value }, db.conferencias);
+  const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: 0 }, conferenciasComLista());
   if (erro) return msg($("#rcMsg"), erro, "err");
-  conf.qtd = qtd; conf.volumes = Number(f.volumes.value);
-  msg($("#rcMsg"), "");
+  if (!porNaLista(conf.notaId, conf.produto, qtd)) return msg($("#rcMsg"), "MEMÓRIA DO APARELHO CHEIA: O PRODUTO NÃO ENTROU NA LISTA.", "err");
+  msg($("#rcMsg"), `+${num(qtd)} ${conf.produto} na lista`, "ok");
+  limparProduto();
   desenharConferencia();
+  $("#rcInput").focus();
 });
 
-$("#rcTrocar").addEventListener("click", () => { iniciarConferencia(); $("#rcInput").focus(); });
+$("#rcEnderecar").addEventListener("click", () => {
+  db = lerDados();
+  if (!listaDaNota().itens.length) return;
+  conf.enderecando = true; msg($("#rcMsg"), "");
+  desenharConferencia();
+});
+$("#rcTrocar").addEventListener("click", () => {
+  if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
+  iniciarConferencia(); $("#rcInput").focus();
+});
 $("#rcFinalizar").addEventListener("click", () => {
   db = lerDados();
+  if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
   const nota = notaPorId(db, conf.notaId);
   const faltas = resumoDaNota(nota, db.conferencias).filter((i) => i.conferido < i.qtdNota);
   const aviso = faltas.length ? "A NOTA SERÁ FINALIZADA COM DIVERGÊNCIA E NÃO PODERÁ SER REABERTA." : "DESEJA FINALIZAR A NOTA? ELA NÃO PODERÁ SER REABERTA.";

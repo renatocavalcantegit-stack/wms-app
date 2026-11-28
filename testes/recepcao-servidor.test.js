@@ -32,7 +32,8 @@ test("código do volume: código do aparelho + sequência; o servidor recusa rep
   assert.equal(codigoDoVolumeDoAparelho("3fa2c1d4", 12345), "V3FA2C1-12345");
   assert.equal(validarCodigosDosVolumes(["VAB-0001", "VAB-0002"]), null);
   assert.equal(validarCodigosDosVolumes(["VAB-0001", "VAB-0001"]), msgVolumeRepetido("VAB-0001"));
-  assert.equal(validarCodigosDosVolumes([]), MSG_VOLUMES_INVALIDOS);
+  assert.equal(validarCodigosDosVolumes([]), null); // v79: conferência por produto, sem volume
+  assert.equal(validarCodigosDosVolumes("x"), MSG_VOLUMES_INVALIDOS);
   assert.equal(validarCodigosDosVolumes(["<script>"]), MSG_VOLUMES_INVALIDOS);
 });
 
@@ -101,4 +102,34 @@ test("finalizar: a nota fica finalizada no coletor até o servidor tirar ela da 
   tirarDaFila(acoesPendentes("estoquista").map((x) => x.id));
   await baixarNotas(sessao, servidor(resposta([], [])));
   assert.deepEqual(lerRecepcao().notas, []);
+});
+
+// v79: a lista "conferidos, aguardando doca" (js/dados/recepcao-lista.js)
+test("lista aguardando doca: guarda no aparelho, soma ao pendente, tira item e vale só para uma nota", async () => {
+  const { lerListaDaDoca, porNaLista, tirarDaLista, esvaziarLista, listaComoConferencias } = await import("../js/dados/recepcao-lista.js");
+  const { validarConferencia } = await import("../compartilhado/regras/recebimento.js");
+  assert.deepEqual(lerListaDaDoca().itens, []);
+  assert.equal(porNaLista(7, "536", 12), true);
+  assert.equal(porNaLista(7, "536", 5), true);
+  const lista = lerListaDaDoca();
+  assert.deepEqual([lista.notaId, lista.itens.map((i) => i.qtd)], [7, [12, 5]]);
+  // o pendente conta a lista: 20 na nota − 17 na lista = 3
+  assert.equal(validarConferencia(NOTA, { produto: "536", qtd: 4, volumes: 0 }, listaComoConferencias()), msgAcimaDaNota(3));
+  assert.equal(validarConferencia(NOTA, { produto: "536", qtd: 3, volumes: 0 }, listaComoConferencias()), null);
+  tirarDaLista(lista.itens[0].id);
+  assert.deepEqual(lerListaDaDoca().itens.map((i) => i.qtd), [5]);
+  // outra nota começa uma lista nova (a tela não deixa trocar de nota com a lista cheia)
+  porNaLista(8, "536", 1);
+  assert.deepEqual([lerListaDaDoca().notaId, lerListaDaDoca().itens.length], [8, 1]);
+  esvaziarLista();
+  assert.deepEqual(lerListaDaDoca().itens, []);
+});
+
+test("endereçar sem volume (v79): a confirmação vai para a fila com volumes vazios", async () => {
+  await baixarNotas(sessao, servidor(resposta()));
+  const r = conferirNaFila(sessao, { notaId: 7, produto: "536", qtd: 6, volumes: 0, docaId: 900 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.volumes, []);
+  assert.deepEqual(acoesPendentes("estoquista").at(-1).dados.volumes, []);
+  assert.equal(conferido(), 6);
 });

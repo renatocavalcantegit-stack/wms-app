@@ -84,6 +84,17 @@ test("conferir: soma ao conferido, põe o saldo na doca, grava os volumes e o hi
   assert.ok(baixado.conferencias.some((c) => c.acaoId === a.id && c.qtd === 15));
 });
 
+test("conferência por produto (v79): entra sem volume nenhum, com o saldo na doca", async () => {
+  const nota = await idDaNota("48201"), doca = await umEndereco("doca");
+  const antes = await saldo(doca, "283");
+  const a = conferir(nota, "283", 6, doca, []);
+  assert.deepEqual((await sincronizar("estoquista", [a])).recusadas, []);
+  const rec = (await pool.query("SELECT id FROM recebimentos WHERE acao_id = $1", [a.id])).rows[0];
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM volumes_recebimento WHERE recebimento_id = $1", [rec.id])).rows[0].n, 0);
+  assert.equal(await saldo(doca, "283"), antes + 6);
+  assert.deepEqual(await saldosForaDoHistorico(pool), []);
+});
+
 test("dois coletores passaram do pendente: a confirmação que chega por último é recusada inteira", async () => {
   const nota = await idDaNota("48201"), doca = await umEndereco("doca");
   const antes = await saldo(doca, "536");

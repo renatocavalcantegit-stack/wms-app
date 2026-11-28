@@ -82,11 +82,12 @@ test("em conferência: o conferente tira da caixa (F9), entrega ao estoque e o e
   await page.locator(`[data-nota="${dev.id}"]`).click();
   await page.locator("#rcInput").fill("176"); await page.locator("#rcInput").press("Enter");
   await page.locator("#rcQtdForm input[name=qtd]").fill("8");
-  await page.locator("#rcQtdForm input[name=volumes]").fill("1");
-  await page.locator("#rcQtdForm input[name=volumes]").press("Enter");
+  await page.locator("#rcQtdForm input[name=qtd]").press("Enter");
+  await expect(page.locator("#rcMsg")).toContainText("+8 176 na lista");
+  await page.locator("#rcEnderecar").click();
   const doca = await docaDevolucao(page);
   await page.locator("#rcInput").fill(String(doca.id)); await page.locator("#rcInput").press("Enter");
-  await expect(page.locator("#rcMsg")).toContainText("+8 176");
+  await expect(page.locator("#rcMsg")).toContainText(`1 produto(s) na ${doca.codigo}`);
   expect(saldo(await estoque(page), doca.codigo, "176")).toBe(8);
 });
 

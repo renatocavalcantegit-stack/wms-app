@@ -287,7 +287,7 @@ As ações são aplicadas na ordem em que foram **feitas** no aparelho (`feitaEm
 | `conferencia.finalizar` | `{ pedido, volumes, observacao, posto, contagens }` | `contagens` = tudo o que foi contado. O **servidor** decide: `conferido` ou `divergente` (falta, excesso ou produto fora). Expedição precisa de volumes (1 ou mais) e da observação; Montagem não |
 | `conferencia.volumes` | `{ pedido, volumes, observacao }` | corrigir os volumes de um pedido conferido |
 | `conferencia.reabrir` | `{ pedido }` | "Conferir novamente": volta para `andamento` com as contagens zeradas |
-| `recepcao.conferir` | `{ nota, rotulo, produto, qtd, doca, volumes, dia }` | (v78) uma confirmação da conferência da nota no coletor do estoquista. `volumes` = os códigos que o coletor já imprimiu. Soma ao conferido, grava o recebimento e os volumes, **põe o saldo na doca e grava o movimento `recebimento`** na mesma transação e recalcula os status da nota. **Recusada** (inteira) se a nota não existe ou foi finalizada, o produto não é da nota, o endereço não é doca, a quantidade passa do pendente (outro coletor conferiu antes) ou um código de volume já existe |
+| `recepcao.conferir` | `{ nota, rotulo, produto, qtd, doca, volumes, dia }` | (v78) uma confirmação da conferência da nota no coletor do estoquista. `volumes` = os códigos que o coletor já imprimiu; **vazio** na conferência por produto (v79). Soma ao conferido, grava o recebimento e os volumes, **põe o saldo na doca e grava o movimento `recebimento`** na mesma transação e recalcula os status da nota. **Recusada** (inteira) se a nota não existe ou foi finalizada, o produto não é da nota, o endereço não é doca, a quantidade passa do pendente (outro coletor conferiu antes) ou um código de volume já existe |
 | `recepcao.finalizar` | `{ nota, rotulo }` | (v78) "Finalizar nota": não recebe mais conferências e não reabre; grava quem e quando. Repetida, não muda nada. Nota de devolução: a devolução passa a `recebida` |
 | `observacao.ciente` | `{ pedido, momento, resposta }` | (v76) quem leu a observação do pedido: `momento` = `inicio` (resposta `li`) ou `fim` (`apliquei` ou `nao_era`). O papel vem do perfil (separador, conferente, embarque). Grava em `observacao_ciencias` no pedido original (a parte do dividido fica na coluna `parte`); respondeu de novo, vale a última. **Recusada** se o pedido não tem observação ou a resposta não combina com o momento |
 
@@ -402,6 +402,10 @@ no servidor: na Gestão de Estoque, essas abas mostram o aviso "Ainda não está
   fica para depois, decisão de 25/11/2026). A recepção no coletor passou para o servidor na entrega B (abaixo).
 
 ## Estoque no servidor · entrega B: conferência da nota no coletor (v78)
+
+- **v79 (28/11/2026)**: o coletor junta os produtos conferidos numa lista "aguardando doca" (`js/dados/recepcao-lista.js`,
+  só no aparelho) e, no "Endereçar", manda **uma `recepcao.conferir` por produto**, todas com a doca lida e
+  `volumes: []`. O servidor não mudou: só a regra passou a aceitar a conferência sem volume.
 
 - **Sem esperar a rede**: o coletor baixa as notas em aberto (`GET /api/recepcao/notas`) para a chave
   `wms-bb-recepcao-v1` (poucos KB) ao abrir, a cada 30 s e depois de cada envio. Cada confirmação vira a ação

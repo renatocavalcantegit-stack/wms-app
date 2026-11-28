@@ -84,17 +84,30 @@ test("nota recebida e armazenada no picking: a separação baixa do saldo novo",
   const inicio = await estoque(page);
   const nota = inicio.notas.find((n) => n.numero === "48213" || n.numero === 48213);
 
-  // conferência do recebimento: nota → produto → quantidade e volumes → doca
+  // conferência do recebimento (v79): nota → produto → quantidade (entra na lista) → Endereçar → doca
   await page.locator('[data-ir="viewRecConf"]').click();
   await page.locator(`[data-nota="${nota.id}"]`).click();
   await lerNo(page, "#rcInput", "167");
   await expect(page.locator("#rcQtdForm input[name=qtd]")).toBeFocused(); // o coletor foca a quantidade sozinho
   await page.locator("#rcQtdForm input[name=qtd]").fill("50");
-  await page.locator("#rcQtdForm input[name=volumes]").fill("1");
-  await page.locator("#rcQtdForm input[name=volumes]").press("Enter");
-  await lerNo(page, "#rcInput", DOCA);
-  await expect(page.locator("#rcMsg")).toContainText("+50 167");
+  await page.locator("#rcQtdForm input[name=qtd]").press("Enter");
+  await expect(page.locator("#rcMsg")).toContainText("+50 167 na lista");
+  await expect(page.locator("#rcInput")).toBeFocused(); // volta a bipar o próximo, sem pedir a doca
+  await expect(page.locator(".rc-lista")).toContainText("50");
   let db = await estoque(page);
+  expect(saldo(db, db.enderecos.find((e) => e.id === +DOCA).codigo, "167")).toBe(0); // sem doca, nada entra
+  // o app fechou no meio: a lista continua lá e a nota reabre sozinha
+  await page.reload();
+  await page.locator('[data-ir="viewRecConf"]').click();
+  await expect(page.locator("#rcEnderecar")).toHaveText("Endereçar (1)");
+  await page.locator("#rcFinalizar").click();
+  await expect(page.locator("#rcMsg")).toContainText("AGUARDANDO A DOCA"); // não finaliza com a lista cheia
+  await page.locator("#rcEnderecar").click();
+  await lerNo(page, "#rcInput", DOCA);
+  await expect(page.locator("#rcMsg")).toContainText("1 produto(s) na");
+  await expect(page.locator(".rc-lista")).toHaveCount(0);
+  await expect(page.locator("#rcEnderecar")).toBeDisabled();
+  db = await estoque(page);
   expect(saldo(db, db.enderecos.find((e) => e.id === +DOCA).codigo, "167")).toBe(50);
 
   // armazenamento: doca → produto → quantidade → destino (o picking)

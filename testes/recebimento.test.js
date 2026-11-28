@@ -52,7 +52,9 @@ test("conferência: bipar a caixa conta a quantidade dela; cada confirmação so
   assert.equal(validarConferencia(nota(), { produto: "GF-SQ-750", qtd: 1, volumes: 1 }, cs), MSG_PRODUTO_FORA_DA_NOTA);
   assert.equal(validarConferencia(nota({ finalizada: true }), { produto: "PN-29-225", qtd: 1, volumes: 1 }, cs), MSG_NOTA_FINALIZADA);
   assert.match(validarConferencia(nota(), { produto: "PN-29-225", qtd: 0, volumes: 1 }, cs), /quantidade/);
-  assert.match(validarConferencia(nota(), { produto: "PN-29-225", qtd: 2, volumes: 0 }, cs), /volumes/);
+  assert.equal(validarConferencia(nota(), { produto: "PN-29-225", qtd: 2, volumes: 0 }, cs), null); // v79: por produto, sem volume
+  assert.equal(validarConferencia(nota(), { produto: "PN-29-225", qtd: 2 }, cs), null);
+  assert.match(validarConferencia(nota(), { produto: "PN-29-225", qtd: 2, volumes: -1 }, cs), /volumes/);
   assert.match(validarConferencia(nota(), { produto: "PN-29-225", qtd: 2, volumes: MAXIMO_VOLUMES + 1 }, cs), /máximo/);
 });
 

@@ -40,6 +40,13 @@
 
 /* ===== Recepção: conferência, armazenamento e consulta ===== */
 .rc-res { display: flex; flex-direction: column; gap: 10px; }
+/* v79: conferidos aguardando a doca (Endereçar) */
+.rc-lista { background: var(--card); border: 1.5px solid var(--warn); border-radius: var(--radius); padding: 8px 12px; }
+.rc-lista-h { margin: 0; font-size: 11px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--warn); }
+.rc-lista-item { padding: 8px 2px; }
+.rc-lista-item:last-child { border-bottom: 0; }
+.rc-tirar { border: 0; background: var(--red-soft); color: var(--red); font-weight: 800; border-radius: 8px; width: 34px; height: 34px; flex: none; }
+#rcFoot .btn:disabled { opacity: .45; }
 #rcTopo:not(:empty), #raTopo:not(:empty) { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
 .rc-nota { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .rc-nota > div:first-child { display: flex; flex-direction: column; gap: 1px; }

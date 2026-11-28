@@ -113,8 +113,9 @@ export function validarConferencia(nota, { produto, qtd, volumes }, conferencias
   if (!quantidadePositiva(quantidade)) return MSG_QUANTIDADE;
   const pendente = pendenteDeConferir(nota, produto, conferencias);
   if (quantidade > pendente) return msgAcimaDaNota(pendente);
-  const n = Number(volumes);
-  if (!Number.isInteger(n) || n < 1) return "Informe em quantos volumes (1 ou mais).";
+  // v79: a conferência por produto não gera volume (0); os volumes voltam com a conferência por volume (entrega B)
+  const n = Number(volumes ?? 0);
+  if (!Number.isInteger(n) || n < 0) return "Informe em quantos volumes (0 ou mais).";
   if (n > MAXIMO_VOLUMES) return `No máximo ${MAXIMO_VOLUMES} volumes por confirmação.`;
   return null;
 }
@@ -132,7 +133,7 @@ export const msgVolumeRepetido = (codigo) => `CÓDIGO DE VOLUME ${codigo} JÁ EX
 export const MSG_VOLUMES_INVALIDOS = "CÓDIGOS DOS VOLUMES INVÁLIDOS.";
 // os códigos que o coletor mandou: texto curto, sem repetir dentro da mesma confirmação
 export function validarCodigosDosVolumes(codigos) {
-  if (!Array.isArray(codigos) || !codigos.length) return MSG_VOLUMES_INVALIDOS;
+  if (!Array.isArray(codigos)) return MSG_VOLUMES_INVALIDOS; // vazio vale: conferência por produto, sem volume (v79)
   if (codigos.some((c) => typeof c !== "string" || !/^[A-Z0-9-]{1,40}$/.test(c))) return MSG_VOLUMES_INVALIDOS;
   const repetido = codigos.find((c, i) => codigos.indexOf(c) !== i);
   return repetido ? msgVolumeRepetido(repetido) : null;
