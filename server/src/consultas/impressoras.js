@@ -75,15 +75,31 @@ export function etiquetaDoVolumePpla(e, { alturaMm = 60 } = {}) {
 }
 
 // manda os bytes para a impressora (porta 9100). Falha se ela não aceitar a conexão em poucos segundos.
-export function enviarParaImpressora({ ip, porta }, dados, { tempoMs = 5000 } = {}) {
+// A Argox atende uma conexão por vez: se ela ainda está ocupada com a anterior, a conexão pode demorar. Por isso
+// tenta de novo uma vez. O motivo da falha vai para o registro do servidor ("conectar" ou "enviar").
+function enviarUmaVez({ ip, porta }, bytes, tempoMs) {
   return new Promise((resolver, rejeitar) => {
     const s = net.createConnection({ host: ip, port: porta });
-    let acabou = false;
-    const fim = (erro) => { if (acabou) return; acabou = true; s.destroy(); erro ? rejeitar(erro) : resolver(); };
+    let acabou = false, etapa = "conectar";
+    const fim = (erro) => {
+      if (acabou) return; acabou = true; s.destroy();
+      if (erro) { erro.etapa = etapa; rejeitar(erro); } else resolver();
+    };
     s.setTimeout(tempoMs, () => fim(new Error("tempo esgotado")));
     s.on("error", fim);
-    s.on("connect", () => s.end(Buffer.from(dados, "latin1"), () => fim()));
+    s.on("connect", () => { etapa = "enviar"; s.end(bytes, () => fim()); });
   });
+}
+export async function enviarParaImpressora(impressora, dados, { tempoMs = 4000, log = console } = {}) {
+  const bytes = Buffer.from(dados, "latin1");
+  try { return await enviarUmaVez(impressora, bytes, tempoMs); } catch (erro) {
+    log.warn?.(`impressora ${impressora.nome || impressora.ip}: falhou ao ${erro.etapa} (${erro.code || erro.message})`);
+    if (erro.etapa !== "conectar") throw erro; // já recebeu parte: não manda de novo (sairia etiqueta repetida)
+  }
+  try { return await enviarUmaVez(impressora, bytes, tempoMs); } catch (erro) {
+    log.warn?.(`impressora ${impressora.nome || impressora.ip}: falhou de novo ao ${erro.etapa} (${erro.code || erro.message})`);
+    throw erro;
+  }
 }
 
 // imprime as etiquetas dos volumes numa impressora cadastrada e ativa. Devolve { enviadas, impressora }.
