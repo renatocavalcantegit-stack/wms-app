@@ -7,7 +7,7 @@
 //   - servidor (v77, Estoque no servidor · entrega A): as notas do banco. A lista vem filtrada e paginada pelo
 //     servidor (nunca todas as notas de uma vez) e se atualiza sozinha quando outra tela muda uma nota.
 import { esc } from "./js/util.js";
-import { etiquetaVolumeHtml, etiquetaVolumeDaNotaHtml } from "./js/etiqueta-recebimento.js";
+import { etiquetaVolumeHtml, etiquetaVolumeDaNotaHtml, dadosDaEtiquetaDoVolume } from "./js/etiqueta-recebimento.js";
 import { produtoPorCodigo, enderecoPorId } from "./js/dados/estoque.js";
 import {
   notaPorId, volumesDoItem, cancelarPendente, importarNotasDoErp, volumesEntradaDaNota,
@@ -298,8 +298,8 @@ export function cliqueEntrada(t, db) {
   if (t.dataset.reimprimirvol) {
     const v = fonte.volumesEntrada.find((x) => x.codigo === t.dataset.reimprimirvol);
     if (!v) return true;
-    document.querySelector("#printArea").innerHTML = etiquetaVolumeDaNotaHtml(v, fonte.nota, TIPOS_DE_VOLUME[v.tipo] || v.tipo);
-    window.print();
+    const tipo = TIPOS_DE_VOLUME[v.tipo] || v.tipo;
+    tela.escolherImpressora([dadosDaEtiquetaDoVolume(v, fonte.nota, tipo)], etiquetaVolumeDaNotaHtml(v, fonte.nota, tipo));
     return true;
   }
   // sem confirmação (definido no documento); o saldo fica na doca para ser transferido depois
@@ -364,8 +364,10 @@ export function cliqueModalEntrada(t, db) {
   const fonte = fonteAberta(db);
   if (!t.dataset.reimprimir || !fonte) return false;
   const produto = fonte.produto(t.dataset.reimprimir);
-  document.querySelector("#printArea").innerHTML = fonte.volumes(produto.codigo).map((v) => etiquetaVolumeHtml(v, fonte.nota, produto)).join("");
+  const vols = fonte.volumes(produto.codigo);
   tela.fecharModal();
-  window.print();
+  // v81: na impressora da rede, o lugar do tipo leva o produto e a sequência do volume
+  tela.escolherImpressora(vols.map((v) => dadosDaEtiquetaDoVolume(v, fonte.nota, `${produto.codigo} ${v.seq}/${v.total}`)),
+    vols.map((v) => etiquetaVolumeHtml(v, fonte.nota, produto)).join(""));
   return true;
 }

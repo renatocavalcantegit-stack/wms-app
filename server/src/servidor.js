@@ -13,6 +13,7 @@ import { rotasDosDispositivos } from "./rotas-api/dispositivos.js";
 import { rotasDoQuadro } from "./rotas-api/quadro.js";
 import { rotasDasOcorrencias } from "./rotas-api/ocorrencias.js";
 import { rotasDoEstoque } from "./rotas-api/estoque.js";
+import { rotasDasImpressoras } from "./rotas-api/impressoras.js";
 import { rotasDasTelas } from "./telas.js";
 
 export function criarServidor({ pool, registrarLog = false }) {
@@ -50,6 +51,7 @@ export function criarServidor({ pool, registrarLog = false }) {
   rotasDoQuadro(app, contexto);
   rotasDasOcorrencias(app, contexto);
   rotasDoEstoque(app, contexto);
+  rotasDasImpressoras(app, contexto); // v81: impressoras de etiqueta da rede
   rotasDasTelas(app); // por último: o que não for /api/... é tela
 
   // ao desligar o servidor, fecha ANTES as conexões de tempo real: elas não terminam sozinhas

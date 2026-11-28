@@ -136,3 +136,9 @@
 .iv-prev { font-size: 12px !important; font-weight: 800 !important; font-family: inherit !important; }
 .iv-tirar { width: 30px; height: 30px; margin-left: 6px; border-radius: 8px; font-size: 18px; line-height: 1; color: var(--ink-3); background: #EDEDF0; flex: none; }
 .rc-nota > .rc-doca:first-child { flex-direction: row; align-items: center; }
+
+/* v81 · "Imprimir em": as impressoras da rede (prefixo rc-prn) */
+.rc-prn-lista { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.rc-prn-op { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; font: inherit; font-size: 16px; }
+.rc-prn-op:disabled { opacity: .5; }
+.rc-prn-op small { color: var(--ink-3); font-weight: 600; font-size: 13px; }

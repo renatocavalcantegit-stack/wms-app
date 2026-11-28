@@ -5,7 +5,7 @@
 // (v80: conferência por volume, palete ou caixa: js/dados/recepcao-volumes.js)
 // confere sem rede e nunca lê o Estoque inteiro. Armazenamento e Consulta ainda não estão no servidor (entrega C).
 import { $, $$, esc } from "./js/util.js";
-import { closeSheets, toast } from "./js/ui-coletor.js";
+import { closeSheets, openSheet, toast } from "./js/ui-coletor.js";
 import { num, tipoTag, diaCurto, msg, confirmar, cartaoProduto } from "./js/ui-estoque.js";
 import { lerEstoque, enderecoPorId, produtoPorCodigo, saldoNoEndereco, enderecosPadraoDoProduto } from "./js/dados/estoque.js";
 import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar, enderecarVolume } from "./js/dados/recebimento.js";
@@ -14,7 +14,8 @@ import { lerListaDaDoca, porNaLista, tirarDaLista, esvaziarLista, listaComoConfe
 import {
   volumesMontando, volumeMontando, criarVolumes, vincular, tirarDoVolume, tirarVolumes, descartarVolumesDaNota, volumesComoConferencias,
 } from "./js/dados/recepcao-volumes.js";
-import { etiquetaVolumeDaNotaHtml } from "./js/etiqueta-recebimento.js";
+import { etiquetaVolumeDaNotaHtml, dadosDaEtiquetaDoVolume } from "./js/etiqueta-recebimento.js";
+import { listarImpressoras, imprimirNaImpressora, ultimaImpressora, lembrarImpressora } from "./js/dados/impressoras.js";
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { MSG_FORA_DO_SERVIDOR } from "./js/ui-estoque.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
@@ -342,10 +343,31 @@ function abrirVolume(lido) {
   desenharConferencia();
 }
 
-// imprime as etiquetas dos volumes (80 × 60 mm, uma por página)
+// imprime as etiquetas dos volumes (80 × 60 mm, uma por página).
+// v81: com servidor, abre "Imprimir em" com as impressoras da rede (a última usada primeiro); o servidor manda a
+// etiqueta direto para a Argox. Sem rede ou sem resposta: mostra o erro e fica a opção "Imprimir neste aparelho".
+// Na demonstração continua a impressão do navegador.
+let aImprimir = null; // { etiquetas, html } da folha aberta
 function imprimirVolumes(volumes) {
   const nota = notaPorId(db, conf.notaId);
-  $("#printArea").innerHTML = volumes.map((v) => etiquetaVolumeDaNotaHtml(v, nota, tipoDoVolume(v.tipo))).join("");
+  const html = volumes.map((v) => etiquetaVolumeDaNotaHtml(v, nota, tipoDoVolume(v.tipo))).join("");
+  if (!servidor) return imprimirNoAparelho(html);
+  aImprimir = { etiquetas: volumes.map((v) => dadosDaEtiquetaDoVolume(v, nota, tipoDoVolume(v.tipo))), html };
+  $("#siQtd").textContent = `${volumes.length} etiqueta(s): ${volumes.map((v) => v.codigo).join(", ")}`;
+  $("#siLista").innerHTML = `<p class="muted">Buscando as impressoras…</p>`;
+  msg($("#siMsg"), "");
+  openSheet("sheetImpressora");
+  listarImpressoras(servidor.sess).then((r) => {
+    if (!r.ok) { $("#siLista").innerHTML = ""; return msg($("#siMsg"), r.erro, "err"); }
+    const ultima = ultimaImpressora();
+    const lista = r.impressoras.slice().sort((a, b) => (b.id === ultima) - (a.id === ultima));
+    $("#siLista").innerHTML = lista.map((p) => `<button class="rc-prn-op" data-impem="${p.id}"><b>${esc(p.nome)}</b>
+      <small>${esc(p.setor || "")}${p.id === ultima ? " · última usada" : ""}</small></button>`).join("")
+      || `<p class="muted">Nenhuma impressora cadastrada. Peça ao gestor de estoque.</p>`;
+  });
+}
+function imprimirNoAparelho(html) {
+  $("#printArea").innerHTML = html;
   window.print();
 }
 
@@ -486,6 +508,26 @@ $("#rcEnderecarVol").addEventListener("click", () => {
   if (!volumeMontando(conf.volume)?.itens.length) return msg($("#rcMsg"), MSG_VOLUME_VAZIO, "err");
   conf.enderecando = true; msg($("#rcMsg"), "");
   desenharConferencia();
+});
+// "Imprimir em": a impressora tocada recebe as etiquetas (pelo servidor)
+$("#siLista").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-impem]"); if (!b || !aImprimir) return;
+  const id = Number(b.dataset.impem);
+  $$("#siLista button").forEach((x) => (x.disabled = true));
+  msg($("#siMsg"), "Enviando…");
+  imprimirNaImpressora(servidor.sess, id, aImprimir.etiquetas).then((r) => {
+    $$("#siLista button").forEach((x) => (x.disabled = false));
+    if (!r.ok) return msg($("#siMsg"), r.erro, "err");
+    lembrarImpressora(id); aImprimir = null;
+    closeSheets();
+    msg($("#rcMsg"), `${r.enviadas} etiqueta(s) enviada(s) para ${r.impressora}`, "ok");
+  });
+});
+$("#siAparelho").addEventListener("click", () => {
+  if (!aImprimir) return;
+  const { html } = aImprimir; aImprimir = null;
+  closeSheets();
+  imprimirNoAparelho(html);
 });
 $("#rcImprimir").addEventListener("click", () => {
   db = lerDados();

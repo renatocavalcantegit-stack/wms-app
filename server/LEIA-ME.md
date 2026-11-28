@@ -34,6 +34,7 @@ db/migracoes/002_...sql     mudanças depois da 001: 002 quantidade quebrada · 
                             · 012 produto novo pela nota (de qual nota o produto veio, avisos da nota, número das embalagens)
                             · 013 conferência da nota no coletor (a ação da fila de cada recebimento, índices)
                             · 014 conferência por volume (volumes_entrada; de qual volume veio cada recebimento)
+                            · 015 impressoras de etiqueta da rede (não é apagada pelo semear)
 db/migrar.js                cria o banco e aplica os .sql de db/migracoes/ que ainda não rodaram
 db/semear.js                apaga e carrega a demonstração (os mesmos js/demo-*.js do app). Pelo terminal, sem pedidos
                             na conferência (o teste operacional começa na Separação); os testes carregam também os já separados
@@ -262,6 +263,10 @@ npm test
 | `GET /api/estoque/notas/:id` | gestor de estoque | `{ nota, conferencias, volumes, produtos, docas, recusas }`: o detalhe da nota (para a tela e a reimpressão das etiquetas). Cada conferência traz `usuario` (quem conferiu); `recusas` = o que o coletor mandou e o servidor não aplicou (v78). **404** não existe |
 | `POST /api/estoque/notas/:id/cancelar-pendente` | gestor de estoque | `{ produto }` → `{ status }`: o pendente de armazenar vira cancelado (o saldo continua na doca); grava quem e quando. **409** se não havia pendente |
 | `POST /api/estoque/notas/importar` | gestor de estoque | "Buscar notas do ERP" → `{ importadas, bloqueadas }`. **Simulado** até o Sankhya ser ligado (as notas de exemplo da demonstração); a nota repetida é bloqueada. Cada importada traz `produtosNovos` (cadastrados pela nota) e `avisos` |
+| `GET /api/impressoras` | estoquista, gestor de estoque | v81: o gestor recebe todas (com IP, porta, tamanho e se está ativa); o estoquista só as **ativas**, sem o IP (`[{ id, nome, setor }]`) |
+| `POST /api/impressoras` · `PUT /api/impressoras/:id` | gestor de estoque | `{ nome, setor, ip, porta, modelo, larguraMm, alturaMm, ativa }` → a impressora gravada. **400** dado inválido, **409** nome repetido |
+| `POST /api/impressoras/:id/teste` | gestor de estoque | imprime uma etiqueta de exemplo. **502** a impressora não respondeu |
+| `POST /api/imprimir` | estoquista, gestor de estoque | `{ impressora, etiquetas: [{ codigo, tipo, nota, fornecedor, dia }] }` (até 20) → `{ enviadas, impressora }`. O servidor monta as etiquetas em PPLA (Argox) e manda pela porta 9100 numa conexão só. **404** impressora desativada ou inexistente, **502** não respondeu (espera até 5 s) |
 | `GET /api/recepcao/notas` | estoquista | (v78) `{ notas, conferencias, produtos, embalagens, docas, volumes }` (v80: `volumes` = os volumes já endereçados, com `acaoId` e os produtos): o que o coletor baixa para conferir sem rede. Só as notas **em aberto** (até 300, as mais recentes), os produtos e as embalagens dos itens delas e as docas (de recebimento e de devolução). Cada conferência traz `acaoId` (a ação da fila que a criou) |
 | `GET /modo.json` | não | `{ servidor: true }`: diz ao app que ele está sendo servido pelo servidor |
 | `GET /` e os arquivos do app | não | as telas (index.html, js/, compartilhado/, assets/, vendor/...) |

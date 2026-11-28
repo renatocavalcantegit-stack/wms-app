@@ -19,6 +19,7 @@ import { FILTROS_ENTRADA, iniciarEntrada, telaEntrada, cliqueEntrada, cliqueModa
 import {
   FILTROS_MOVIMENTACAO, iniciarMovimentacao, telaMovimentacao, cliqueMovimentacao, cliqueModalMovimentacao, enviarModalMovimentacao,
 } from "./gestao-movimentacao.js";
+import { iniciarImpressoras, telaImpressoras, cliqueImpressoras, cliqueModalImpressoras, enviarModalImpressoras, ligarImpressorasNoServidor, escolherImpressora } from "./gestao-impressoras.js";
 import { FILTROS_INVENTARIO, iniciarInventario, telaInventario, cliqueInventario, cliqueModalInventario, enviarModalInventario } from "./gestao-inventario.js";
 
 const sess = session();
@@ -34,9 +35,10 @@ const FILTROS_PADRAO = {
   entrada: FILTROS_ENTRADA,
   movimentacao: FILTROS_MOVIMENTACAO,
   inventario: FILTROS_INVENTARIO,
+  impressoras: {},
 };
 const filtros = structuredClone(FILTROS_PADRAO);
-const pagina = { enderecos: 1, produtos: 1, enderecamento: 1, entrada: 1, movimentacao: 1, inventario: 1 };
+const pagina = { enderecos: 1, produtos: 1, enderecamento: 1, entrada: 1, movimentacao: 1, inventario: 1, impressoras: 1 };
 let porPagina = 20;
 const selecionados = new Set(); // IDs de endereços marcados para imprimir o QR
 
@@ -405,17 +407,20 @@ function telaEnderecamento() {
 // desenho da tela e eventos
 // =====================================================================
 const TELAS = { enderecos: telaEnderecos, produtos: telaProdutos, enderecamento: telaEnderecamento, entrada: () => telaEntrada(db, filtros.entrada),
-  movimentacao: () => telaMovimentacao(db, filtros.movimentacao), inventario: () => telaInventario(db, filtros.inventario) };
+  movimentacao: () => telaMovimentacao(db, filtros.movimentacao), inventario: () => telaInventario(db, filtros.inventario),
+  impressoras: telaImpressoras };
 iniciarEntrada({
   paginar, rodape, render, abrirModal, fecharModal, toast,
   paginaDe: (chave) => ({ pagina: pagina[chave], porPagina }),
   corrigirPagina: (chave, p) => { pagina[chave] = p; },
+  escolherImpressora,
 });
+iniciarImpressoras({ render, abrirModal, fecharModal, toast });
 
 // Com servidor (v77): a aba Entrada usa as notas do banco. As outras abas ainda não estão no servidor
 // (decisão de 25/11/2026: o Estoque vai para o servidor por etapas) e mostram o aviso abaixo.
 let comServidor = false;
-const ABAS_NO_SERVIDOR = ["entrada"];
+const ABAS_NO_SERVIDOR = ["entrada", "impressoras"];
 const avisoForaDoServidor = () => (comServidor && !ABAS_NO_SERVIDOR.includes(aba)
   ? `<p class="ge-fora-servidor"><b>Ainda não está no servidor.</b> Esta aba mostra a demonstração guardada neste computador; o que mudar aqui não vale para os coletores.</p>`
   : "");
@@ -472,6 +477,7 @@ $("#tela").addEventListener("click", (ev) => {
   if (aba === "entrada" && cliqueEntrada(t, db)) return;
   if (aba === "movimentacao" && cliqueMovimentacao(t, db, filtros.movimentacao)) return;
   if (aba === "inventario" && cliqueInventario(t, db, filtros.inventario)) return;
+  if (aba === "impressoras" && cliqueImpressoras(t)) return;
   if (t.id === "btNovo") return abrirNovoEndereco();
   if (t.id === "btLote") return abrirLote();
   if (t.id === "btQr") return imprimirQr();
@@ -517,6 +523,7 @@ $("#modal").addEventListener("click", (ev) => {
   if (cliqueModalEntrada(t, db)) return;
   if (cliqueModalMovimentacao(t, db)) return;
   if (cliqueModalInventario(t)) return;
+  if (cliqueModalImpressoras(t)) return;
   if (t.dataset.confdesativar) {
     const r = desativarEndereco(+t.dataset.confdesativar);
     fecharModal(); render(); return toast(r.ok ? "Endereço desativado" : r.msg);
@@ -539,6 +546,7 @@ $("#modal").addEventListener("submit", (ev) => {
   const f = ev.target;
   if (enviarModalMovimentacao(f, db)) return;
   if (enviarModalInventario(f, db, filtros.inventario)) return;
+  if (enviarModalImpressoras(f)) return;
   if (f.id === "fNovo") {
     const r = criarEndereco(Object.fromEntries(new FormData(f)));
     if (!r.ok) { $("#endInfo").className = "ge-lote-info err"; $("#endInfo").textContent = r.msg; return; }
@@ -584,5 +592,6 @@ if (sess?.token) temServidor().then((ligou) => {
   if (!ligou) return;
   comServidor = true;
   ligarEntradaNoServidor(sess);
+  ligarImpressorasNoServidor(sess);
   render();
 });

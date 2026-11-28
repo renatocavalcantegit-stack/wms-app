@@ -17,9 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=80">
-  <link rel="stylesheet" href="estoque.css?v=80">
-  <link rel="stylesheet" href="etiqueta-recebimento.css?v=80">
+  <link rel="stylesheet" href="styles.css?v=81">
+  <link rel="stylesheet" href="estoque.css?v=81">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=81">
 </head>
 <body class="es">
 
@@ -315,6 +315,16 @@
     </form>
   </div>
 
+  <!-- v81: escolher a impressora da rede (com servidor); sem rede, a impressão deste aparelho -->
+  <div id="sheetImpressora" class="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <p class="sheet-title">Imprimir em</p>
+    <p id="siQtd" class="muted"></p>
+    <div id="siLista" class="rc-prn-lista"></div>
+    <p id="siMsg" class="scan-msg"></p>
+    <button id="siAparelho" class="btn ghost block">Imprimir neste aparelho</button>
+  </div>
+
   <div id="sheetConfirma" class="sheet" hidden>
     <div class="sheet-grip"></div>
     <p class="sheet-title" id="scfTitulo"></p>
@@ -343,7 +353,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=80"></script>
-  <script type="module" src="estoque.js?v=80"></script>
+  <script src="vendor/qrcode.js?v=81"></script>
+  <script type="module" src="estoque.js?v=81"></script>
 </body>
 </html>

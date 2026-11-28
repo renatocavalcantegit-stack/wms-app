@@ -33,3 +33,9 @@ export function etiquetaVolumeDaNotaHtml(volume, nota, tipoTexto) {
     <div class="vr-prod"><b>${esc(tipoTexto.toUpperCase())}</b> · criado em ${dia}</div>
   </div>`;
 }
+
+// v81: os mesmos dados, para a impressora da rede (o servidor monta a etiqueta na linguagem da Argox)
+export const dadosDaEtiquetaDoVolume = (volume, nota, tipoTexto) => ({
+  codigo: volume.codigo, tipo: tipoTexto, nota: String(nota.numero), fornecedor: nota.fornecedor?.nome || "",
+  dia: new Date(volume.criadoEm || Date.now()).toLocaleDateString("pt-BR"),
+});
