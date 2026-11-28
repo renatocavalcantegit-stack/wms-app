@@ -17,9 +17,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=79">
-  <link rel="stylesheet" href="estoque.css?v=79">
-  <link rel="stylesheet" href="etiqueta-recebimento.css?v=79">
+  <link rel="stylesheet" href="styles.css?v=80">
+  <link rel="stylesheet" href="estoque.css?v=80">
+  <link rel="stylesheet" href="etiqueta-recebimento.css?v=80">
 </head>
 <body class="es">
 
@@ -156,7 +156,8 @@
     </footer>
   </section>
 
-  <!-- ===== RECEPÇÃO · CONFERÊNCIA: 1) nota  2) produto  3) quantidade → lista · Endereçar: QR da doca (v79) ===== -->
+  <!-- ===== RECEPÇÃO · CONFERÊNCIA: 1) nota  2) produto  3) quantidade → lista · Endereçar: QR da doca (v79)
+       · por volume (v80): criar volumes → abrir o volume → produtos → Endereçar volume ===== -->
   <section id="viewRecConf" class="view pick" hidden>
     <header class="pick-bar">
       <button class="icon-btn" data-rcvoltar aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -178,6 +179,8 @@
       <button id="rcTrocar" class="btn ghost">Trocar nota</button>
       <button id="rcEnderecar" class="btn primary grow" disabled>Endereçar</button>
       <button id="rcFinalizar" class="btn ghost">Finalizar</button>
+      <button id="rcImprimir" class="btn ghost" hidden>Imprimir</button>
+      <button id="rcEnderecarVol" class="btn primary grow" hidden disabled>Endereçar volume</button>
     </footer>
   </section>
 
@@ -340,7 +343,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="vendor/qrcode.js?v=79"></script>
-  <script type="module" src="estoque.js?v=79"></script>
+  <script src="vendor/qrcode.js?v=80"></script>
+  <script type="module" src="estoque.js?v=80"></script>
 </body>
 </html>

@@ -2,20 +2,26 @@
 // As regras ficam em compartilhado/regras/recebimento.js e os dados passam por js/dados/recebimento.js.
 // Com servidor (v78), a Conferência usa a cópia das notas em aberto (js/dados/recepcao.js) e a fila de envio:
 // (v79: confere vários produtos e endereça na doca quando quiser, pela lista js/dados/recepcao-lista.js)
+// (v80: conferência por volume, palete ou caixa: js/dados/recepcao-volumes.js)
 // confere sem rede e nunca lê o Estoque inteiro. Armazenamento e Consulta ainda não estão no servidor (entrega C).
 import { $, $$, esc } from "./js/util.js";
 import { closeSheets, toast } from "./js/ui-coletor.js";
 import { num, tipoTag, diaCurto, msg, confirmar, cartaoProduto } from "./js/ui-estoque.js";
 import { lerEstoque, enderecoPorId, produtoPorCodigo, saldoNoEndereco, enderecosPadraoDoProduto } from "./js/dados/estoque.js";
-import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar } from "./js/dados/recebimento.js";
-import { lerRecepcao, conferirNaFila, finalizarNaFila } from "./js/dados/recepcao.js";
+import { notaPorId, notaPorNumero, conferir, finalizarNota, armazenar, enderecarVolume } from "./js/dados/recebimento.js";
+import { lerRecepcao, conferirNaFila, finalizarNaFila, enderecarVolumeNaFila } from "./js/dados/recepcao.js";
 import { lerListaDaDoca, porNaLista, tirarDaLista, esvaziarLista, listaComoConferencias } from "./js/dados/recepcao-lista.js";
+import {
+  volumesMontando, volumeMontando, criarVolumes, vincular, tirarDoVolume, tirarVolumes, descartarVolumesDaNota, volumesComoConferencias,
+} from "./js/dados/recepcao-volumes.js";
+import { etiquetaVolumeDaNotaHtml } from "./js/etiqueta-recebimento.js";
 import { acharEndereco, compararEnderecos } from "./compartilhado/regras/enderecos.js";
 import { MSG_FORA_DO_SERVIDOR } from "./js/ui-estoque.js";
 import { acharPorCodigoLido } from "./compartilhado/regras/embalagens.js";
 import {
   statusDaNota, resumoDaNota, validarDoca, validarDocaDeArmazenamento, validarConferencia, quantidadeEmUnidades, pendenteDeConferir, pendentesPorData, pendenteNaDoca, pendenteDaConferencia,
   STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA, rotuloDaNota,
+  TIPOS_DE_VOLUME, MAXIMO_VOLUMES_DE_UMA_VEZ, MSG_VOLUME_VAZIO, MSG_VOLUME_NAO_ENCONTRADO, MSG_VOLUME_FECHADO, validarCriacaoDeVolumes,
 } from "./compartilhado/regras/recebimento.js";
 
 // com servidor: { sess, pedirEnvio } (ligarRecepcaoNoServidor). Sem servidor: a demonstração, no aparelho.
@@ -31,7 +37,7 @@ export function ligarRecepcaoNoServidor(sess, pedirEnvio) {
 // (nunca o passo da quantidade ou da doca, para não apagar o que o estoquista está digitando)
 export function aoBaixarNotas() {
   db = lerDados();
-  if (!$("#viewRecConf").hidden && !conf.produto) desenharConferencia();
+  if (!$("#viewRecConf").hidden && !conf.produto && !conf.criando) desenharConferencia();
   if (!$("#viewEstHome").hidden) resumoDoMenu();
 }
 
@@ -84,39 +90,66 @@ $$("[data-rcvoltar]").forEach((b) => b.addEventListener("click", () => {
 }));
 
 // =====================================================================
-// CONFERÊNCIA (v79): 1) nota  2) bipa o produto  3) quantidade → entra na lista "aguardando doca" e volta ao 2
-// A qualquer momento, "Endereçar" pede o QR da doca: tudo o que está na lista entra nela de uma vez.
-// Por produto não há volume nem etiqueta (a conferência por volume vem na entrega B).
+// CONFERÊNCIA
+//  Por produto (v79): 1) nota  2) bipa o produto  3) quantidade → lista "aguardando doca" → volta ao 2.
+//    A qualquer momento, "Endereçar" pede o QR da doca: tudo o que está na lista entra nela de uma vez.
+//  Por volume (v80): cria os volumes (palete ou caixa) e imprime as etiquetas; abre um volume (bipando a etiqueta
+//    ou tocando na lista), vincula os produtos e "Endereçar volume" leva o volume inteiro para a doca.
+//    Até ser endereçado o volume existe só neste aparelho (js/dados/recepcao-volumes.js).
 // Produto e doca entram só por leitura (bipe ou digitação), nunca tocando na lista.
 // =====================================================================
-const conf = { notaId: null, produto: null, embalagem: null, enderecando: false };
+const conf = { notaId: null, produto: null, embalagem: null, enderecando: false, modo: "produto", volume: null, criando: false };
 const limparProduto = () => Object.assign(conf, { produto: null, embalagem: null });
 const MSG_LISTA_PENDENTE = "HÁ PRODUTOS CONFERIDOS AGUARDANDO A DOCA. ENDEREÇE OU TIRE DA LISTA ANTES.";
+const MSG_VOLUMES_MONTANDO = "HÁ VOLUMES COM PRODUTOS SEM DOCA. ENDEREÇE OU TIRE OS PRODUTOS DELES ANTES.";
+const porVolume = () => conf.modo === "volume";
 
-// a lista "aguardando doca" desta nota, e as conferências da tela somadas a ela (para o conferido e o pendente)
+// a lista "aguardando doca" desta nota, e as conferências da tela somadas a ela e aos volumes montando
+// (para o conferido e o pendente)
 const listaDaNota = () => { const d = lerListaDaDoca(); return d.notaId === conf.notaId ? d : { notaId: conf.notaId, itens: [] }; };
-const conferenciasComLista = () => [...db.conferencias, ...listaComoConferencias(listaDaNota())];
+const conferenciasComTudo = () => [...db.conferencias, ...listaComoConferencias(listaDaNota()), ...volumesComoConferencias(conf.notaId)];
+// os volumes já endereçados da nota (com servidor: os do servidor e os a caminho)
+const volumesEnderecados = () => (db.volumesEntrada || []).filter((v) => v.notaId === conf.notaId);
+const tipoDoVolume = (tipo) => TIPOS_DE_VOLUME[tipo] || tipo;
 
 function iniciarConferencia() {
-  conf.notaId = null; conf.enderecando = false; limparProduto();
+  Object.assign(conf, { notaId: null, enderecando: false, volume: null, criando: false }); limparProduto();
   msg($("#rcMsg"), ""); $("#rcInput").value = "";
   // ficou lista de antes (o app fechou no meio): reabre a nota dela
   const guardada = lerListaDaDoca();
   if (guardada.itens.length) {
     const nota = notaPorId(db, guardada.notaId);
-    if (nota && !nota.finalizada) { conf.notaId = nota.id; msg($("#rcMsg"), `${guardada.itens.length} produto(s) aguardando a doca`, "ok"); }
+    if (nota && !nota.finalizada) { conf.notaId = nota.id; conf.modo = "produto"; msg($("#rcMsg"), `${guardada.itens.length} produto(s) aguardando a doca`, "ok"); }
     else { esvaziarLista(); msg($("#rcMsg"), "A nota da lista foi finalizada: os produtos aguardando a doca foram descartados.", "err"); }
   }
   desenharConferencia();
 }
 
-// voltar um passo: doca → produtos · quantidade → produtos · produtos → lista de notas (se a lista estiver vazia)
+// voltar um passo: criar volumes / doca / quantidade → o passo de antes · volume aberto → lista de volumes ·
+// produtos ou volumes → lista de notas (se não houver produto aguardando a doca)
 function voltarConferencia() {
   msg($("#rcMsg"), "");
+  if (conf.criando) { conf.criando = false; return desenharConferencia(); }
   if (conf.enderecando) { conf.enderecando = false; return desenharConferencia(); }
   if (conf.produto) { limparProduto(); return desenharConferencia(); }
+  if (conf.volume) { conf.volume = null; return desenharConferencia(); }
   if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
   iniciarConferencia();
+}
+
+// os botões de baixo mudam com o passo
+function desenharRodape(nota) {
+  const montando = conf.volume ? volumeMontando(conf.volume) : null;
+  $("#rcFoot").hidden = !nota || conf.criando || (porVolume() && (conf.enderecando || !!conf.produto));
+  $("#rcTrocar").hidden = !!conf.volume;
+  $("#rcFinalizar").hidden = !!conf.volume;
+  $("#rcEnderecar").hidden = porVolume();
+  $("#rcImprimir").hidden = !conf.volume;
+  $("#rcEnderecarVol").hidden = !montando;
+  $("#rcEnderecarVol").disabled = !montando?.itens.length;
+  const n = listaDaNota().itens.length;
+  $("#rcEnderecar").disabled = !n || conf.enderecando || !!conf.produto;
+  $("#rcEnderecar").textContent = n ? `Endereçar (${n})` : "Endereçar";
 }
 
 function desenharConferencia() {
@@ -124,17 +157,22 @@ function desenharConferencia() {
   // a nota foi finalizada em outro coletor enquanto esta tela estava aberta (com servidor, ela some da cópia)
   if (conf.notaId && (!nota || nota.finalizada)) {
     if (lerListaDaDoca().notaId === conf.notaId) esvaziarLista();
+    descartarVolumesDaNota(conf.notaId);
     conf.notaId = null; iniciarConferencia(); return msg($("#rcMsg"), MSG_NOTA_FINALIZADA, "err");
   }
-  $("#rcFoot").hidden = !nota;
-  // no passo da quantidade o campo de leitura some (o leitor não pode digitar dentro da quantidade)
-  $("#rcForm").hidden = !!conf.produto;
+  const enderecado = conf.volume && !volumeMontando(conf.volume);
+  if (conf.volume && !volumeMontando(conf.volume) && !volumesEnderecados().some((v) => v.codigo === conf.volume)) conf.volume = null; // sumiu
+  desenharRodape(nota);
+  // no passo da quantidade (e no de criar volumes) o campo de leitura some: o leitor não pode digitar dentro deles
+  $("#rcForm").hidden = !!conf.produto || conf.criando || !!(conf.volume && enderecado && !conf.enderecando);
   if (!nota) return desenharNotas();
   $("#rcTopo").innerHTML = cartaoNota(nota);
-  const n = listaDaNota().itens.length;
-  $("#rcEnderecar").disabled = !n || conf.enderecando || !!conf.produto;
-  $("#rcEnderecar").textContent = n ? `Endereçar (${n})` : "Endereçar";
   if (conf.produto) return desenharQuantidade(nota);
+  if (conf.criando) return desenharCriarVolumes();
+  if (porVolume()) {
+    if (!conf.volume) return desenharVolumes(nota);
+    return conf.enderecando ? desenharEnderecarVolume() : desenharVolume();
+  }
   if (conf.enderecando) return desenharEnderecar();
   desenharItens(nota);
 }
@@ -156,24 +194,15 @@ function desenharNotas() {
   }).join("") || `<p class="empty">${servidor && !db.baixadoEm ? "As notas ainda não foram baixadas do servidor. Conecte ao Wi-Fi." : "Nenhuma nota para conferir."}</p>`}</div>`;
 }
 
-// a lista "aguardando doca" (com a lixeira em cada item, se der para tirar)
-function htmlDaLista(lista, { tirar }) {
-  if (!lista.itens.length) return "";
-  return `<div class="rc-lista"><p class="rc-lista-h">${tirar ? "Conferidos · aguardando doca" : "Vai para a doca"} (${lista.itens.length})</p>${lista.itens.map((i) => {
-    const p = produtoPorCodigo(db, i.produto);
-    return `<div class="line rc-lista-item"><span class="line-desc">${esc(p?.descricao || i.produto)}<small>${esc(i.produto)}</small></span>
-      <span class="line-q">${num(i.qtd)}<small> un</small></span>${tirar ? `<button type="button" class="rc-tirar" data-rctirar="${esc(i.id)}" aria-label="Tirar da lista">✕</button>` : ""}</div>`;
-  }).join("")}</div>`;
-}
+// o seletor "Produto | Volume" (e, no modo volume, o botão de criar volumes)
+const seletorDeModo = () => `<div class="rc-modo"><div class="rc-seg" role="group" aria-label="Conferir por">
+    <button type="button" data-rcmodo="produto" class="${porVolume() ? "" : "on"}">Produto</button>
+    <button type="button" data-rcmodo="volume" class="${porVolume() ? "on" : ""}">Volume</button></div>
+  ${porVolume() ? `<button type="button" class="btn ghost rc-criar" data-rccriar>+ Volume</button>` : ""}</div>`;
 
-// passo 2: a lista aguardando doca e os produtos da nota com o que já foi conferido (não é cega: mostra a
-// quantidade da nota). A lista de produtos é só para acompanhar: o produto entra bipando ou digitando o código.
-function desenharItens(nota) {
-  $("#rcPasso").textContent = "2 · Bipe o produto";
-  $("#rcInput").placeholder = "Bipe o produto ou digite o código";
-  const conferencias = conferenciasComLista();
-  $("#rcRes").innerHTML = `${htmlDaLista(listaDaNota(), { tirar: true })}
-    <p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, conferencias).map((i) => {
+// os produtos da nota com o que já foi conferido (não é cega: mostra a quantidade da nota). Só para acompanhar.
+function htmlDosProdutosDaNota(nota) {
+  return `<p class="es-h">Produtos da nota · conferido / nota</p><div class="es-lista">${resumoDaNota(nota, conferenciasComTudo()).map((i) => {
     const p = produtoPorCodigo(db, i.produto);
     const completo = i.conferido >= i.qtdNota;
     return `<div class="line rc-item ${completo ? "ok" : ""}"><span class="line-desc">${esc(p.descricao)}<small>${esc(p.codigo)}</small></span>
@@ -181,18 +210,37 @@ function desenharItens(nota) {
   }).join("")}</div>`;
 }
 
+// uma lista de produtos com quantidade (a "aguardando doca" ou a de dentro do volume); tirar = o atributo do ✕
+function htmlDosItens(titulo, itens, tirar) {
+  return `<div class="rc-lista"><p class="rc-lista-h">${titulo} (${itens.length})</p>${itens.map((i) => {
+    const p = produtoPorCodigo(db, i.produto);
+    return `<div class="line rc-lista-item"><span class="line-desc">${esc(p?.descricao || i.produto)}<small>${esc(i.produto)}</small></span>
+      <span class="line-q">${num(i.qtd)}<small> un</small></span>${tirar && i.id ? `<button type="button" class="rc-tirar" ${tirar}="${esc(i.id)}" aria-label="Tirar">✕</button>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+
+// passo 2 (por produto): a lista aguardando doca e os produtos da nota
+function desenharItens(nota) {
+  $("#rcPasso").textContent = "2 · Bipe o produto";
+  $("#rcInput").placeholder = "Bipe o produto ou digite o código";
+  const lista = listaDaNota();
+  $("#rcRes").innerHTML = `${seletorDeModo()}
+    ${lista.itens.length ? htmlDosItens("Conferidos · aguardando doca", lista.itens, "data-rctirar") : ""}
+    ${htmlDosProdutosDaNota(nota)}`;
+}
+
 const caixaBipada = () => (conf.embalagem && conf.embalagem.qtd > 1 ? conf.embalagem : null);
 const numerosDoItem = (nota) => {
   const item = nota.itens.find((i) => i.produto === conf.produto);
-  const pendente = pendenteDeConferir(nota, conf.produto, conferenciasComLista());
+  const pendente = pendenteDeConferir(nota, conf.produto, conferenciasComTudo());
   return `<div class="rc-nums"><div><small>Na nota</small><b>${num(item.qtd)}</b></div><div><small>Conferido</small><b>${num(item.qtd - pendente)}</b></div><div><small>Pendente</small><b>${num(pendente)}</b></div></div>`;
 };
 
-// passo 3: quantidade (em caixas, se bipou uma caixa). Confirmar põe na lista e volta a bipar.
+// passo 3: quantidade (em caixas, se bipou uma caixa). Confirmar põe na lista (ou no volume aberto) e volta a bipar.
 function desenharQuantidade(nota) {
   const p = produtoPorCodigo(db, conf.produto);
   const caixa = caixaBipada();
-  $("#rcPasso").textContent = "3 · Quantidade";
+  $("#rcPasso").textContent = conf.volume ? `${conf.volume} · quantidade` : "3 · Quantidade";
   $("#rcRes").innerHTML = `${cartaoProduto(p, conf.embalagem ? `<p class="es-pronto">Bipou: ${esc(conf.embalagem.descricao)}</p>` : "")}
     ${numerosDoItem(nota)}
     <form id="rcQtdForm" class="es-form">
@@ -214,23 +262,124 @@ function atualizarTotal() {
   $("#rcConfirmar").textContent = total > 0 ? `Confirmar · ${num(total)} un` : "Confirmar";
 }
 
-// Endereçar: lê o QR da doca; tudo o que está na lista entra nela
+// Endereçar (por produto): lê o QR da doca; tudo o que está na lista entra nela
 function desenharEnderecar() {
   $("#rcPasso").textContent = "Endereçar · leia o QR da doca";
   $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
-  $("#rcRes").innerHTML = `${htmlDaLista(listaDaNota(), { tirar: false })}
+  $("#rcRes").innerHTML = `${htmlDosItens("Vai para a doca", listaDaNota().itens, null)}
     <p class="muted rc-dica">Bipe o QR da doca onde a mercadoria foi descarregada, ou digite o ID impresso na etiqueta. Os produtos da lista entram nela.</p>
     <button type="button" class="btn ghost" data-rcvoltarconf>Voltar a conferir</button>`;
   setTimeout(() => $("#rcInput").focus(), 50);
 }
 
+// ---------- por volume (v80) ----------
+// os volumes da nota: os montando neste aparelho (Gerado / Montando) e os já endereçados
+function desenharVolumes(nota) {
+  $("#rcPasso").textContent = "2 · Bipe ou toque no volume";
+  $("#rcInput").placeholder = "Bipe a etiqueta do volume";
+  const montando = volumesMontando(nota.id), enderecados = volumesEnderecados();
+  const linha = (v, estado, cor, detalhe) => `<button class="line" data-rcvol="${esc(v.codigo)}"><span class="line-desc"><b>${esc(v.codigo)}</b> · ${esc(tipoDoVolume(v.tipo))}
+    <small>${detalhe}</small></span>${pilula(cor, estado)}</button>`;
+  const somaDe = (v) => `${v.itens.length} produto(s) · ${num(v.itens.reduce((t, i) => t + i.qtd, 0))} un`;
+  const linhas = [
+    ...montando.map((v) => (v.itens.length ? linha(v, "Montando", "aberta", somaDe(v)) : linha(v, "Gerado", "aguardando", "vazio"))),
+    ...enderecados.map((v) => linha(v, v.aCaminho ? "Enviando" : "Endereçado", "conferida", `${somaDe(v)} · ${esc(enderecoPorId(db, v.docaId)?.codigo || "doca")}`)),
+  ];
+  $("#rcRes").innerHTML = `${seletorDeModo()}
+    <p class="es-h">Volumes da nota</p><div class="es-lista">${linhas.join("") || `<p class="empty">Nenhum volume. Toque em "+ Volume" para criar e imprimir as etiquetas.</p>`}</div>
+    ${htmlDosProdutosDaNota(nota)}`;
+}
+
+// criar volumes: o tipo e quantos (as etiquetas saem na hora)
+function desenharCriarVolumes() {
+  $("#rcPasso").textContent = "Criar volumes";
+  $("#rcRes").innerHTML = `<form id="rcVolForm" class="es-form">
+      <div class="field"><span>Tipo</span><div class="rc-seg">${Object.entries(TIPOS_DE_VOLUME).map(([v, t], i) =>
+        `<label class="${i ? "" : "on"}"><input type="radio" name="tipo" value="${v}" ${i ? "" : "checked"}>${t}</label>`).join("")}</div></div>
+      <label class="field"><span>Quantos volumes?</span><input name="quantos" type="number" inputmode="numeric" min="1" max="${MAXIMO_VOLUMES_DE_UMA_VEZ}" value="1" required></label>
+      <div class="es-duo"><button type="button" class="btn ghost" data-rcfecharcriar>Cancelar</button><button class="btn primary">Criar e imprimir</button></div>
+    </form>`;
+  setTimeout(() => $("#rcVolForm")?.quantos.select(), 50);
+}
+
+// o volume aberto: montando (bipa os produtos) ou já endereçado (só consulta e reimpressão)
+function desenharVolume() {
+  const montando = volumeMontando(conf.volume);
+  if (montando) {
+    $("#rcPasso").textContent = `${conf.volume} · bipe o produto`;
+    $("#rcInput").placeholder = "Bipe o produto ou digite o código";
+    $("#rcRes").innerHTML = `<div class="rc-nota rc-conferindo"><span>${esc(tipoDoVolume(montando.tipo))}</span><b>${esc(montando.codigo)}</b></div>
+      ${montando.itens.length ? htmlDosItens("Produtos no volume", montando.itens, "data-rctirarvol") : `<p class="empty">Bipe os produtos que estão neste volume.</p>`}`;
+    return;
+  }
+  const v = volumesEnderecados().find((x) => x.codigo === conf.volume);
+  $("#rcPasso").textContent = `${conf.volume} · endereçado`;
+  $("#rcRes").innerHTML = `<div class="rc-nota rc-conferindo"><span>${esc(tipoDoVolume(v.tipo))} · ${v.aCaminho ? "enviando" : "endereçado"}</span><b>${esc(v.codigo)}</b>
+      <small>${esc(enderecoPorId(db, v.docaId)?.codigo || "")}</small></div>
+    ${htmlDosItens("Produtos no volume", v.itens, null)}
+    <p class="muted rc-dica">${MSG_VOLUME_FECHADO}</p>`;
+}
+
+// Endereçar volume: lê o QR da doca; o volume inteiro entra nela
+function desenharEnderecarVolume() {
+  const v = volumeMontando(conf.volume);
+  $("#rcPasso").textContent = `${conf.volume} · leia o QR da doca`;
+  $("#rcInput").placeholder = "Bipe o QR da doca ou digite o ID";
+  $("#rcRes").innerHTML = `${htmlDosItens(`Vai para a doca · ${esc(tipoDoVolume(v.tipo))} inteiro`, v.itens, null)}
+    <p class="muted rc-dica">Bipe o QR da doca onde o volume foi descarregado. Depois de endereçado, o volume fecha: não recebe mais produtos.</p>
+    <button type="button" class="btn ghost" data-rcvoltarconf>Voltar ao volume</button>`;
+  setTimeout(() => $("#rcInput").focus(), 50);
+}
+
+// abre o volume bipado ou tocado (montando neste aparelho ou já endereçado)
+function abrirVolume(lido) {
+  const codigo = String(lido).trim().toUpperCase();
+  const montando = volumeMontando(codigo);
+  if (montando && montando.notaId !== conf.notaId) return msg($("#rcMsg"), "ESTE VOLUME É DE OUTRA NOTA.", "err");
+  if (!montando && !volumesEnderecados().some((v) => v.codigo === codigo)) return msg($("#rcMsg"), MSG_VOLUME_NAO_ENCONTRADO, "err");
+  conf.volume = codigo;
+  msg($("#rcMsg"), "");
+  desenharConferencia();
+}
+
+// imprime as etiquetas dos volumes (80 × 60 mm, uma por página)
+function imprimirVolumes(volumes) {
+  const nota = notaPorId(db, conf.notaId);
+  $("#printArea").innerHTML = volumes.map((v) => etiquetaVolumeDaNotaHtml(v, nota, tipoDoVolume(v.tipo))).join("");
+  window.print();
+}
+
+// lê a doca e endereça o volume inteiro. Com servidor entra na fila (vai quando houver rede); recusado, ele
+// volta a "montando" neste aparelho (js/dados/recepcao.js).
+function lerDocaDoVolume(endereco) {
+  const v = volumeMontando(conf.volume);
+  if (!v) return;
+  const dados = { notaId: conf.notaId, codigo: v.codigo, tipo: v.tipo, docaId: endereco?.id, itens: v.itens };
+  const erro = validarDoca(endereco, notaPorId(db, conf.notaId));
+  if (erro) return msg($("#rcMsg"), erro, "err");
+  const r = servidor ? enderecarVolumeNaFila(servidor.sess, dados) : enderecarVolume(dados);
+  if (!r.ok) return msg($("#rcMsg"), r.msg, "err");
+  tirarVolumes(v.codigo);
+  servidor?.pedirEnvio();
+  db = lerDados();
+  Object.assign(conf, { enderecando: false, volume: null });
+  desenharConferencia();
+  msg($("#rcMsg"), `${v.codigo} (${tipoDoVolume(v.tipo).toLowerCase()}) na ${endereco.codigo}`, "ok");
+  $("#rcInput").focus();
+}
+
+// ---------- leitura ----------
 $("#rcForm").addEventListener("submit", (e) => {
   e.preventDefault();
   db = lerDados();
   const lido = $("#rcInput").value.trim(); if (!lido) return;
   $("#rcInput").value = "";
   if (!conf.notaId) return escolherNota(notaPorNumero(db, lido));
-  if (conf.enderecando) return lerDoca(acharEndereco(db.enderecos, lido));
+  if (porVolume()) {
+    if (!conf.volume) return abrirVolume(lido);
+    if (conf.enderecando) return lerDocaDoVolume(acharEndereco(db.enderecos, lido));
+    if (!volumeMontando(conf.volume)) return msg($("#rcMsg"), MSG_VOLUME_FECHADO, "err");
+  } else if (conf.enderecando) return lerDoca(acharEndereco(db.enderecos, lido));
   const achado = acharPorCodigoLido(db.produtos, db.embalagens, lido);
   if (!achado) return msg($("#rcMsg"), "Produto não encontrado.", "err");
   escolherProduto(achado.produto.codigo, achado.embalagem);
@@ -247,14 +396,14 @@ function escolherNota(nota) {
 function escolherProduto(codigo, embalagem) {
   const nota = notaPorId(db, conf.notaId);
   if (!nota.itens.some((i) => i.produto === codigo)) return msg($("#rcMsg"), MSG_PRODUTO_FORA_DA_NOTA, "err");
-  if (pendenteDeConferir(nota, codigo, conferenciasComLista()) <= 0) return msg($("#rcMsg"), "PRODUTO JÁ CONFERIDO POR COMPLETO NESTA NOTA.", "err");
+  if (pendenteDeConferir(nota, codigo, conferenciasComTudo()) <= 0) return msg($("#rcMsg"), "PRODUTO JÁ CONFERIDO POR COMPLETO NESTA NOTA.", "err");
   conf.produto = codigo; conf.embalagem = embalagem;
   msg($("#rcMsg"), "Produto identificado", "ok");
   desenharConferencia();
 }
 
-// lê a doca: cada produto da lista vira uma confirmação (o saldo entra na doca). Com servidor, cada uma entra
-// na fila e vai quando houver rede. Um produto que não passa (ex.: outro coletor conferiu antes) fica na lista.
+// lê a doca (por produto): cada produto da lista vira uma confirmação (o saldo entra na doca). Com servidor, cada uma
+// entra na fila e vai quando houver rede. Um produto que não passa (ex.: outro coletor conferiu antes) fica na lista.
 function lerDoca(endereco) {
   const erro = validarDoca(endereco, notaPorId(db, conf.notaId));
   if (erro) return msg($("#rcMsg"), erro, "err");
@@ -275,35 +424,73 @@ function lerDoca(endereco) {
   $("#rcInput").focus();
 }
 
+// ---------- toques na área da conferência ----------
 $("#rcRes").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   db = lerDados();
   if (b.dataset.nota) return escolherNota(notaPorId(db, +b.dataset.nota));
+  if (b.dataset.rcmodo) { Object.assign(conf, { modo: b.dataset.rcmodo, volume: null, enderecando: false }); msg($("#rcMsg"), ""); desenharConferencia(); return $("#rcInput").focus(); }
+  if (b.dataset.rccriar !== undefined) { conf.criando = true; msg($("#rcMsg"), ""); return desenharConferencia(); }
+  if (b.dataset.rcfecharcriar !== undefined) { conf.criando = false; desenharConferencia(); return $("#rcInput").focus(); }
+  if (b.dataset.rcvol) return abrirVolume(b.dataset.rcvol);
   if (b.dataset.rctirar) { tirarDaLista(b.dataset.rctirar); msg($("#rcMsg"), "Tirado da lista"); desenharConferencia(); return $("#rcInput").focus(); }
+  if (b.dataset.rctirarvol) { tirarDoVolume(conf.volume, b.dataset.rctirarvol); msg($("#rcMsg"), "Tirado do volume"); desenharConferencia(); return $("#rcInput").focus(); }
   if (b.dataset.rcvoltarconf !== undefined) { conf.enderecando = false; msg($("#rcMsg"), ""); desenharConferencia(); return $("#rcInput").focus(); }
   if (b.dataset.rccancelar !== undefined) { limparProduto(); msg($("#rcMsg"), ""); desenharConferencia(); $("#rcInput").focus(); }
 });
 $("#rcRes").addEventListener("input", (e) => { if (e.target.form?.id === "rcQtdForm") atualizarTotal(); });
-// "Confirmar": valida a quantidade (sem passar do pendente da nota, contando a lista) e põe na lista
+// o tipo do volume: marca a opção escolhida
+$("#rcRes").addEventListener("change", (e) => {
+  if (e.target.name !== "tipo") return;
+  $$("#rcVolForm .rc-seg label").forEach((l) => l.classList.toggle("on", l.contains(e.target)));
+});
 $("#rcRes").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target;
   db = lerDados();
+  // criar volumes: grava neste aparelho e imprime as etiquetas
+  if (f.id === "rcVolForm") {
+    const tipo = f.tipo.value, quantos = Number(f.quantos.value);
+    const erro = validarCriacaoDeVolumes(tipo, quantos);
+    if (erro) return msg($("#rcMsg"), erro, "err");
+    const novos = criarVolumes(conf.notaId, tipo, quantos);
+    if (!novos) return msg($("#rcMsg"), "MEMÓRIA DO APARELHO CHEIA: OS VOLUMES NÃO FORAM CRIADOS.", "err");
+    conf.criando = false;
+    desenharConferencia();
+    msg($("#rcMsg"), `${novos.length} volume(s): ${novos.map((v) => v.codigo).join(", ")}`, "ok");
+    imprimirVolumes(novos);
+    return $("#rcInput").focus();
+  }
+  // "Confirmar" a quantidade: valida (sem passar do pendente da nota, contando a lista e os volumes) e põe na
+  // lista (por produto) ou no volume aberto (por volume)
   const qtd = quantidadeEmUnidades(caixaBipada(), f.qtd.value || 0);
-  const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: 0 }, conferenciasComLista());
+  const erro = validarConferencia(notaPorId(db, conf.notaId), { produto: conf.produto, qtd, volumes: 0 }, conferenciasComTudo());
   if (erro) return msg($("#rcMsg"), erro, "err");
-  if (!porNaLista(conf.notaId, conf.produto, qtd)) return msg($("#rcMsg"), "MEMÓRIA DO APARELHO CHEIA: O PRODUTO NÃO ENTROU NA LISTA.", "err");
-  msg($("#rcMsg"), `+${num(qtd)} ${conf.produto} na lista`, "ok");
+  const noVolume = porVolume() && conf.volume;
+  const gravou = noVolume ? vincular(conf.volume, conf.produto, qtd) : porNaLista(conf.notaId, conf.produto, qtd);
+  if (!gravou) return msg($("#rcMsg"), "MEMÓRIA DO APARELHO CHEIA: O PRODUTO NÃO ENTROU.", "err");
+  msg($("#rcMsg"), `+${num(qtd)} ${conf.produto} ${noVolume ? "no volume" : "na lista"}`, "ok");
   limparProduto();
   desenharConferencia();
   $("#rcInput").focus();
 });
 
+// ---------- botões de baixo ----------
 $("#rcEnderecar").addEventListener("click", () => {
   db = lerDados();
   if (!listaDaNota().itens.length) return;
   conf.enderecando = true; msg($("#rcMsg"), "");
   desenharConferencia();
+});
+$("#rcEnderecarVol").addEventListener("click", () => {
+  if (!volumeMontando(conf.volume)?.itens.length) return msg($("#rcMsg"), MSG_VOLUME_VAZIO, "err");
+  conf.enderecando = true; msg($("#rcMsg"), "");
+  desenharConferencia();
+});
+$("#rcImprimir").addEventListener("click", () => {
+  db = lerDados();
+  const v = volumeMontando(conf.volume) || volumesEnderecados().find((x) => x.codigo === conf.volume);
+  if (v) imprimirVolumes([v]);
 });
 $("#rcTrocar").addEventListener("click", () => {
   if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
@@ -313,11 +500,15 @@ $("#rcFinalizar").addEventListener("click", () => {
   db = lerDados();
   if (listaDaNota().itens.length) return msg($("#rcMsg"), MSG_LISTA_PENDENTE, "err");
   const nota = notaPorId(db, conf.notaId);
+  const montando = volumesMontando(nota.id);
+  if (montando.some((v) => v.itens.length)) return msg($("#rcMsg"), MSG_VOLUMES_MONTANDO, "err");
   const faltas = resumoDaNota(nota, db.conferencias).filter((i) => i.conferido < i.qtdNota);
   const aviso = faltas.length ? "A NOTA SERÁ FINALIZADA COM DIVERGÊNCIA E NÃO PODERÁ SER REABERTA." : "DESEJA FINALIZAR A NOTA? ELA NÃO PODERÁ SER REABERTA.";
-  const sub = faltas.map((i) => `${esc(i.produto)}: faltam ${num(-i.divergencia)}`).join("<br>") || `${esc(rotuloDaNota(nota))} · tudo conferido`;
+  const vazios = montando.length ? `<br>${montando.length} volume(s) vazio(s) será(ão) descartado(s): ${montando.map((v) => esc(v.codigo)).join(", ")}` : "";
+  const sub = (faltas.map((i) => `${esc(i.produto)}: faltam ${num(-i.divergencia)}`).join("<br>") || `${esc(rotuloDaNota(nota))} · tudo conferido`) + vazios;
   confirmar("Finalizar nota", aviso, sub, () => {
     if (servidor) { finalizarNaFila(servidor.sess, nota.id); servidor.pedirEnvio(); } else finalizarNota(nota.id);
+    descartarVolumesDaNota(nota.id);
     toast(`${rotuloDaNota(nota)} finalizada` + (faltas.length ? " com divergência" : ""));
     db = lerDados(); iniciarConferencia();
   });

@@ -133,3 +133,72 @@ test("endereçar sem volume (v79): a confirmação vai para a fila com volumes v
   assert.deepEqual(acoesPendentes("estoquista").at(-1).dados.volumes, []);
   assert.equal(conferido(), 6);
 });
+
+// ---------- v80: conferência por volume (palete ou caixa) ----------
+test("regras do volume: tipo, quantos criar e o volume inteiro contra o pendente", async () => {
+  const { validarVolume, validarCriacaoDeVolumes, MSG_TIPO_DE_VOLUME, MSG_VOLUME_VAZIO, MAXIMO_VOLUMES_DE_UMA_VEZ } = await import("../compartilhado/regras/recebimento.js");
+  assert.equal(validarCriacaoDeVolumes("palete", 2), null);
+  assert.equal(validarCriacaoDeVolumes("saco", 1), MSG_TIPO_DE_VOLUME);
+  assert.match(validarCriacaoDeVolumes("caixa", MAXIMO_VOLUMES_DE_UMA_VEZ + 1), /de 1 a/);
+  assert.equal(validarVolume(NOTA, { tipo: "caixa", itens: [] }, []), MSG_VOLUME_VAZIO);
+  // 20 na nota: dois itens do mesmo produto no volume somam (12 + 9 = 21 passa)
+  assert.equal(validarVolume(NOTA, { tipo: "palete", itens: [{ produto: "536", qtd: 12 }, { produto: "536", qtd: 8 }] }, []), null);
+  assert.equal(validarVolume(NOTA, { tipo: "palete", itens: [{ produto: "536", qtd: 12 }, { produto: "536", qtd: 9 }] }, []), `536: ${msgAcimaDaNota(8)}`);
+});
+
+test("volumes no aparelho: cria com o código do aparelho, vincula, tira e somam ao pendente", async () => {
+  const v = await import("../js/dados/recepcao-volumes.js");
+  const novos = v.criarVolumes(7, "palete", 2);
+  assert.equal(novos.length, 2);
+  assert.match(novos[0].codigo, /^V[0-9A-Z]{1,6}-\d{4}$/);
+  assert.notEqual(novos[0].codigo, novos[1].codigo);
+  assert.equal(v.vincular(novos[0].codigo, "536", 5), true);
+  v.vincular(novos[0].codigo, "536", 3);
+  assert.deepEqual(v.volumesComoConferencias(7).map((c) => c.qtd), [5, 3]);
+  v.tirarDoVolume(novos[0].codigo, v.volumeMontando(novos[0].codigo).itens[0].id);
+  assert.deepEqual(v.volumeMontando(novos[0].codigo).itens.map((i) => i.qtd), [3]);
+  assert.deepEqual(v.volumesMontando(8), []);
+  v.descartarVolumesDaNota(7);
+  assert.deepEqual(v.volumesMontando(7), []);
+});
+
+test("endereçar o volume com servidor: uma ação na fila; os produtos somam até o servidor mostrar o volume", async () => {
+  const v = await import("../js/dados/recepcao-volumes.js");
+  const { enderecarVolumeNaFila } = await import("../js/dados/recepcao.js");
+  await baixarNotas(sessao, servidor(resposta()));
+  const [vol] = v.criarVolumes(7, "caixa", 1);
+  v.vincular(vol.codigo, "536", 4); v.vincular(vol.codigo, "536", 2);
+  const itens = v.volumeMontando(vol.codigo).itens;
+  assert.equal(enderecarVolumeNaFila(sessao, { notaId: 7, codigo: vol.codigo, tipo: "caixa", docaId: 900, itens }).ok, true);
+  const acao = acoesPendentes("estoquista").at(-1);
+  assert.equal(acao.tipo, "recepcao.enderecarVolume");
+  assert.deepEqual([acao.dados.volume, acao.dados.tipo, acao.dados.doca, acao.dados.itens], [vol.codigo, "caixa", 900, [{ produto: "536", qtd: 4 }, { produto: "536", qtd: 2 }]]);
+  assert.equal(conferido(), 6);
+  assert.deepEqual(lerRecepcao().volumesEntrada.map((x) => [x.codigo, x.aCaminho, x.itens.length]), [[vol.codigo, true, 2]]);
+  // endereço que não é doca: não entra
+  assert.equal(enderecarVolumeNaFila(sessao, { notaId: 7, codigo: vol.codigo, tipo: "caixa", docaId: 100, itens }).ok, false);
+  // o servidor mostrou o volume: a cópia local sai (não soma duas vezes)
+  tirarDaFila("estoquista", [acao.id]);
+  const noServidor = { id: 1, notaId: 7, produto: "536", qtd: 6, docaId: 900, dia: "2026-11-28", armazenado: 0, cancelado: 0, volumes: [], volume: vol.codigo };
+  await baixarNotas(sessao, servidor({
+    ...resposta([noServidor]),
+    volumes: [{ codigo: vol.codigo, tipo: "caixa", notaId: 7, docaId: 900, dia: "2026-11-28", acaoId: acao.id, itens: [{ produto: "536", qtd: 6 }] }],
+  }));
+  assert.equal(conferido(), 6);
+  assert.deepEqual(lerRecepcao().volumesEntrada.map((x) => [x.codigo, !!x.aCaminho]), [[vol.codigo, false]]);
+});
+
+test("volume recusado pelo servidor: volta a montando no aparelho, com o mesmo código e os mesmos produtos", async () => {
+  const v = await import("../js/dados/recepcao-volumes.js");
+  const { enderecarVolumeNaFila } = await import("../js/dados/recepcao.js");
+  await baixarNotas(sessao, servidor(resposta()));
+  const [vol] = v.criarVolumes(7, "palete", 1);
+  v.vincular(vol.codigo, "536", 7);
+  enderecarVolumeNaFila(sessao, { notaId: 7, codigo: vol.codigo, tipo: "palete", docaId: 900, itens: v.volumeMontando(vol.codigo).itens });
+  v.tirarVolumes(vol.codigo);
+  const acao = acoesPendentes("estoquista").at(-1);
+  descartarRecusadas([acao.id]);
+  assert.equal(conferido(), 0);
+  assert.deepEqual(v.volumeMontando(vol.codigo).itens.map((i) => [i.produto, i.qtd]), [["536", 7]]);
+  assert.equal(v.volumeMontando(vol.codigo).tipo, "palete");
+});

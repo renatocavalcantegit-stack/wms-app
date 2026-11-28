@@ -255,3 +255,37 @@ export function cadastrosDasNotas(notas, { existe, donoDoCodigo }) {
 
 // a nota como fica guardada: os itens só com produto e quantidade (o cadastro do ERP já foi usado)
 export const notaSemCadastro = (nota) => ({ ...nota, itens: nota.itens.map(({ produto, qtd }) => ({ produto, qtd })) });
+
+// ---------- conferência por VOLUME (v80, decisões de 28/11/2026) ----------
+// O conferente cria os volumes (palete ou caixa) e imprime as etiquetas antes; depois vincula os produtos a cada
+// volume e, quando quiser, endereça o volume INTEIRO numa doca. Até ser endereçado, o volume existe só no coletor.
+// No servidor, o volume é recusado INTEIRO se qualquer produto não passar (ex.: outro coletor conferiu antes).
+export const TIPOS_DE_VOLUME = { palete: "Palete", caixa: "Caixa" };
+export const MAXIMO_VOLUMES_DE_UMA_VEZ = 20;
+export const MSG_TIPO_DE_VOLUME = "TIPO DE VOLUME INVÁLIDO (PALETE OU CAIXA).";
+export const MSG_VOLUME_VAZIO = "O VOLUME ESTÁ VAZIO: VINCULE PELO MENOS UM PRODUTO.";
+export const MSG_VOLUME_NAO_ENCONTRADO = "VOLUME NÃO ENCONTRADO NESTA NOTA.";
+export const MSG_VOLUME_FECHADO = "ESTE VOLUME JÁ FOI ENDEREÇADO: NÃO RECEBE MAIS PRODUTOS.";
+
+// quantos volumes criar de uma vez (1 a MAXIMO_VOLUMES_DE_UMA_VEZ)
+export function validarCriacaoDeVolumes(tipo, quantos) {
+  if (!TIPOS_DE_VOLUME[tipo]) return MSG_TIPO_DE_VOLUME;
+  const n = Number(quantos);
+  if (!Number.isInteger(n) || n < 1 || n > MAXIMO_VOLUMES_DE_UMA_VEZ) return `Informe de 1 a ${MAXIMO_VOLUMES_DE_UMA_VEZ} volumes.`;
+  return null;
+}
+
+// o volume inteiro, antes de entrar na doca: cada produto com as regras da conferência, somando os do próprio volume
+// itens: [{ produto, qtd }] · conferencias: o que já foi conferido da nota (servidor, cópia local e lista)
+export function validarVolume(nota, { tipo, itens }, conferencias) {
+  if (nota.finalizada) return MSG_NOTA_FINALIZADA;
+  if (!TIPOS_DE_VOLUME[tipo]) return MSG_TIPO_DE_VOLUME;
+  if (!Array.isArray(itens) || !itens.length) return MSG_VOLUME_VAZIO;
+  const somadas = [...conferencias];
+  for (const i of itens) {
+    const erro = validarConferencia(nota, { produto: i.produto, qtd: i.qtd, volumes: 0 }, somadas);
+    if (erro) return `${i.produto}: ${erro}`;
+    somadas.push({ notaId: nota.id, produto: i.produto, qtd: lerQuantidade(i.qtd) });
+  }
+  return null;
+}

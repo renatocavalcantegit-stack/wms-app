@@ -7,13 +7,15 @@
 //   - servidor (v77, Estoque no servidor · entrega A): as notas do banco. A lista vem filtrada e paginada pelo
 //     servidor (nunca todas as notas de uma vez) e se atualiza sozinha quando outra tela muda uma nota.
 import { esc } from "./js/util.js";
-import { etiquetaVolumeHtml } from "./js/etiqueta-recebimento.js";
+import { etiquetaVolumeHtml, etiquetaVolumeDaNotaHtml } from "./js/etiqueta-recebimento.js";
 import { produtoPorCodigo, enderecoPorId } from "./js/dados/estoque.js";
 import {
-  notaPorId, volumesDoItem, cancelarPendente, importarNotasDoErp,
+  notaPorId, volumesDoItem, cancelarPendente, importarNotasDoErp, volumesEntradaDaNota,
   buscarNotasNoServidor, buscarNotaNoServidor, cancelarPendenteNoServidor, importarNotasNoServidor, ouvirNotas,
 } from "./js/dados/recebimento.js";
-import { statusDaNota, resumoDaNota, resumoDoItem, STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, rotuloDaNota } from "./compartilhado/regras/recebimento.js";
+import {
+  statusDaNota, resumoDaNota, resumoDoItem, STATUS_CONFERENCIA, STATUS_DIVERGENCIA, STATUS_ARMAZENAMENTO, rotuloDaNota, TIPOS_DE_VOLUME,
+} from "./compartilhado/regras/recebimento.js";
 
 export const FILTROS_ENTRADA = { nf: "", fornecedor: "", de: "", ate: "", conferencia: "", divergencia: "", armazenamento: "" };
 
@@ -69,7 +71,8 @@ async function carregarDetalhe(id) {
 // A nota aberta, no formato que o detalhe e os modais usam (o mesmo nas duas fontes):
 // { nota, conferencias, produto(codigo) → { codigo, descricao, un }, doca(id) → código, volumes(produto) → [...],
 //   novo(codigo) → o produto foi cadastrado por esta nota? (v77: o produto novo nasce da nota do ERP),
-//   recusas → o que o coletor mandou e o servidor não aplicou (v78; só com servidor), comServidor }
+//   recusas → o que o coletor mandou e o servidor não aplicou (v78; só com servidor), comServidor,
+//   volumesEntrada → os volumes da conferência por volume, palete ou caixa, com os produtos (v80) }
 function fonteDaDemo(db, nota) {
   return {
     nota, conferencias: db.conferencias,
@@ -77,7 +80,7 @@ function fonteDaDemo(db, nota) {
     doca: (id) => enderecoPorId(db, id)?.codigo,
     volumes: (p) => volumesDoItem(db, nota.id, p),
     novo: (c) => produtoPorCodigo(db, c)?.cadastradoPorNota === nota.id,
-    recusas: [], comServidor: false,
+    recusas: [], comServidor: false, volumesEntrada: volumesEntradaDaNota(db, nota.id),
   };
 }
 function fonteDoServidor(d) {
@@ -89,7 +92,7 @@ function fonteDoServidor(d) {
     doca: (id) => docas.get(id),
     volumes: (p) => d.volumes.filter((v) => v.produto === p),
     novo: (c) => produtos.get(c)?.cadastrado_por_nota === d.nota.id,
-    recusas: d.recusas || [], comServidor: true,
+    recusas: d.recusas || [], comServidor: true, volumesEntrada: d.volumesEntrada || [],
   };
 }
 const fonteAberta = (db) => {
@@ -238,7 +241,7 @@ function detalhe(fonte) {
     </div>
   </div>
   ${(nota.avisos || []).map((a) => `<p class="ge-msg">${esc(a)}</p>`).join("")}
-  ${fonte.recusas.map((r) => `<p class="ge-msg">${r.tipo === "recepcao.finalizar" ? "Finalização" : "Conferência"} recusada pelo servidor · ${esc(r.quem)} · ${dataHora(r.quando)}${r.produto ? ` · ${esc(r.produto)} +${num(r.qtd)}` : ""}: ${esc(r.motivo)}</p>`).join("")}
+  ${fonte.recusas.map((r) => `<p class="ge-msg">${r.tipo === "recepcao.finalizar" ? "Finalização" : r.tipo === "recepcao.enderecarVolume" ? `Volume ${esc(r.volume || "")}` : "Conferência"} recusada pelo servidor · ${esc(r.quem)} · ${dataHora(r.quando)}${r.produto ? ` · ${esc(r.produto)} +${num(r.qtd)}` : ""}: ${esc(r.motivo)}</p>`).join("")}
   <div class="ge-card">
     <table class="ge-tab">
       <thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="r">Nota</th><th class="r">Conferido</th><th class="r">Divergência</th><th class="r">Armazenado</th><th class="r">Volumes</th><th></th></tr></thead>
@@ -257,7 +260,26 @@ function detalhe(fonte) {
     </table>
   </div>
   <p class="ge-sub">Divergência = conferido − nota (negativo é falta). Aparece depois de a conferência ser finalizada no coletor.
-    Cancelar pendente tira o produto da lista de armazenamento; o saldo continua na doca.</p>`;
+    Cancelar pendente tira o produto da lista de armazenamento; o saldo continua na doca.</p>
+  ${htmlDosVolumesDaNota(fonte)}`;
+}
+
+// v80: os volumes (palete ou caixa) da conferência por volume, com os produtos de cada um e a reimpressão
+function htmlDosVolumesDaNota(fonte) {
+  if (!fonte.volumesEntrada.length) return "";
+  return `<h2 class="ge-vol-h">Volumes (palete ou caixa) · ${fonte.volumesEntrada.length}</h2>
+  <div class="ge-card">
+    <table class="ge-tab">
+      <thead><tr><th>Volume</th><th>Tipo</th><th>Doca</th><th>Dia</th>${fonte.comServidor ? "<th>Conferiu</th>" : ""}<th>Produtos</th><th></th></tr></thead>
+      <tbody>${fonte.volumesEntrada.map((v) => `<tr>
+        <td class="mono">${esc(v.codigo)}</td><td>${esc(TIPOS_DE_VOLUME[v.tipo] || v.tipo)}</td>
+        <td><span class="gaddr">${fonte.doca(v.docaId) || "—"}</span></td><td>${dataBr(v.dia)}</td>
+        ${fonte.comServidor ? `<td>${esc(v.usuario || "—")}</td>` : ""}
+        <td>${v.itens.map((i) => `<span class="mono">${esc(i.produto)}</span> × ${num(i.qtd)}`).join(" · ")}</td>
+        <td class="r"><button class="ge-link" data-reimprimirvol="${esc(v.codigo)}">Reimprimir etiqueta</button></td>
+      </tr>`).join("")}</tbody>
+    </table>
+  </div>`;
 }
 
 // clique na área da aba Entrada; devolve true quando tratou
@@ -273,6 +295,13 @@ export function cliqueEntrada(t, db) {
   if (!fonte) return false;
   if (t.dataset.conferido) { modalConferido(fonte, t.dataset.conferido); return true; }
   if (t.dataset.volumes) { modalVolumes(fonte, t.dataset.volumes); return true; }
+  if (t.dataset.reimprimirvol) {
+    const v = fonte.volumesEntrada.find((x) => x.codigo === t.dataset.reimprimirvol);
+    if (!v) return true;
+    document.querySelector("#printArea").innerHTML = etiquetaVolumeDaNotaHtml(v, fonte.nota, TIPOS_DE_VOLUME[v.tipo] || v.tipo);
+    window.print();
+    return true;
+  }
   // sem confirmação (definido no documento); o saldo fica na doca para ser transferido depois
   if (t.dataset.cancelar) { cancelar(fonte.nota.id, t.dataset.cancelar); return true; }
   return false;

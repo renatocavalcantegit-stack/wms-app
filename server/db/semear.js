@@ -90,7 +90,7 @@ export async function semear(pool, { conferencia = false } = {}) {
 
   await emTransacao(pool, async (c) => {
     // começa do zero (a ordem não importa com CASCADE)
-    await c.query("TRUNCATE movimentos, volumes_recebimento, recebimentos, notas_entrada_itens, notas_entrada, observacao_ciencias, devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
+    await c.query("TRUNCATE movimentos, volumes_recebimento, recebimentos, volumes_entrada, notas_entrada_itens, notas_entrada, observacao_ciencias, devolucao_itens, devolucoes, ocorrencias, conferencia_itens, conferencias, acoes_recebidas, sessoes, usuarios, itens_pedido, pedidos, associacoes, saldos, embalagens, enderecos, produtos CASCADE");
 
     await inserirLista(c, "usuarios", ["login text", "nome text", "perfil text", "pin_hash text"],
       USERS.map((u) => ({ login: u.login, nome: u.nome, perfil: u.perfil, pin_hash: gerarHash(u.pin) })));

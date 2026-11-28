@@ -8,6 +8,7 @@ import { lerQuantidade, arredondarQtd } from "../../compartilhado/regras/quantid
 import {
   validarDoca, validarConferencia, validarArmazenamento, distribuirArmazenamento, pendenteNaDoca, pendenteDaConferencia,
   codigoDoVolume, separarNotasImportadas, TIPO_DEVOLUCAO, numeroDaDevolucao, cadastrosDasNotas, notaSemCadastro,
+  validarVolume, msgVolumeRepetido,
 } from "../../compartilhado/regras/recebimento.js";
 
 // dia de hoje no formato AAAA-MM-DD (é a "data de armazenagem" da conferência)
@@ -49,6 +50,30 @@ export function conferir({ notaId, produto, qtd, volumes, docaId }) {
   registrarMovimento(db, { tipo: "recebimento", produto, qtd: conferencia.qtd, destino: docaId, nota: nota.numero });
   gravarEstoque(db);
   return { ok: true, conferencia, volumes: novos };
+}
+
+// v80: endereça o volume inteiro (palete ou caixa) na doca: uma conferência por produto (com o código do volume),
+// o saldo na doca e o movimento. Recusado inteiro se qualquer produto não passar. Devolve { ok } ou { ok: false, msg }.
+export const volumesEntradaDaNota = (db, notaId) => (db.volumesEntrada || []).filter((v) => v.notaId === notaId);
+export function enderecarVolume({ notaId, codigo, tipo, docaId, itens }) {
+  const db = lerEstoque();
+  const nota = notaPorId(db, notaId);
+  const erroDoca = validarDoca(enderecoPorId(db, docaId), nota);
+  if (erroDoca) return { ok: false, msg: erroDoca };
+  const lista = itens.map((i) => ({ produto: i.produto, qtd: lerQuantidade(i.qtd) }));
+  const erro = validarVolume(nota, { tipo, itens: lista }, db.conferencias);
+  if (erro) return { ok: false, msg: erro };
+  db.volumesEntrada ||= [];
+  if (db.volumesEntrada.some((v) => v.codigo === codigo)) return { ok: false, msg: msgVolumeRepetido(codigo) };
+  const dia = hoje();
+  for (const i of lista) {
+    db.conferencias.push({ id: db.proximoId.conferencia++, notaId, produto: i.produto, qtd: i.qtd, docaId, dia, armazenado: 0, cancelado: 0, volumes: [], volume: codigo });
+    somarSaldo(db, docaId, i.produto, i.qtd);
+    registrarMovimento(db, { tipo: "recebimento", produto: i.produto, qtd: i.qtd, destino: docaId, nota: nota.numero });
+  }
+  db.volumesEntrada.push({ codigo, tipo, notaId, docaId, dia, itens: lista });
+  gravarEstoque(db);
+  return { ok: true };
 }
 
 // finaliza a nota: não recebe mais conferências e não reabre. O que faltou vira divergência.

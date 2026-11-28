@@ -47,6 +47,13 @@
 .rc-lista-item:last-child { border-bottom: 0; }
 .rc-tirar { border: 0; background: var(--red-soft); color: var(--red); font-weight: 800; border-radius: 8px; width: 34px; height: 34px; flex: none; }
 #rcFoot .btn:disabled { opacity: .45; }
+/* v80: conferir por produto ou por volume */
+.rc-modo { display: flex; gap: 8px; align-items: stretch; }
+.rc-seg { display: flex; flex: 1; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 3px; gap: 3px; }
+.rc-seg button, .rc-seg label { flex: 1; border: 0; background: none; border-radius: 9px; padding: 9px 6px; font: inherit; font-weight: 700; font-size: 14px; color: var(--ink-2); text-align: center; cursor: pointer; }
+.rc-seg .on { background: var(--ink); color: #fff; }
+.rc-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.rc-criar { flex: none; padding: 0 14px; }
 #rcTopo:not(:empty), #raTopo:not(:empty) { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
 .rc-nota { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .rc-nota > div:first-child { display: flex; flex-direction: column; gap: 1px; }

@@ -11,7 +11,7 @@ import { USERS } from "../../js/sessao.js";
 import { saldosForaDoHistorico } from "../src/consultas/notas-entrada.js";
 import { criarDevolucao } from "../src/consultas/devolucoes.js";
 import {
-  msgAcimaDaNota, msgVolumeRepetido, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA, MSG_NAO_E_DOCA, codigoDoVolumeDoAparelho,
+  msgAcimaDaNota, msgVolumeRepetido, MSG_NOTA_FINALIZADA, MSG_PRODUTO_FORA_DA_NOTA, MSG_NAO_E_DOCA, codigoDoVolumeDoAparelho, MSG_TIPO_DE_VOLUME,
 } from "../../compartilhado/regras/recebimento.js";
 
 let pool, app;
@@ -92,6 +92,54 @@ test("conferência por produto (v79): entra sem volume nenhum, com o saldo na do
   const rec = (await pool.query("SELECT id FROM recebimentos WHERE acao_id = $1", [a.id])).rows[0];
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM volumes_recebimento WHERE recebimento_id = $1", [rec.id])).rows[0].n, 0);
   assert.equal(await saldo(doca, "283"), antes + 6);
+  assert.deepEqual(await saldosForaDoHistorico(pool), []);
+});
+
+// v80: conferência por volume (palete ou caixa)
+const enderecarVolume = (nota, volume, tipo, doca, itens) =>
+  acao("recepcao.enderecarVolume", { nota, rotulo: "NF", volume, tipo, doca, itens, dia: "2026-11-28" });
+
+test("volume (v80): o palete inteiro entra na doca, com um recebimento por produto ligado a ele", async () => {
+  const nota = await idDaNota("48213"), doca = await umEndereco("doca");
+  const antes167 = await saldo(doca, "167"), antes536 = await saldo(doca, "536");
+  const codigo = codigoDoVolumeDoAparelho("aaaa11", ++seqA);
+  const a = enderecarVolume(nota, codigo, "palete", doca, [{ produto: "167", qtd: 10 }, { produto: "536", qtd: 1 }]);
+  assert.deepEqual((await sincronizar("estoquista", [a])).recusadas, []);
+  const vol = (await pool.query("SELECT tipo, doca_id, usuario, acao_id FROM volumes_entrada WHERE codigo = $1", [codigo])).rows[0];
+  assert.deepEqual([vol.tipo, vol.doca_id, vol.usuario, vol.acao_id], ["palete", doca, "estoquista", a.id]);
+  const recs = (await pool.query("SELECT produto, qtd::float AS qtd FROM recebimentos WHERE volume_codigo = $1 ORDER BY produto", [codigo])).rows;
+  assert.deepEqual(recs, [{ produto: "167", qtd: 10 }, { produto: "536", qtd: 1 }]);
+  assert.equal(await saldo(doca, "167"), antes167 + 10);
+  assert.equal(await saldo(doca, "536"), antes536 + 1);
+  assert.deepEqual(await saldosForaDoHistorico(pool), []);
+  // o coletor vê o volume no que baixa (pela ação), com os produtos
+  const baixado = (await chamar("estoquista", "/api/recepcao/notas")).json();
+  const v = baixado.volumes.find((x) => x.codigo === codigo);
+  assert.deepEqual([v.acaoId, v.tipo, v.docaId, v.itens], [a.id, "palete", doca, [{ produto: "167", qtd: 10 }, { produto: "536", qtd: 1 }]]);
+  assert.ok(baixado.conferencias.filter((c) => c.volume === codigo).length === 2);
+  // a Gestão vê o volume no detalhe da nota, com quem montou
+  const det = (await chamar("gestorestoque", `/api/estoque/notas/${nota}`)).json();
+  assert.equal(det.volumesEntrada.find((x) => x.codigo === codigo).usuario, "Usuário Estoquista");
+});
+
+test("volume (v80): recusado INTEIRO se um produto passa do pendente ou se o código já existe", async () => {
+  const nota = await idDaNota("48213"), doca = await umEndereco("doca");
+  const antes = await saldo(doca, "167");
+  const pendente536 = 40 - (await pool.query("SELECT coalesce(sum(qtd), 0)::float AS s FROM recebimentos WHERE nota_id = $1 AND produto = '536'", [nota])).rows[0].s;
+  const codigo = codigoDoVolumeDoAparelho("bbbb22", ++seqB);
+  const a = enderecarVolume(nota, codigo, "caixa", doca, [{ produto: "167", qtd: 1 }, { produto: "536", qtd: pendente536 + 1 }]);
+  const r = await sincronizar("estoquista", [a]);
+  assert.deepEqual(r.recusadas, [{ id: a.id, resultado: "recusada", motivo: `536: ${msgAcimaDaNota(pendente536)}` }]);
+  assert.equal(await saldo(doca, "167"), antes, "nem o produto que passava entrou");
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM volumes_entrada WHERE codigo = $1", [codigo])).rows[0].n, 0);
+  // o mesmo código de um volume que já existe
+  const ok = enderecarVolume(nota, codigo, "caixa", doca, [{ produto: "167", qtd: 1 }]);
+  assert.deepEqual((await sincronizar("estoquista", [ok])).recusadas, []);
+  const repetido = enderecarVolume(nota, codigo, "caixa", doca, [{ produto: "167", qtd: 1 }]);
+  assert.equal((await sincronizar("estoquista", [repetido])).recusadas[0].motivo, msgVolumeRepetido(codigo));
+  // tipo inválido e volume vazio
+  const vazio = enderecarVolume(nota, codigoDoVolumeDoAparelho("bbbb22", ++seqB), "saco", doca, []);
+  assert.equal((await sincronizar("estoquista", [vazio])).recusadas[0].motivo, MSG_TIPO_DE_VOLUME);
   assert.deepEqual(await saldosForaDoHistorico(pool), []);
 });
 

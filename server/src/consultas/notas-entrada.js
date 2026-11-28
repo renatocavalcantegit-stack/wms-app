@@ -39,13 +39,28 @@ export const lerConferencias = (conexao, notaId) => lerConferenciasDasNotas(cone
 export async function lerConferenciasDasNotas(conexao, notaIds) {
   const { rows } = await conexao.query(
     `SELECT r.id, r.nota_id AS "notaId", r.produto, r.qtd, r.doca_id AS "docaId", to_char(r.dia, 'YYYY-MM-DD') AS dia,
-            r.armazenado, r.cancelado, r.acao_id AS "acaoId", coalesce(u.nome, r.usuario) AS usuario,
+            r.armazenado, r.cancelado, r.acao_id AS "acaoId", coalesce(u.nome, r.usuario) AS usuario, r.volume_codigo AS volume,
             coalesce((SELECT array_agg(v.codigo ORDER BY v.seq) FROM volumes_recebimento v WHERE v.recebimento_id = r.id), '{}') AS volumes
        FROM recebimentos r LEFT JOIN usuarios u ON u.login = r.usuario
       WHERE r.nota_id = ANY($1) ORDER BY r.id`,
     [notaIds],
   );
   return rows;
+}
+
+// v80: os volumes (palete ou caixa) já endereçados das notas, com os produtos de cada um
+// [{ codigo, tipo, notaId, docaId, dia, acaoId, usuario, feitoEm, itens: [{ produto, qtd }] }]
+export async function lerVolumesDasNotas(conexao, notaIds) {
+  const { rows } = await conexao.query(
+    `SELECT v.codigo, v.tipo, v.nota_id AS "notaId", v.doca_id AS "docaId", to_char(v.dia, 'YYYY-MM-DD') AS dia,
+            v.acao_id AS "acaoId", coalesce(u.nome, v.usuario) AS usuario, v.feito_em AS "feitoEm",
+            coalesce((SELECT json_agg(json_build_object('produto', r.produto, 'qtd', r.qtd) ORDER BY r.id)
+                        FROM recebimentos r WHERE r.volume_codigo = v.codigo), '[]') AS itens
+       FROM volumes_entrada v LEFT JOIN usuarios u ON u.login = v.usuario
+      WHERE v.nota_id = ANY($1) ORDER BY v.feito_em, v.codigo`,
+    [notaIds],
+  );
+  return rows.map((v) => ({ ...v, itens: v.itens.map((i) => ({ produto: i.produto, qtd: Number(i.qtd) })) }));
 }
 
 // recalcula e grava os três status da nota (chamar na mesma transação de quem mudou a nota ou os recebimentos)
@@ -145,13 +160,15 @@ export async function detalheDaNota(pool, id) {
   )).rows;
   // v78: o que o coletor mandou e o servidor NÃO aplicou (ex.: dois coletores passaram do pendente)
   const recusas = (await pool.query(
-    `SELECT a.tipo, coalesce(u.nome, a.login) AS quem, a.feita_em AS quando, a.motivo, a.dados->>'produto' AS produto, a.dados->>'qtd' AS qtd
+    `SELECT a.tipo, coalesce(u.nome, a.login) AS quem, a.feita_em AS quando, a.motivo, a.dados->>'produto' AS produto, a.dados->>'qtd' AS qtd,
+            a.dados->>'volume' AS volume
        FROM acoes_recebidas a LEFT JOIN usuarios u ON u.login = a.login
       WHERE a.tipo LIKE 'recepcao.%' AND a.dados->>'nota' = $1::text AND a.resultado <> 'aplicada'
       ORDER BY a.feita_em`,
     [id],
   )).rows;
-  return { nota, conferencias, volumes, produtos, docas, recusas };
+  const volumesEntrada = await lerVolumesDasNotas(pool, [id]); // v80: os volumes (palete ou caixa) da nota
+  return { nota, conferencias, volumes, produtos, docas, recusas, volumesEntrada };
 }
 
 // ---------- cancelar pendente ----------
